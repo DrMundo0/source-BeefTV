@@ -343,7 +343,9 @@ func doBinaryWithAdmission(req *http.Request, onChunk func(string, []byte), admi
 	mimeType := resp.Header.Get("Content-Type")
 	var buffered bytes.Buffer
 	body := io.Reader(resp.Body)
-	if observe := downloadObserverFrom(req.Context()); observe != nil {
+	if observe := downloadObserverFrom(req.Context()); observe != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		// Start transfer timing after headers arrive; an error response is not media.
+		observe(0, resp.ContentLength)
 		body = newProgressReader(resp.Body, resp.ContentLength, responseLimit, observe)
 	}
 	reader := io.LimitReader(body, responseLimit+1)

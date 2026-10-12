@@ -156,6 +156,8 @@ func NormalizeVideoPollPolicy(policy VideoPollPolicy) VideoPollPolicy {
 }
 
 func RunVideoDownload(ctx context.Context, taskID string, policy VideoPollPolicy, download func(context.Context) ([]byte, string, error)) ([]byte, string, error) {
+	ctx, cancel := context.WithDeadline(ctx, PollingDeadline(ctx))
+	defer cancel()
 	runtime, _ := RuntimeFromContext(ctx)
 	if err := setExecutionStage(ctx, runtime, "正在取回生成结果"); err != nil {
 		return nil, "", err
@@ -163,24 +165,47 @@ func RunVideoDownload(ctx context.Context, taskID string, policy VideoPollPolicy
 	policy = NormalizeVideoPollPolicy(policy)
 	reporter := newVideoDownloadReporter(runtime.Delivery)
 	defer reporter.clear()
-	var lastErr error
-	for attempt := 1; attempt <= policy.MaxDownloadTries; attempt++ {
+	failures := 0
+	for attempt := 1; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, "", err
+		}
 		data, mimeType, err := download(reporter.beginAttempt(ctx, attempt))
 		if err == nil {
 			return data, mimeType, nil
 		}
-		lastErr = err
+		pending := videoResultPending(err)
+		// A file still being saved is not a failed transfer. Keep polling the
+		// original result until the task deadline, without spending retry slots.
+		if !pending {
+			failures++
+		}
 		retry, _ := RetryableVideoPollError(ctx, err)
-		if !retry || attempt == policy.MaxDownloadTries {
+		if !retry || failures >= policy.MaxDownloadTries {
 			return nil, "", VideoDownloadError{TaskID: taskID, Cause: err}
 		}
-		delay := max(policy.Interval, ProviderRetryAfter(err))
-		reporter.waitForRetry(attempt + 1)
+		delay := ProviderRetryAfter(err)
+		if delay <= 0 {
+			delay = policy.Interval
+		}
+		reporter.waitForRetry(attempt+1, pending)
 		if err := policy.Sleep(ctx, delay); err != nil {
 			return nil, "", err
 		}
 	}
-	return nil, "", VideoDownloadError{TaskID: taskID, Cause: lastErr}
+}
+
+func videoResultPending(err error) bool {
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+	var payload map[string]any
+	if json.Unmarshal([]byte(httpErr.Body), &payload) != nil {
+		return false
+	}
+	code, _ := FailureDetails(payload)
+	return httpErr.StatusCode == http.StatusServiceUnavailable && code == "video_delivery_pending"
 }
 
 func RetryableVideoPollError(ctx context.Context, err error) (retry bool, notFound bool) {

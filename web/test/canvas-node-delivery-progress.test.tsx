@@ -31,11 +31,11 @@ test("取回结果时节点显示进度、大小和速度，而不是「生成�
     expect(markup).not.toContain("生成中");
 });
 
-test("下载中断时显示正在续传", () => {
+test("下载中断时显示正在重试", () => {
     byTask["task-1"] = { outputIndex: 0, downloadedBytes: 2_000_000, totalBytes: 4_000_000, bytesPerSecond: 0, state: "retrying" };
     const markup = render(loadingVideo);
     delete byTask["task-1"];
-    expect(markup).toContain("下载中断，正在续传");
+    expect(markup).toContain("下载中断，正在重试");
     expect(markup).toContain("50%");
 });
 

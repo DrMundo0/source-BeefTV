@@ -1,4 +1,5 @@
 import { generationErrorMessage } from "@/lib/generation-error";
+import { GENERATION_RESULT_FETCH_STAGE } from "@/lib/generation-delivery-progress";
 import { assertUserScope, isUserScopeAbandonedError, type CapturedUserScope } from "@/lib/user-scope-guard";
 import { http, apiBaseURL, type BackendEnvelope, type HttpRequestConfig } from "@/services/api/request";
 import { consumeTaskTextStream, createTaskTextStreamParser, type TaskTextStreamEvent } from "@/services/api/task-text-stream";
@@ -444,7 +445,8 @@ export async function waitForGenerationTask(id: string, options?: WaitForGenerat
             if (task.status === "failed" || task.status === "cancelled") {
                 throw new Error(task.error ? generationErrorMessage(task.error) : `任务${task.status === "cancelled" ? "已取消" : "失败"}`);
             }
-            await delay(intervalMs, options?.signal);
+            const retrieving = Boolean(task.delivery) || task.stage === GENERATION_RESULT_FETCH_STAGE;
+            await delay(retrieving ? Math.min(intervalMs, 500) : intervalMs, options?.signal);
         }
     } catch (error) {
         if (options?.signal?.aborted) {

@@ -23,7 +23,7 @@ export function generationDeliveryProgressView(progress: GenerationTaskDeliveryP
     const size = known ? `${sizeLabel(downloaded)} / ${sizeLabel(progress.totalBytes)}` : sizeLabel(downloaded);
     const retrying = progress.state === "retrying";
     return {
-        title: retrying ? "下载中断，正在续传" : "正在取回结果",
+        title: retrying ? "下载中断，正在重试" : "正在取回结果",
         percent,
         detail: [size, retrying || progress.bytesPerSecond <= 0 ? "" : `${sizeLabel(progress.bytesPerSecond)}/s`].filter(Boolean).join(" · "),
     };

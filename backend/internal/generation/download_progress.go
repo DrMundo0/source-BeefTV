@@ -77,7 +77,7 @@ func newVideoDownloadReporter(port DeliveryProgressPort) *videoDownloadReporter 
 func (r *videoDownloadReporter) report(state string, downloaded, total int64) {
 	// A count that drops within one attempt means the body restarted (for
 	// example the proxy retry after a failed direct read); speed starts over.
-	if downloaded < r.downloaded {
+	if downloaded == 0 || downloaded < r.downloaded {
 		r.rate = outbound.ProgressRate{}
 	}
 	r.downloaded = downloaded
@@ -107,16 +107,20 @@ func (r *videoDownloadReporter) beginAttempt(ctx context.Context, attempt int) c
 	})
 }
 
-// waitForRetry reports the next attempt as waiting for the provider to make the
-// result ready, before the retry sleep begins.
-func (r *videoDownloadReporter) waitForRetry(nextAttempt int) {
+// These downloads restart from zero. Only an explicit pending response means
+// the provider is still preparing the file; transport failures mean retrying.
+func (r *videoDownloadReporter) waitForRetry(nextAttempt int, pending bool) {
 	if r == nil {
 		return
 	}
 	r.attempt = nextAttempt
 	r.rate = outbound.ProgressRate{}
 	r.downloaded = 0
-	r.report("waiting", 0, -1)
+	state := "retrying"
+	if pending {
+		state = "waiting"
+	}
+	r.report(state, 0, -1)
 }
 
 func (r *videoDownloadReporter) clear() {

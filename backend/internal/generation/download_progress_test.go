@@ -104,7 +104,7 @@ func TestRunVideoDownloadReportsWaitingBeforeRetrySleep(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if calls.Add(1) == 1 {
-			http.Error(w, "object not ready", http.StatusServiceUnavailable)
+			http.Error(w, `{"error":{"code":"video_delivery_pending","message":"Video is being saved; retry later"}}`, http.StatusServiceUnavailable)
 			return
 		}
 		w.Header().Set("Content-Type", "video/mp4")
@@ -168,6 +168,117 @@ func TestRunVideoDownloadClearsOnFinalFailure(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&port.cleared); got != 1 {
 		t.Fatalf("expected one clear after final failure, got %d", got)
+	}
+}
+
+func TestVideoDownloadRetryStateAndDelay(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		err   error
+		state string
+		delay time.Duration
+	}{
+		{"saving", HTTPError{StatusCode: 503, Body: `{"error":{"code":"video_delivery_pending"}}`, RetryAfter: 5 * time.Second}, "waiting", 5 * time.Second},
+		{"busy", HTTPError{StatusCode: 503, RetryAfter: 7 * time.Second}, "retrying", 7 * time.Second},
+		{"interrupted", io.ErrUnexpectedEOF, "retrying", DefaultVideoPollInterval},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			port := &fakeDeliveryPort{}
+			ctx := WithRuntime(context.Background(), Runtime{Delivery: port})
+			policy := DefaultVideoPollPolicy()
+			var delays []time.Duration
+			policy.Sleep = func(_ context.Context, delay time.Duration) error {
+				delays = append(delays, delay)
+				reports := port.snapshot()
+				if got := reports[len(reports)-1]; got.State != tc.state || got.BytesPerSecond != 0 || got.DownloadedBytes != 0 {
+					t.Fatalf("retry state = %+v, want %s without retained bytes", got, tc.state)
+				}
+				return nil
+			}
+			calls := 0
+			_, _, err := RunVideoDownload(ctx, "provider-task", policy, func(context.Context) ([]byte, string, error) {
+				calls++
+				if calls == 1 {
+					return nil, "", tc.err
+				}
+				return []byte("video"), "video/mp4", nil
+			})
+			if err != nil || calls != 2 || len(delays) != 1 || delays[0] != tc.delay {
+				t.Fatalf("calls=%d delays=%v error=%v; want one delay %v", calls, delays, err, tc.delay)
+			}
+		})
+	}
+}
+
+func TestVideoDownloadDoesNotReportErrorBodyAsMedia(t *testing.T) {
+	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"error":{"code":"service_unavailable"}}`, http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	port := &fakeDeliveryPort{}
+	ctx := WithRuntime(context.Background(), Runtime{Delivery: port})
+	_, _, err := RunVideoDownload(ctx, "provider-task", fastPolicy(1, SleepContext), downloadFrom(server.URL))
+	if err == nil {
+		t.Fatal("expected HTTP error")
+	}
+	for _, report := range port.snapshot() {
+		if report.DownloadedBytes != 0 || report.TotalBytes != -1 {
+			t.Fatalf("error JSON reported as media: %+v", report)
+		}
+	}
+}
+
+func TestVideoDeliveryPendingDoesNotExhaustTransferRetries(t *testing.T) {
+	policy := fastPolicy(2, func(context.Context, time.Duration) error { return nil })
+	calls := 0
+	data, _, err := RunVideoDownload(context.Background(), "original", policy, func(context.Context) ([]byte, string, error) {
+		calls++
+		if calls <= 4 {
+			return nil, "", HTTPError{StatusCode: 503, Body: `{"error":{"code":"video_delivery_pending"}}`, RetryAfter: time.Second}
+		}
+		return []byte("saved video"), "video/mp4", nil
+	})
+	if err != nil || calls != 5 || string(data) != "saved video" {
+		t.Fatalf("calls=%d data=%q error=%v", calls, data, err)
+	}
+}
+
+func TestVideoDeliveryPendingStopsOnCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	port := &fakeDeliveryPort{}
+	ctx = WithRuntime(ctx, Runtime{Delivery: port})
+	policy := fastPolicy(2, func(ctx context.Context, _ time.Duration) error { cancel(); return ctx.Err() })
+	calls := 0
+	_, _, err := RunVideoDownload(ctx, "original", policy, func(context.Context) ([]byte, string, error) {
+		calls++
+		return nil, "", HTTPError{StatusCode: 503, Body: `{"error":{"code":"video_delivery_pending"}}`}
+	})
+	if err != context.Canceled || calls != 1 || atomic.LoadInt32(&port.cleared) != 1 {
+		t.Fatalf("calls=%d error=%v clears=%d", calls, err, port.cleared)
+	}
+}
+
+func TestVideoDeliveryPendingHonorsTaskDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	_, _, err := RunVideoDownload(ctx, "original", DefaultVideoPollPolicy(), func(context.Context) ([]byte, string, error) {
+		return nil, "", HTTPError{StatusCode: 503, Body: `{"error":{"code":"video_delivery_pending"}}`, RetryAfter: time.Second}
+	})
+	if err != context.DeadlineExceeded {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestMissingProviderTaskStillExhaustsTransferRetries(t *testing.T) {
+	calls := 0
+	_, _, err := RunVideoDownload(context.Background(), "original", fastPolicy(2, func(context.Context, time.Duration) error { return nil }), func(context.Context) ([]byte, string, error) {
+		calls++
+		return nil, "", HTTPError{StatusCode: 404, Body: `{"error":{"code":"task_not_found"}}`}
+	})
+	if err == nil || calls != 2 {
+		t.Fatalf("calls=%d error=%v", calls, err)
 	}
 }
 

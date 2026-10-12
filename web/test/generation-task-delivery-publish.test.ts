@@ -56,3 +56,21 @@ test("a waiter clears its own delivery when the task fails", async () => {
     expect(seen[1]).toMatchObject({ downloadedBytes: 60 });
     expect(useGenerationDeliveryProgress.getState().byTask[taskId]).toBeUndefined();
 });
+
+test("result retrieval polls every 500ms, while generation keeps its normal interval", async () => {
+    const seen: Array<unknown> = [];
+    const restore = queue([{ status: "running", stage: "生成中" }, { status: "running", stage: "正在取回生成结果" }, fetching(60), { status: "succeeded" }], seen);
+    const originalTimer = window.setTimeout;
+    const delays: number[] = [];
+    window.setTimeout = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+        delays.push(delay || 0);
+        return originalTimer(callback, 0, ...args);
+    }) as typeof window.setTimeout;
+    try {
+        await waitForGenerationTask(taskId);
+    } finally {
+        window.setTimeout = originalTimer;
+        restore();
+    }
+    expect(delays).toEqual([2000, 500, 500]);
+});
