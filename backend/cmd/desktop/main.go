@@ -50,7 +50,11 @@ func main() {
 		Title:  "BeefTV",
 		Width:  1440,
 		Height: 960,
-		Mac:    &mac.Options{},
+		Mac: &mac.Options{
+			// WKWebView disables element fullscreen by default, including the
+			// video player's fullscreen control.
+			Preferences: &mac.Preferences{FullscreenEnabled: mac.Enabled},
+		},
 		AssetServer: &assetserver.Options{
 			Assets:  assets,
 			Handler: desktopAssetHandler{app: app},
