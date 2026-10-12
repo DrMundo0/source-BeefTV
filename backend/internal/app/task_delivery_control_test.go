@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
 	"infinite-canvas/backend/internal/model"
 )
 
@@ -176,5 +177,68 @@ func TestGenerationDownloadRecoveryDoesNotResetDeadline(t *testing.T) {
 	case <-next.Done():
 	case <-time.After(time.Second):
 		t.Fatal("recovery ignored original deadline")
+	}
+}
+
+func TestGenerationDownloadAllowedAfterWorkerRestart(t *testing.T) {
+	svc, db := newGenerationDeliveryMediaService(t, filepath.Join(t.TempDir(), "delivery.db"), t.TempDir())
+	defer closeDB(t, db)
+	svc.StartWorker()
+	if err := svc.StopWorker(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	svc.StartWorker()
+	defer svc.StopWorker(context.Background())
+	task := seedSucceededTaskAt(t, db, "restart-download", `{}`, time.Now())
+	ctx, finish, err := svc.beginGenerationDownload(task.UserID, task.ID+":0", time.Minute)
+	if err != nil {
+		t.Fatalf("worker restarted but download remained disabled: %v", err)
+	}
+	defer finish(false)
+	if ctx.Err() != nil {
+		t.Fatalf("restarted context: %v", ctx.Err())
+	}
+}
+
+func TestGenerationDownloadCompletionBetweenPauseReadAndWriteWins(t *testing.T) {
+	svc, db := newGenerationDeliveryMediaService(t, filepath.Join(t.TempDir(), "delivery.db"), t.TempDir())
+	defer closeDB(t, db)
+	task := seedSucceededImageTask(t, db, "complete-before-pause-write", "{}")
+	if err := db.Create(&model.Resource{ID: "res-shared", UserID: task.UserID, Kind: "image", Status: model.ResourceStatusReady, MimeType: "image/png"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	var completed atomic.Bool
+	if err := db.Callback().Query().After("gorm:query").Register("test:complete-before-pause-write", func(tx *gorm.DB) {
+		if tx.Statement.Table == "results" && completed.CompareAndSwap(false, true) {
+			if err := svc.DeliverSucceededTask(task); err != nil {
+				t.Errorf("concurrent completion: %v", err)
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Callback().Query().Remove("test:complete-before-pause-write")
+	if _, err := svc.CancelTask(context.Background(), task.UserID, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.Task(task.UserID, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !completed.Load() || deliveryPaused(got.Stage) || got.Outputs[0].MaterializedAssetID == "" {
+		t.Fatalf("completion lost to stale pause: %+v", got)
+	}
+}
+
+func TestPausedGenerationDownloadRetryDuringDrainReturns503(t *testing.T) {
+	svc, db := newGenerationDeliveryMediaService(t, filepath.Join(t.TempDir(), "delivery.db"), t.TempDir())
+	defer closeDB(t, db)
+	task := seedSucceededTaskAt(t, db, "paused-drain", `{"images":[{"url":"https://example.com/image.png"}]}`, time.Now())
+	if _, err := svc.CancelTask(context.Background(), task.UserID, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	svc.BeginDrain()
+	if _, err := svc.RetryTask(task.UserID, task.ID); !isAppErrorStatus(err, 503) {
+		t.Fatalf("resume during drain: %v", err)
 	}
 }

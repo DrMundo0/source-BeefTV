@@ -185,8 +185,13 @@ func newService(repo *repository.Repository, dataDir string, options serviceOpti
 }
 
 func (s *Service) StartWorker() {
+	s.deliveryControlMu.Lock()
 	runtime := s.backgroundWorkers()
 	ctx, started := runtime.Start()
+	if started {
+		s.deliveryClosed = false
+	}
+	s.deliveryControlMu.Unlock()
 	if !started {
 		return
 	}
@@ -269,6 +274,9 @@ func (s *Service) refreshTaskProviderState(task *model.Task) error {
 }
 
 func (s *Service) RetryTask(userID string, id string) (*model.Task, error) {
+	if s.IsDraining() {
+		return s.taskDomain().Retry(userID, id)
+	}
 	if task, err := s.repo.TaskForUser(userID, id); err == nil && task.Status == model.TaskStatusSucceeded && deliveryPaused(task.Stage) {
 		return s.resumeGenerationDownload(*task)
 	}

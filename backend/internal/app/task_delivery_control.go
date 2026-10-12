@@ -6,8 +6,11 @@ import (
 	"strings"
 	"time"
 
+	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/repository"
 	localtask "infinite-canvas/backend/internal/task"
+	"infinite-canvas/backend/internal/taskdelivery"
 )
 
 const generationDownloadTimeout = 15 * time.Minute
@@ -28,7 +31,27 @@ func (s *Service) pauseGenerationDownload(task model.Task, stage string) (*model
 	if localtask.DeliveryComplete(task.ResultJSON, stored, task.Type) {
 		return nil, BadAuthRequest("生成结果已取回")
 	}
-	if err := s.repo.SetGenerationDeliveryStage(task.UserID, task.ID, stage); err != nil {
+	// Claim the task's write before rechecking results. A final delivery commit
+	// either precedes this transaction (and wins here) or follows it (and clears
+	// the pause in CommitOwned); it cannot slip between this read and write.
+	if err := s.repo.Transaction(func(tx *repository.Repository) error {
+		if err := tx.SetGenerationDeliveryStage(task.UserID, task.ID, stage); err != nil {
+			return err
+		}
+		rows, err := tx.GenerationOutputResults(task.ID)
+		if err != nil {
+			return err
+		}
+		outputs, err := taskdelivery.DecodeStoredOutputs(rows)
+		if err != nil {
+			return err
+		}
+		if localtask.DeliveryComplete(task.ResultJSON, outputs, task.Type) {
+			stage = "生成完成"
+			return tx.SetGenerationDeliveryStage(task.UserID, task.ID, stage)
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	for identity, cancel := range s.deliveryCancels {
@@ -50,7 +73,7 @@ func (s *Service) resumeGenerationDownload(task model.Task) (*model.Task, error)
 	s.deliveryControlMu.Lock()
 	defer s.deliveryControlMu.Unlock()
 	if s.deliveryClosed || s.IsDraining() {
-		return nil, errors.New("应用正在关闭，请稍后重试")
+		return nil, &kernel.AppError{Status: kernel.CodeUnavailable, Code: kernel.CodeUnavailable, Message: localtask.DrainRetryMessage, Retryable: true}
 	}
 	for identity := range s.deliveryCancels {
 		if strings.HasPrefix(identity, task.ID+":") {
