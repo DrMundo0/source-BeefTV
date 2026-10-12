@@ -90,6 +90,9 @@ func RunHelperRequest(req HelperRequest) error {
 	}
 	var releaseLock func()
 	defer func() {
+		if result.Error != "" && result.Status != "rolled_back" {
+			result.Status = "failed"
+		}
 		// Startup cleanup must see the final record before it can take the lock.
 		writeRecovery()
 		if releaseLock != nil {

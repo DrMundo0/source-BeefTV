@@ -304,7 +304,8 @@ export const nodeHoverToolbarTools: ToolDefinition[] = [
         defaultVisible: true,
         defaultOrder: 148,
         nodeToolbar: { group: "workspace", order: 30, section: "项目剪辑", description: "打开项目时间线，定位到当前素材" },
-        applicable: (ctx) => hasVideo(ctx) || hasAudio(ctx),
+        // Keep the video editing entry hidden until the editing workflow is ready.
+        applicable: hasAudio,
         run: (ctx) => ctx.handlers.onNodeTimeline(ctx.node!),
     },
     {

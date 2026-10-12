@@ -1822,6 +1822,32 @@ function InfiniteCanvasPage() {
         updateProject,
     });
 
+    useEffect(() => {
+        const starter = searchParams.get("start");
+        if (!projectLoaded || (starter !== "director" && starter !== "agent")) return;
+
+        let frame = 0;
+        const startWhenCanvasIsLaidOut = () => {
+            const rect = containerRef.current?.getBoundingClientRect();
+            if (!rect || rect.width <= 0 || rect.height <= 0) {
+                frame = requestAnimationFrame(startWhenCanvasIsLaidOut);
+                return;
+            }
+
+            if (starter === "director" && !nodesRef.current.some((node) => node.type === CanvasNodeType.Director)) {
+                createDirectorShot();
+            } else if (starter === "agent") {
+                openAssistant();
+            }
+
+            const next = new URLSearchParams(searchParams);
+            next.delete("start");
+            setSearchParams(next, { replace: true });
+        };
+        frame = requestAnimationFrame(startWhenCanvasIsLaidOut);
+        return () => cancelAnimationFrame(frame);
+    }, [containerRef, createDirectorShot, nodesRef, openAssistant, projectLoaded, searchParams, setSearchParams]);
+
     const {
         activateStep: activateShortDramaStep,
         createPipeline: createShortDramaPipeline,

@@ -77,24 +77,23 @@ export function StorageSettingsPane() {
             },
         });
     return (
-        <section className="settings-section space-y-4" aria-label="本地存储">
+        <section className="settings-section storage-settings-block space-y-4" aria-label="本地存储">
             <div className="settings-pane-header">
                 <div className="min-w-0">
                     <h2>本地存储</h2>
-                    <p>项目、素材和模型配置存放在此处，可迁移到其他磁盘。</p>
                 </div>
             </div>
-            <div className="space-y-2 text-sm">
-                <div className="break-all">当前目录：{usage?.dataDir || "正在读取…"}</div>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 text-sm">
+                <div className="min-w-0 break-all">当前目录：{usage?.dataDir || "正在读取…"}</div>
                 {usage ? (
-                    <p className="text-foreground/60">
+                    <p className="shrink-0 text-foreground/60">
                         数据占用 {size(usage.usedBytes)} · 磁盘剩余 {size(usage.freeBytes)}
                     </p>
                 ) : null}
             </div>
-            <label className="block space-y-2">
-                <span className="text-sm">新存储目录</span>
-                <div className="flex min-w-0 flex-wrap gap-2">
+            <label className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="shrink-0 text-sm">新存储目录：</span>
+                <div className="flex min-w-0 flex-1 flex-wrap gap-2">
                     <Input className="min-w-0 flex-1" aria-label="新存储目录" value={target} onChange={(event) => setTarget(event.target.value)} placeholder="例如 D:\BeefTV" disabled={busy} />
                     <Button icon={<FolderOpen className="size-4" />} onClick={choose} disabled={busy}>
                         选择文件夹

@@ -406,7 +406,7 @@ async function applyBackendCanvasRead(
  * Desktop ongoing saves commit through the operations registry. IndexedDB is
  * the offline cache, so a stopped backend never prevents opening a project.
  */
-export async function createLocalCanvasProject(title: string, projectId?: string, initialContent?: LocalCanvasContent, workspaceProjectId?: string) {
+export function beginLocalCanvasProject(title: string, projectId?: string, initialContent?: LocalCanvasContent, workspaceProjectId?: string) {
     const expected = captureUserScope();
     const id = useCanvasStore.getState().createProject(title, projectId, workspaceProjectId);
     if (initialContent) useCanvasStore.getState().updateProject(id, initialContent);
@@ -416,13 +416,19 @@ export async function createLocalCanvasProject(title: string, projectId?: string
     // Desktop restarts hydrate from the co-packaged Go repository. Creating a
     // project only in IndexedDB leaves the runtime returning 404 and allows its
     // detached-resource cleanup to delete media that the canvas still uses.
-    await syncLocalCanvasProject(id, false, expected);
+    const saved = syncLocalCanvasProject(id, false, expected);
     // IndexedDB is an offline cache, not the desktop source of truth. A stuck
     // WebKit storage transaction must never block navigation after the Go
     // repository has durably accepted the project.
     void flushCanvasStorePersistence().catch((error) => {
         console.error("画布本地缓存写入失败，已保存到桌面数据库", { id, error });
     });
+    return { id, saved };
+}
+
+export async function createLocalCanvasProject(title: string, projectId?: string, initialContent?: LocalCanvasContent, workspaceProjectId?: string) {
+    const { id, saved } = beginLocalCanvasProject(title, projectId, initialContent, workspaceProjectId);
+    await saved;
     return { id };
 }
 
@@ -854,7 +860,12 @@ export async function hydrateLocalCanvasProjectsFromBackend() {
             byId.set(project.id, applied);
         }
         if (!matchesDispatchGuard(expected)) return false;
-        useCanvasStore.setState({ projects: [...byId.values()] });
+        // A user may create a canvas while this older backend snapshot is
+        // loading. Keep projects added after `byId` was captured.
+        useCanvasStore.setState((state) => ({ projects: [
+            ...state.projects.filter((project) => !byId.has(project.id)),
+            ...byId.values(),
+        ] }));
         await flushCanvasStorePersistence();
         return true;
     } catch (error) {

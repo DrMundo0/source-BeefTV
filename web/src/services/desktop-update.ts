@@ -82,6 +82,7 @@ export function parseDesktopUpdateState(value: unknown, fallbackCurrentVersion =
     const status = isDesktopUpdateStatus(source.status) ? source.status : error ? "error" : "idle";
     return {
         status,
+        ...(source.installPrepared === true ? { installPrepared: true } : {}),
         currentVersion,
         latestVersion: readText(source.latestVersion),
         releaseNotes: readText(source.releaseNotes),
@@ -114,7 +115,10 @@ export function shouldPollDesktopUpdate(status: DesktopUpdateStatus): boolean {
 
 export function desktopUpdateProgressPercent(state: DesktopUpdateState): number | null {
     if (state.totalBytes <= 0) return null;
-    return Math.min(100, Math.round((state.downloadedBytes / state.totalBytes) * 100));
+    if (state.status === "installing" && state.installPrepared) return 100;
+    if (state.status === "installing") return 98;
+    if (state.status === "ready") return 96;
+    return Math.min(95, Math.floor((state.downloadedBytes / state.totalBytes) * 95));
 }
 
 export function formatDesktopUpdateBytes(bytes: number): string {
@@ -397,11 +401,16 @@ export function createDesktopUpdateController(options: DesktopUpdateControllerOp
         }
         persistBusy = false;
         actionBusy = true;
-        apply({ ...state, status: "installing", error: "" }, { persistBusy: false, actionBusy: true });
+        apply({ ...state, status: "installing", installPrepared: false, error: "" }, { persistBusy: false, actionBusy: true });
         try {
             await binding.InstallUpdate();
             if (disposed) return;
             apply({ ...state, status: "installing", error: "" }, { actionBusy: false });
+            // A late status read must never turn a started installation into a retry.
+            try {
+                const latest = await binding.UpdateStatus();
+                if (!disposed && (latest.status === "installing" || latest.status === "error")) apply(latest);
+            } catch { /* The application may already be exiting; polling remains the fallback. */ }
         } catch (error) {
             if (disposed) return;
             stagedReady = true;

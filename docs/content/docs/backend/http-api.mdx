@@ -17,6 +17,8 @@ Wails 和浏览器开发模式共用同一套 `127.0.0.1` HTTP 合同。路由�
 
 模型目录通过本地后端读取。模型测试使用正常任务入口，等待最终文本或媒体结果才显示通过；测试会产生供应商费用，须先确认。测试结果不证明画布回填、媒体解码或最终账务结算。
 
+`POST /ai/models` 支持 OpenAI 的 `data` 数组和 Gemini 的 `models` 数组；空数组表示有效的空目录，缺少数组或结构不匹配会返回 `catalog_response_invalid`。目录出站请求最长 25 秒，前端请求最长 30 秒，可主动取消。失败响应的 `reason` 区分 `catalog_address_invalid`、`catalog_auth_failed`、`catalog_unsupported`、`catalog_timeout`、`catalog_network_failed`、`catalog_rate_limited`、`catalog_upstream_rejected` 和 `catalog_upstream_failed`。目录不支持不代表生成接口不可用，用户仍可手动添加模型 ID。
+
 `POST /assistant/ui-session` 返回仅驻留内存、绑定当前 owner 的 `token` 与 `expiresAt`。界面在到期前 30 秒重新签发凭据，同一身份的并发请求共用签发结果；重置或切换身份后旧响应不能恢复旧凭据。签发仍要求原有本机同源与 owner/桌面引导校验。
 
 `POST /assistant/chat` 的响应头 `X-Beeftv-Turn-Admission` 区分 `rejected`（尚未调用业务轮次入口）、`unknown`（已经尝试开始轮次）与 `admitted`（已创建轮次）。仅明确的 `rejected` 或尚未发送消息的签发失败可按未接纳处理；缺少标记、网络错误或接纳后的断流仍需读取回执与画布确认。凭据续签和 403 失效处理都不会自动重放消息。
