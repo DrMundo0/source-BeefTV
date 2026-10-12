@@ -221,6 +221,8 @@ def windows_custom_install_dir(installer, root):
     assert (apps / 'BeefTV' / 'BeefTV.exe').is_file()
     assert (apps / 'other.txt').read_bytes() == b'other app'
     assert install_location() == str(apps / 'BeefTV'), install_location()
+    assert not (installed / 'BeefTV.exe').exists(), 'moving the install left the old executable behind'
+    assert not (installed / 'Uninstall.exe').exists(), 'moving the install left a stale uninstaller behind'
     subprocess.run([str(apps / 'BeefTV' / 'Uninstall.exe'), '/S'], check=True, timeout=90)
     deadline = time.monotonic() + 90
     while (apps / 'BeefTV').exists() and time.monotonic() < deadline:

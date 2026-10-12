@@ -271,6 +271,7 @@ func (e *Engine) DownloadUpdate(ctx context.Context) (UpdateState, error) {
 		return e.snapshot(), ErrNotAvailable
 	}
 	e.set(func(state *UpdateState) {
+		state.InstallPrepared = false
 		state.Status = StatusDownloading
 		state.LatestVersion = verified.payload.Version
 		state.ReleaseNotes = verified.payload.Notes
@@ -351,16 +352,22 @@ func (e *Engine) InstallUpdate(ctx context.Context) error {
 		return ErrNotReady
 	}
 	e.set(func(state *UpdateState) {
+		state.InstallPrepared = false
 		state.Status = StatusInstalling
 		state.Error = ""
 	})
 	if err := e.prepareAndStartHelper(ctx, staged); err != nil {
-		e.fail(publicError(err))
-		return wrapPublic(err)
+		e.logf("install preparation failed: %v", err)
+		e.fail(publicInstallError(err))
+		return fmt.Errorf("%s", publicInstallError(err))
 	}
+	e.set(func(state *UpdateState) { state.InstallPrepared = true })
+	e.logf("install prepared version=%s; requesting exit", staged.version)
 	if e.quit != nil {
 		if err := e.quit(); err != nil {
 			e.killHelper()
+			e.logf("install quit failed: %v", err)
+			e.set(func(state *UpdateState) { state.InstallPrepared = false })
 			e.fail("应用无法退出，已取消安装。")
 			return err
 		}
@@ -390,7 +397,8 @@ func (e *Engine) monitorHelper() {
 	e.mu.Unlock()
 	if done != nil {
 		go func() {
-			<-done
+			helperErr := <-done
+			e.logf("install helper stopped: %v", helperErr)
 			// Normally this UI process has exited before the helper completes.
 			// If still alive, quit was vetoed or the helper failed: permit retry.
 			e.mu.Lock()
@@ -400,6 +408,7 @@ func (e *Engine) monitorHelper() {
 				e.helperDone = nil
 				if e.state.Status == StatusInstalling {
 					e.state.Status = StatusError
+					e.state.InstallPrepared = false
 					e.state.Error = "应用未能退出或安装程序已停止，请重试更新。"
 				}
 			}

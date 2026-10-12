@@ -17,6 +17,8 @@ Var StageDir
 Var BackupDir
 Var CleanDir
 Var InstallParent
+Var PreviousInstallDir
+Var RegisteredInstallDir
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "BeefTV"
 VIAddVersionKey "FileVersion" "${VERSION}"
@@ -212,6 +214,7 @@ FunctionEnd
 
 Function .onInit
   SetShellVarContext current
+  ReadRegStr $PreviousInstallDir HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "InstallLocation"
   Call RequireClosed
   # Interactive runs validate on the directory page; /D= needs the same checks here.
   ${If} ${Silent}
@@ -298,6 +301,14 @@ Section "BeefTV (required)" SEC_APP
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "DisplayIcon" "$INSTDIR\BeefTV.exe"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "NoRepair" 1
+  # A successful move replaces the registered install; remove only the old
+  # installer's shipped payload. Unknown user files remain in that directory.
+  ${If} $PreviousInstallDir != ""
+  ${AndIf} $PreviousInstallDir != $INSTDIR
+  ${AndIf} ${FileExists} "$PreviousInstallDir\.installed-root-files.txt"
+    StrCpy $CleanDir "$PreviousInstallDir"
+    Call RemovePayload
+  ${EndIf}
 SectionEnd
 
 Section /o "Desktop shortcut" SEC_DESKTOP
@@ -315,9 +326,14 @@ Section "Uninstall"
   SetOutPath "$0"
   StrCpy $CleanDir "$INSTDIR"
   Call un.RemovePayload
-  Delete "$DESKTOP\BeefTV.lnk"
-  Delete "$SMPROGRAMS\BeefTV\BeefTV.lnk"
-  Delete "$SMPROGRAMS\BeefTV\Uninstall.lnk"
-  RMDir "$SMPROGRAMS\BeefTV"
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV"
+  # A stale uninstaller copied from an older location must not unregister
+  # or remove shortcuts for the current installation.
+  ReadRegStr $RegisteredInstallDir HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "InstallLocation"
+  ${If} $RegisteredInstallDir == $INSTDIR
+    Delete "$DESKTOP\BeefTV.lnk"
+    Delete "$SMPROGRAMS\BeefTV\BeefTV.lnk"
+    Delete "$SMPROGRAMS\BeefTV\Uninstall.lnk"
+    RMDir "$SMPROGRAMS\BeefTV"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV"
+  ${EndIf}
 SectionEnd

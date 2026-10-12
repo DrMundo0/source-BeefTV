@@ -15,6 +15,7 @@ const (
 
 // UpdateState is the Wails JSON contract. Field names must stay stable.
 type UpdateState struct {
+	InstallPrepared bool   `json:"installPrepared,omitempty"`
 	Status          string `json:"status"`
 	CurrentVersion  string `json:"currentVersion"`
 	LatestVersion   string `json:"latestVersion"`

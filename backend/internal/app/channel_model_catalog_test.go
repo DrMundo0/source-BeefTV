@@ -3,12 +3,35 @@ package app
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
 	"infinite-canvas/backend/internal/beefapi"
 	"infinite-canvas/backend/internal/model"
 )
+
+func TestChannelCatalogErrorsHaveStableReasons(t *testing.T) {
+	for _, item := range []struct {
+		status int
+		reason string
+	}{
+		{http.StatusUnauthorized, "catalog_auth_failed"},
+		{http.StatusForbidden, "catalog_auth_failed"},
+		{http.StatusNotFound, "catalog_unsupported"},
+		{http.StatusTooManyRequests, "catalog_rate_limited"},
+	} {
+		err := channelModelsUpstreamError(providerHTTPError{StatusCode: item.status})
+		var classified *AppError
+		if !errors.As(err, &classified) || string(classified.Reason) != item.reason {
+			t.Fatalf("status %d: %#v", item.status, err)
+		}
+	}
+	var timeout *AppError
+	if !errors.As(channelModelsUpstreamError(context.DeadlineExceeded), &timeout) || timeout.Reason != "catalog_timeout" {
+		t.Fatal("timeout not classified")
+	}
+}
 
 func TestFetchChannelModelCatalogRejectsCredentialsWithoutNetwork(t *testing.T) {
 	svc := &Service{}

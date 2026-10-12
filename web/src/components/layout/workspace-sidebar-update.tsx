@@ -53,7 +53,7 @@ export function WorkspaceSidebarUpdate({ collapsed }: { collapsed: boolean }) {
     const line = showControls ? statusLine(state, persistBusy, latest, percent) : null;
     const amount = state.totalBytes > 0 ? desktopUpdateProgressLabel(state) : "";
     const tooltip = line ? [line.title, amount, line.detail].filter(Boolean).join("\n") : updateLabel;
-    const showBar = state.status === "downloading" || (line?.tone === "paused" && line.percent !== null);
+    const showBar = ["downloading", "ready", "installing"].includes(state.status) || persistBusy || (line?.tone === "paused" && line.percent !== null);
     const handleUpdate = () => {
         if (state.status === "error") return showControls ? updater.downloadAndInstall() : updater.retry();
         return showControls ? updater.downloadAndInstall() : updater.check();
@@ -78,7 +78,7 @@ function UpdateProgressBar({ state, percent, reducedMotion, paused }: { state: D
         <span
             className={cn("app-workspace-update-progress-bar", paused && "is-paused")}
             role="progressbar"
-            aria-label="更新下载进度"
+            aria-label="更新准备进度"
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={percent ?? undefined}

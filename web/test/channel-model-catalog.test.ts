@@ -26,6 +26,17 @@ afterEach(() => {
     apiClient.request = originalApiRequest;
 });
 
+test("backend discovery forwards cancellation and preserves AbortError", async () => {
+    const controller = new AbortController();
+    let received: AbortSignal | undefined;
+    apiClient.request = (async (config: { signal?: AbortSignal }) => {
+        received = config.signal;
+        throw new DOMException("cancelled", "AbortError");
+    }) as typeof apiClient.request;
+    await expect(fetchChannelModels(createModelChannel({ id: "custom", baseUrl: "https://example.test/v1", apiKey: "dummy" }), true, controller.signal)).rejects.toBeInstanceOf(DOMException);
+    expect(received).toBe(controller.signal);
+});
+
 const omniCatalog: ChannelModelCatalogItem = {
     id: "omni",
     displayName: "Omni Flash",
