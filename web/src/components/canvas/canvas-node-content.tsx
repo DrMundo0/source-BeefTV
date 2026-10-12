@@ -4,6 +4,7 @@ import { AlertCircle, BookOpenCheck, Clock3, Download, FileText, Image as ImageI
 import { VideoPlayer } from "@/components/video-player";
 import { CachedResourceImage } from "@/components/cached-resource-image";
 import { GenerationFailureNotice } from "@/components/generation/generation-failure-notice";
+import { generationDeliveryProgressView } from "@/lib/generation-delivery-progress";
 import { explainGenerationError } from "@/lib/generation-error";
 import { formatGenerationElapsed, generationProgressDisplay, generationTaskShowsProgress, isGenerationTaskSubmissionUncertain, trackGenerationProgressChange, type GenerationProgressRecord } from "@/lib/generation-task-display";
 import { canvasRichTextHTML } from "@/lib/canvas/canvas-rich-text";
@@ -25,6 +26,7 @@ import { resolveImageUrl } from "@/services/image-storage";
 import { acquireCanvasVideoPreview, canvasDerivedPreviewSourceKey, canvasVideoPreviewNeedsHydration } from "@/services/canvas-video-preview";
 import { acquireCanvasVideoSource } from "@/services/canvas-video-source";
 import { getActiveUserScopeEpoch, subscribeUserScope } from "@/lib/user-scope";
+import { useGenerationDeliveryProgress } from "@/stores/use-generation-delivery-progress";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { ART_CRITIQUE_NODE_TYPE } from "@/lib/art-critique/contracts";
@@ -208,22 +210,28 @@ function LoadingContent({ node, theme, onOpenTaskDetails, onCancelTask }: Pick<C
     const elapsed = Number.isFinite(createdAtMs) ? `已用 ${formatGenerationElapsed(now - createdAtMs)}` : "刚刚开始";
     const progressKey = taskId || node.id;
     const progressRecord = progress !== null ? rememberProgressChange(progressKey, progress, now) : undefined;
-    const progressView = generationProgressDisplay({
+    const generationView = generationProgressDisplay({
         status: displayTask.status,
         progress,
         progressChangedAt: progressRecord?.changedAt,
         now,
         isVideo: node.type === CanvasNodeType.Video,
     });
+    const deliveryProgress = useGenerationDeliveryProgress((state) => (taskId ? state.byTask[taskId] : undefined));
+    const delivery = deliveryProgress ? generationDeliveryProgressView(deliveryProgress) : null;
+    const fetchingResult = Boolean(delivery) || displayTask.status === "succeeded";
+    const progressView = delivery ? { percent: delivery.percent, bar: delivery.percent !== null ? "determinate" : "indeterminate" } : generationView;
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2.5 px-5 text-center" style={{ color: theme.node.activeStroke }}>
             {submissionUncertain ? <AlertCircle className="size-10" /> : <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />}
-            <span className="text-[var(--fs-tiny)] font-semibold">生成中</span>
+            <span className="text-[var(--fs-tiny)] font-semibold">{delivery?.title || (fetchingResult ? "正在取回结果" : "生成中")}</span>
             {hasTaskIdentity ? (
                 <div className="flex w-full max-w-[210px] flex-col items-center gap-1.5">
-                    <div className="max-w-full truncate text-sm font-semibold tabular-nums" style={{ color: theme.node.text }}>
-                        <Clock3 className="mr-1 inline size-3.5 align-[-2px]" />{elapsed}
-                    </div>
+                    {fetchingResult ? null : (
+                        <div className="max-w-full truncate text-sm font-semibold tabular-nums" style={{ color: theme.node.text }}>
+                            <Clock3 className="mr-1 inline size-3.5 align-[-2px]" />{elapsed}
+                        </div>
+                    )}
                     {progressView.percent !== null ? <div className="max-w-full truncate text-[var(--fs-label)] font-medium" style={{ color: theme.node.text }}>{progressView.percent}%</div> : null}
                     {progressView.bar === "determinate" && progressView.percent !== null ? (
                         <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ background: theme.node.stroke }}>
@@ -231,10 +239,11 @@ function LoadingContent({ node, theme, onOpenTaskDetails, onCancelTask }: Pick<C
                         </div>
                     ) : null}
                     {progressView.bar === "indeterminate" ? (
-                        <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ background: theme.node.stroke }} role="progressbar" aria-label="仍在生成">
+                        <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ background: theme.node.stroke }} role="progressbar" aria-label={fetchingResult ? "正在取回结果" : "仍在生成"}>
                             <div className="canvas-node-progress-indeterminate h-full rounded-full" style={{ background: theme.node.activeStroke }} />
                         </div>
                     ) : null}
+                    {delivery?.detail ? <div className="max-w-full truncate text-[var(--fs-tiny)] tabular-nums" style={{ color: theme.node.muted }}>{delivery.detail}</div> : null}
                     <div className="mt-0.5 flex items-center gap-1.5">
                         <button type="button" className="inline-flex h-7 items-center gap-1 rounded-[var(--r-sm)] px-2 text-[var(--fs-tiny)] font-medium transition-colors" style={{ background: theme.toolbar.itemHover, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenTaskDetails?.(node); }}><FileText className="size-3" />详情</button>
                         {onCancelTask && (displayTask.status === "queued" || displayTask.status === "running") ? (
@@ -322,7 +331,7 @@ function ErrorContent({ node, theme, onRetry, onReloadResource, onOpenTaskDetail
                     onMouseDown={(event) => event.stopPropagation()}
                 >
                     <Download className="size-3.5" />
-                    重新加载资源
+                    继续取回
                 </button>
             ) : null}
         </div>

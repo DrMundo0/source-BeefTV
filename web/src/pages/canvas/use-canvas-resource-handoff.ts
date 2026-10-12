@@ -22,6 +22,7 @@ import { CanvasNodeType, type CanvasNodeData, type Position } from "@/types/canv
 
 import { readOwnedCanvasNodes, runOwnedCanvasEnsureQueue, runOwnedCanvasPageCommit, useCanvasOwnerLifetime } from "./canvas-owner-epoch";
 import { applyArchivedCanvasNodeAssets, CANVAS_HANDOFF_PERSIST_FAILED_MESSAGE, commitOwnedCanvasAssetHandoff, rebaseCreatedCanvasNodes } from "./canvas-resource-handoff-commit";
+import { canvasGenerationFailureMetadata } from "./canvas-generation-failure";
 import { linkedFolderPresentation, planCanvasHandoffEffect, resolveCanvasAssetHandoffPlan } from "./canvas-resource-handoff-plan";
 
 const NODE_STATUS_SUCCESS = "success" as const;
@@ -294,16 +295,20 @@ export function useCanvasResourceHandoff({
             if (!taskId || !node.metadata?.resourceReloadAvailable) return;
             const owner = lifetime.capture(projectId);
             const targetNodeId = node.id;
-            // 查询旧任务不改变可恢复状态，切换画布后仍可再次重新加载。
+            // 继续取回只等待并绑定原任务已生成的结果，不会重新提交生成。
+            // 等待期间节点显示取回进度；失败后仍保留「继续取回」。
+            setNodes((current) =>
+                current.map((item) => (item.id === targetNodeId ? { ...item, metadata: { ...item.metadata, status: "loading", errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined } } : item)),
+            );
             try {
                 const task = await queryGenerationTask(taskId);
                 if (!lifetime.matches(owner, projectIdRef.current)) return;
-                if (task.status !== "succeeded") throw new Error("原生成任务尚未成功，无法重新加载资源");
+                if (task.status !== "succeeded") throw new Error("原生成任务尚未成功，暂时无法取回结果");
                 await applyGenerationTaskResult(targetNodeId, task);
             } catch (error) {
                 if (!lifetime.matches(owner, projectIdRef.current)) return;
                 setNodes((current) =>
-                    current.map((item) => (item.id === targetNodeId ? { ...item, metadata: { ...item.metadata, status: "error", errorDetails: error instanceof Error ? error.message : "资源重新加载失败", resourceReloadAvailable: true } } : item)),
+                    current.map((item) => (item.id === targetNodeId ? { ...item, metadata: { ...item.metadata, status: "error", ...canvasGenerationFailureMetadata(error, { prompt: item.metadata?.prompt || "" }), resourceReloadAvailable: true } } : item)),
                 );
             }
         },

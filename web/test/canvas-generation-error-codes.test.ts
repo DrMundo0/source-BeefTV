@@ -37,7 +37,7 @@ describe("generation result-apply error codes", () => {
     test("materialization failure is a download failure, not a canvas conflict", () => {
         const error = new CanvasGenerationMaterializationError(new Error("connection reset"));
         expect(error.code).toBe("download_failed");
-        expect(error.message).toContain("还没下载完成");
+        expect(error.message).toContain("还没取回");
         expect(explainGenerationError(error).category).toBe("download_failed");
         expect(shouldBlockAutomaticRetry(error)).toBe(true);
         expect(shouldBlockAutomaticRetry({ code: "download_failed" })).toBe(true);

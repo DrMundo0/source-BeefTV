@@ -177,4 +177,44 @@ describe("bindBackendCanvasGenerationResult waits for delivery", () => {
         expect(refreshes).toBeGreaterThanOrEqual(1);
         expect(bindCalls).toBe(2);
     });
+
+    test("publishes fetch progress while waiting and clears it once delivered", async () => {
+        const loading = canvasNode("node-1", { taskId: "task-1", status: "loading" });
+        const project = canvasProject("canvas-1", [{ ...loading, metadata: { ...loading.metadata, status: "success", content: "/api/resources/res-1/file" } }], 4);
+        useCanvasStore.setState({ projects: [canvasProject("canvas-1", [loading], 3)] });
+        const nodesRef = { current: [loading] };
+        const identity = captured("user-a", 1);
+        const downloading = (downloadedBytes: number, state: "downloading" | "retrying" = "downloading") =>
+            mediaTask({ outputs: [{ outputIndex: 0, mediaType: "video" }], delivery: { outputs: [{ outputIndex: 0, downloadedBytes, totalBytes: 4_000_000, bytesPerSecond: 1_000_000, state }] } });
+        const sequence = [downloading(2_000_000, "retrying"), downloading(3_000_000), mediaTask({ outputs: [{ outputIndex: 0, mediaType: "video", materializedAssetId: "generation_abc" }] })];
+        const published: Array<number | undefined> = [];
+
+        await applyLikeCaller({
+            canvasId: "canvas-1",
+            nodeId: "node-1",
+            task: downloading(1_000_000),
+            isCurrent: () => true,
+            nodesRef,
+            setNodes: (value) => {
+                nodesRef.current = typeof value === "function" ? value(nodesRef.current) : value;
+            },
+            runtime: {
+                hydrateOutputs: async () => undefined,
+                persistDocument: async () => undefined,
+                bindOutput: async (input) => bindResponse(input.operationId, project, "node-1"),
+                adoptConfirmedProjection: async (adopted) => adopted,
+                captureScope: () => identity,
+                liveScope: () => identity,
+                refreshTask: async () => sequence.shift()!,
+                sleep: async () => undefined,
+                now: () => Date.now(),
+                publishDeliveryProgress: (taskId, progress) => {
+                    expect(taskId).toBe("task-1");
+                    published.push(progress?.downloadedBytes);
+                },
+            },
+        });
+
+        expect(published).toEqual([1_000_000, 2_000_000, 3_000_000, undefined, undefined]);
+    });
 });

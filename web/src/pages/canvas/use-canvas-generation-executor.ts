@@ -118,7 +118,7 @@ export function useCanvasGenerationExecutor({
                     const inputSkills = options?.confirmedInputs?.skills ?? addedSkills;
                     const sourceNode = inputNodes.find((node) => node.id === nodeId);
                     if (mode === "image" && canvasImageGenerationHasPendingResult(sourceNode, inputNodes)) {
-                        message.warning("生成结果已保留，请重新加载资源");
+                        message.warning("生成结果已保留，请点击「继续取回」");
                         return;
                     }
                     if (isCanvasNodeGenerating(nodesRef.current.find((node) => node.id === nodeId))) {

@@ -54,7 +54,7 @@ export async function executeImageGeneration({
     registerPendingNodeIds,
 }: CanvasGenerationExecution) {
     if (canvasImageGenerationHasPendingResult(sourceNode, canvasNodes)) {
-        showError("生成结果已保留，请重新加载资源");
+        showError("生成结果已保留，请点击「继续取回」");
         return;
     }
     const expectedScope = captureUserScope();
@@ -306,7 +306,7 @@ export async function executeImageGeneration({
         });
         return;
     }
-    if (hasFailure) showError(isKeptGenerationResultCode(representativeFailure?.generationErrorCode) ? "生成结果已保留，请重新加载资源" : saveFailureMessage || (hasSuccess ? "部分图片生成失败" : "全部图片生成失败"));
+    if (hasFailure) showError(isKeptGenerationResultCode(representativeFailure?.generationErrorCode) ? "生成结果已保留，请点击「继续取回」" : saveFailureMessage || (hasSuccess ? "部分图片生成失败" : "全部图片生成失败"));
     setNodes((current) => {
         const next = current.map((node) => {
             if (node.id === nodeId && isConfigNode) {

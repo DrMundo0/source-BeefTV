@@ -25,7 +25,7 @@ function submittedReferences(input: CanvasGenerationFailureInput) {
     }));
 }
 
-// “结果已保留、可重新加载资源”的三类码：画布版本冲突、下载失败、放回画布失败。
+// “结果已保留、可继续取回”的三类码：画布版本冲突、下载失败、放回画布失败。
 const KEPT_GENERATION_RESULT_CODES = new Set(["canvas_conflict", "download_failed", "result_apply_failed"]);
 
 export function isKeptGenerationResultCode(code: string | undefined) {
@@ -97,7 +97,7 @@ export function canvasGenerationTaskNodes(nodes: CanvasNodeData[], targetNodeId:
                 ...generationTaskMetadata(task),
                 status: failed || retainRecovery ? "error" : hasCompletedContent ? "success" : "loading",
                 ...(failure || (retainRecovery
-                    ? { resourceReloadAvailable: true, generationErrorCode: node.metadata?.generationErrorCode, errorDetails: node.metadata?.errorDetails || "生成结果已保留，请重新加载资源" }
+                    ? { resourceReloadAvailable: true, generationErrorCode: node.metadata?.generationErrorCode, errorDetails: node.metadata?.errorDetails || "生成结果已保留，请点击「继续取回」" }
                     : { errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined, failedPromptFingerprint: undefined, failedInputFingerprint: undefined })),
             },
         };

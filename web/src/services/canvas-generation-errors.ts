@@ -17,7 +17,7 @@ export class CanvasGenerationMaterializationError extends Error {
     readonly cause: unknown;
 
     constructor(cause?: unknown) {
-        super("生成结果还没下载完成，已保留在任务里");
+        super("生成结果还没取回，可以继续取回");
         this.name = "CanvasGenerationMaterializationError";
         this.cause = cause;
     }

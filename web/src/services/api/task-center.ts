@@ -17,6 +17,15 @@ export type GenerationTaskOutput = {
     materializationErrorCode?: string;
 };
 
+export type GenerationTaskDeliveryProgress = {
+    outputIndex: number;
+    downloadedBytes: number;
+    /** -1 when the remote size is unknown. */
+    totalBytes: number;
+    bytesPerSecond: number;
+    state: "downloading" | "retrying";
+};
+
 export type GenerationTask = {
     failureDiagnostics?: import("@/lib/generation-error").GenerationFailureDiagnostics;
     id: string;
@@ -48,6 +57,8 @@ export type GenerationTask = {
     resultJson?: string;
     resultState?: GenerationTaskResultState;
     outputs?: GenerationTaskOutput[];
+    /** Present only while the backend is fetching a result to local storage. */
+    delivery?: { outputs: GenerationTaskDeliveryProgress[] };
     textDraft?: string;
     error?: string;
     attempts: number;

@@ -19,7 +19,7 @@ const task: GenerationTask = { id: "task-original", type: "canvas_image", status
 beforeEach(() => useCanvasStore.setState({ projects: [structuredClone(project)] }));
 
 test("restoring a completed image retains recovery flags and cannot open a second paid generation", () => {
-    const target = { ...project.nodes[0], metadata: { taskId: task.id, taskStatus: "succeeded" as const, status: "error" as const, resourceReloadAvailable: true, generationErrorCode: "canvas_conflict" as const, errorDetails: "生成结果已保留，请重新加载资源" } };
+    const target = { ...project.nodes[0], metadata: { taskId: task.id, taskStatus: "succeeded" as const, status: "error" as const, resourceReloadAvailable: true, generationErrorCode: "canvas_conflict" as const, errorDetails: "生成结果已保留，请点击「继续取回」" } };
     const restored = canvasGenerationTaskNodes([target], target.id, task)[0];
     expect(restored.metadata).toMatchObject({ status: "error", taskStatus: "succeeded", resourceReloadAvailable: true, generationErrorCode: "canvas_conflict" });
     expect(isCanvasNodeGenerating(restored)).toBe(true);
@@ -115,7 +115,7 @@ test("main generation and batch generation stop before changing nodes when a pai
             showError: (value: string) => notices.push(value),
         } as unknown as CanvasGenerationExecution);
         expect(mutations).toBe(0);
-        expect(notices).toEqual(["生成结果已保留，请重新加载资源"]);
+        expect(notices).toEqual(["生成结果已保留，请点击「继续取回」"]);
     }
 });
 
