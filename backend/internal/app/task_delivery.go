@@ -68,6 +68,7 @@ func (s *Service) attachTaskDelivery(task *model.Task) {
 	proj := taskdelivery.Project(*task, stored, loadErr, persistedFailureBlocksRetry(task.Error, task.Stage))
 	task.Outputs = modelTaskOutputs(proj.Outputs)
 	task.ResultState = proj.ResultState
+	task.Delivery = s.deliveryProgressRegistry().forTask(task.ID)
 }
 
 func (s *Service) attachTaskSummaryDeliveries(tasks []model.Task, summaries []TaskSummary) {
@@ -93,6 +94,7 @@ func (s *Service) attachTaskSummaryDeliveries(tasks []model.Task, summaries []Ta
 		proj := taskdelivery.Project(task, byTask[task.ID], taskLoadErr, persistedFailureBlocksRetry(task.Error, task.Stage))
 		summaries[index].Outputs = proj.Outputs
 		summaries[index].ResultState = proj.ResultState
+		summaries[index].Delivery = s.deliveryProgressRegistry().forTask(task.ID)
 	}
 }
 
@@ -308,10 +310,15 @@ func (a generationDeliveryMediaAdapter) decodeGenerationArtifact(userID, identit
 			return "", nil, "", "", 0, 0, 0, policyErr
 		}
 		maxBytes := megabytes(policy.Resource.GeneratedFileMB) + 1
+		progress := a.service.deliveryProgressRegistry()
 		result, downloadErr := outbound.DownloadResumable(context.Background(), artifactURL, outbound.ResumableOptions{
 			PartialPath: a.artifactDownloadPartialPath(userID, identity),
 			MaxBytes:    maxBytes,
+			OnProgress: func(update outbound.ResumableProgress) {
+				progress.record(identity, deliveryProgressFromOutbound(identity, update))
+			},
 		})
+		progress.clear(identity)
 		if downloadErr != nil {
 			if errors.Is(downloadErr, outbound.ErrResourceTooLarge) {
 				return "", nil, "", "", 0, 0, 0, BadAuthRequest(fmt.Sprintf("远程资源必须小于 %s", formatStorageLimit(maxBytes)))

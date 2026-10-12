@@ -83,6 +83,8 @@ type Service struct {
 	generationDeliveryMedia  taskdelivery.Media
 	generationDelivery       *taskdelivery.Deliverer
 	deliveryMu               sync.Mutex
+	deliveryProgress         *deliveryProgressRegistry
+	deliveryProgressOnce     sync.Once
 	tasks                    *localtask.Service
 	tasksOnce                sync.Once
 	workspaceOps             *operations.Registry

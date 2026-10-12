@@ -44,6 +44,7 @@ type Task struct {
 	ErrorCode                 string                  `json:"errorCode,omitempty" gorm:"-"`
 	ResultState               string                  `json:"resultState,omitempty" gorm:"-"`
 	Outputs                   []TaskOutput            `json:"outputs,omitempty" gorm:"-"`
+	Delivery                  *TaskDeliveryProgress   `json:"delivery,omitempty" gorm:"-"`
 	FailureDiagnostics        *TaskFailureDiagnostics `json:"failureDiagnostics,omitempty" gorm:"serializer:json;type:text"`
 	Attempts                  int                     `json:"attempts"`
 	StartedAt                 *time.Time              `json:"startedAt"`
@@ -163,4 +164,18 @@ type TaskOutputTarget struct {
 	MessageID      string `json:"messageId,omitempty"`
 	ConversationID string `json:"conversationId,omitempty"`
 	Source         string `json:"source,omitempty"`
+}
+
+// TaskDeliveryProgress is a transient, process-local view of in-flight artifact
+// downloads. It is never persisted and is absent once delivery finishes.
+type TaskDeliveryProgress struct {
+	Outputs []TaskDeliveryOutputProgress `json:"outputs"`
+}
+
+type TaskDeliveryOutputProgress struct {
+	OutputIndex     int    `json:"outputIndex"`
+	DownloadedBytes int64  `json:"downloadedBytes"`
+	TotalBytes      int64  `json:"totalBytes"`
+	BytesPerSecond  int64  `json:"bytesPerSecond"`
+	State           string `json:"state"`
 }

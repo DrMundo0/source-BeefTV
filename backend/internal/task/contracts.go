@@ -134,6 +134,7 @@ type Summary struct {
 	ClientContext             *ClientContext                `json:"clientContext,omitempty"`
 	ResultState               string                        `json:"resultState,omitempty"`
 	Outputs                   []CanonicalOutput             `json:"outputs,omitempty"`
+	Delivery                  *model.TaskDeliveryProgress   `json:"delivery,omitempty"`
 }
 
 type ClientContext struct {

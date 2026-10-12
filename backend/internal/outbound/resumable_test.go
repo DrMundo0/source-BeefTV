@@ -624,6 +624,202 @@ func TestDownloadResumableRestartsWhenRemoteTotalChanges(t *testing.T) {
 	}
 }
 
+func TestDownloadResumableProgressReportsTotalsAndThrottles(t *testing.T) {
+	allowLoopback(t)
+	const chunkSize = 1024
+	const chunks = 60
+	payload := resumableTestPayload(chunkSize * chunks)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+		w.WriteHeader(http.StatusOK)
+		for offset := 0; offset < len(payload); offset += chunkSize {
+			end := offset + chunkSize
+			if end > len(payload) {
+				end = len(payload)
+			}
+			_, _ = w.Write(payload[offset:end])
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}))
+	defer server.Close()
+
+	partial := filepath.Join(t.TempDir(), "artifact.part")
+	type event struct {
+		progress ResumableProgress
+		at       time.Time
+	}
+	var mu sync.Mutex
+	events := []event{}
+	startedAt := time.Now()
+	result, err := DownloadResumable(context.Background(), server.URL+"/artifact.png", ResumableOptions{
+		PartialPath: partial,
+		MaxBytes:    1 << 20,
+		Attempts:    1,
+		OnProgress: func(p ResumableProgress) {
+			mu.Lock()
+			events = append(events, event{progress: p, at: time.Now()})
+			mu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatalf("DownloadResumable() error = %v", err)
+	}
+	if !bytes.Equal(result.Data, payload) {
+		t.Fatalf("bytes differ: got %d want %d", len(result.Data), len(payload))
+	}
+	elapsed := time.Since(startedAt)
+
+	mu.Lock()
+	defer mu.Unlock()
+	downloading := make([]event, 0, len(events))
+	for _, item := range events {
+		if item.progress.State != "downloading" {
+			t.Fatalf("unexpected state %q", item.progress.State)
+		}
+		if item.progress.Attempt != 1 {
+			t.Fatalf("attempt = %d, want 1", item.progress.Attempt)
+		}
+		downloading = append(downloading, item)
+	}
+	if len(downloading) < 2 {
+		t.Fatalf("progress events = %d, want at least the attempt start and header report", len(downloading))
+	}
+	// 60 chunks delivered, but the emitter is throttled to one body report per
+	// 500ms, so the total must stay far below one-per-chunk.
+	maxEvents := 2 + int(elapsed/500*time.Millisecond) + 1
+	if len(downloading) > maxEvents {
+		t.Fatalf("progress events = %d, want <= %d over %s", len(downloading), maxEvents, elapsed)
+	}
+	if len(downloading) >= chunks/2 {
+		t.Fatalf("progress was not throttled: %d events for %d chunks", len(downloading), chunks)
+	}
+	// The attempt-start report has no total yet; the header report must carry it.
+	if downloading[0].progress.TotalBytes != -1 {
+		t.Fatalf("attempt start total = %d, want -1", downloading[0].progress.TotalBytes)
+	}
+	if downloading[1].progress.TotalBytes != int64(len(payload)) {
+		t.Fatalf("header total = %d, want %d", downloading[1].progress.TotalBytes, len(payload))
+	}
+	// Body reports are at least one throttle window apart.
+	for index := 2; index < len(downloading); index++ {
+		if gap := downloading[index].at.Sub(downloading[index-1].at); gap < 400*time.Millisecond {
+			t.Fatalf("body reports %d and %d only %s apart", index-1, index, gap)
+		}
+	}
+	// DownloadedBytes never decreases within the attempt.
+	for index := 1; index < len(downloading); index++ {
+		if downloading[index].progress.DownloadedBytes < downloading[index-1].progress.DownloadedBytes {
+			t.Fatalf("downloaded bytes decreased: %d then %d", downloading[index-1].progress.DownloadedBytes, downloading[index].progress.DownloadedBytes)
+		}
+	}
+}
+
+func TestDownloadResumableProgressReportsResumedOffsetAndPartialContentTotal(t *testing.T) {
+	allowLoopback(t)
+	payload := resumableTestPayload(30000)
+	var mu sync.Mutex
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests++
+		attempt := requests
+		mu.Unlock()
+		start := int64(0)
+		if rangeHeader := r.Header.Get("Range"); rangeHeader != "" {
+			parsed, ok := parseTestRange(rangeHeader, int64(len(payload)))
+			if !ok {
+				w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+				return
+			}
+			start = parsed
+		}
+		body := payload[start:]
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("ETag", `"artifact-v1"`)
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		if start > 0 {
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, len(payload)-1, len(payload)))
+			w.WriteHeader(http.StatusPartialContent)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+		if attempt == 1 {
+			cutTestConnection(w, body, 0.4)
+			return
+		}
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	partial := filepath.Join(t.TempDir(), "artifact.part")
+	var eventMu sync.Mutex
+	events := []ResumableProgress{}
+	result, err := DownloadResumable(context.Background(), server.URL+"/artifact.png", ResumableOptions{
+		PartialPath: partial,
+		MaxBytes:    1 << 20,
+		Attempts:    4,
+		OnProgress: func(p ResumableProgress) {
+			eventMu.Lock()
+			events = append(events, p)
+			eventMu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatalf("DownloadResumable() error = %v", err)
+	}
+	if !bytes.Equal(result.Data, payload) {
+		t.Fatalf("bytes differ: got %d want %d", len(result.Data), len(payload))
+	}
+
+	eventMu.Lock()
+	defer eventMu.Unlock()
+	attempt1 := []ResumableProgress{}
+	attempt2 := []ResumableProgress{}
+	retrying := []ResumableProgress{}
+	for _, item := range events {
+		switch {
+		case item.State == "retrying":
+			retrying = append(retrying, item)
+		case item.Attempt == 1:
+			attempt1 = append(attempt1, item)
+		case item.Attempt == 2:
+			attempt2 = append(attempt2, item)
+		}
+	}
+	if len(attempt1) == 0 || len(attempt2) == 0 {
+		t.Fatalf("progress attempts = %d/%d, want both", len(attempt1), len(attempt2))
+	}
+	// 200: the attempt start has no total yet, the header report has the real one.
+	if attempt1[0].TotalBytes != -1 || attempt1[0].DownloadedBytes != 0 {
+		t.Fatalf("attempt 1 start = %+v", attempt1[0])
+	}
+	if attempt1[len(attempt1)-1].TotalBytes != int64(len(payload)) {
+		t.Fatalf("attempt 1 total = %d, want %d", attempt1[len(attempt1)-1].TotalBytes, len(payload))
+	}
+	// 206: the resumed attempt reports the kept offset and the Content-Range total.
+	if attempt2[0].DownloadedBytes <= 0 {
+		t.Fatalf("resumed offset = %d, want > 0", attempt2[0].DownloadedBytes)
+	}
+	if attempt2[0].TotalBytes != int64(len(payload)) {
+		t.Fatalf("attempt 2 start total = %d, want %d", attempt2[0].TotalBytes, len(payload))
+	}
+	for index := 1; index < len(attempt2); index++ {
+		if attempt2[index].DownloadedBytes < attempt2[index-1].DownloadedBytes {
+			t.Fatalf("attempt 2 bytes decreased: %d then %d", attempt2[index-1].DownloadedBytes, attempt2[index].DownloadedBytes)
+		}
+		if attempt2[index].TotalBytes != int64(len(payload)) {
+			t.Fatalf("attempt 2 total = %d, want %d", attempt2[index].TotalBytes, len(payload))
+		}
+	}
+	if len(retrying) == 0 || retrying[0].Attempt != 2 || retrying[0].DownloadedBytes <= 0 {
+		t.Fatalf("retrying progress = %+v", retrying)
+	}
+}
+
 func TestDownloadResumableSerializesSamePartialPath(t *testing.T) {
 	allowLoopback(t)
 	payload := resumableTestPayload(16000)

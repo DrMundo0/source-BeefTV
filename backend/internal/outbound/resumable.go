@@ -29,6 +29,19 @@ type ResumableOptions struct {
 	HeaderTimeout time.Duration
 	IdleTimeout   time.Duration
 	Attempts      int
+	// OnProgress reports transfer progress. It is called synchronously from the
+	// download goroutine, never after DownloadResumable returns, and is throttled
+	// to resumableProgressInterval between body reads.
+	OnProgress func(ResumableProgress)
+}
+
+// ResumableProgress is a point-in-time snapshot of a resumable download.
+type ResumableProgress struct {
+	DownloadedBytes int64  // includes the resumed offset
+	TotalBytes      int64  // -1 when unknown
+	BytesPerSecond  int64  // smoothed over roughly the last 3s; 0 when stalled/unknown
+	Attempt         int    // 1-based
+	State           string // "downloading" | "retrying"
 }
 
 // ResumableResult is a fully materialized artifact. Data is read from the .part
@@ -44,6 +57,9 @@ const (
 	defaultResumableHeaderTimeout = 30 * time.Second
 	defaultResumableIdleTimeout   = 45 * time.Second
 	resumableReadBuffer           = 32 << 10
+	resumableProgressInterval     = 500 * time.Millisecond
+	resumableRateWindow           = 3 * time.Second
+	resumableRateSampleInterval   = 100 * time.Millisecond
 )
 
 type resumableSidecar struct {
@@ -90,12 +106,14 @@ func DownloadResumable(ctx context.Context, rawURL string, opts ResumableOptions
 
 	var lastErr error
 	for attempt := 0; attempt < attempts; attempt++ {
+		attemptNumber := attempt + 1
 		if attempt > 0 {
+			reportResumableRetrying(opts, attemptNumber)
 			if err := waitResumableBackoff(ctx, attempt); err != nil {
 				return ResumableResult{}, err
 			}
 		}
-		result, retryable, err := downloadResumableAttempt(ctx, parsed, opts, headerTimeout, idleTimeout)
+		result, retryable, err := downloadResumableAttempt(ctx, parsed, opts, headerTimeout, idleTimeout, attemptNumber)
 		if err == nil {
 			return result, nil
 		}
@@ -113,7 +131,28 @@ func DownloadResumable(ctx context.Context, rawURL string, opts ResumableOptions
 	return ResumableResult{}, lastErr
 }
 
-func downloadResumableAttempt(ctx context.Context, parsed *url.URL, opts ResumableOptions, headerTimeout, idleTimeout time.Duration) (ResumableResult, bool, error) {
+func reportResumableRetrying(opts ResumableOptions, attemptNumber int) {
+	if opts.OnProgress == nil {
+		return
+	}
+	downloaded := int64(0)
+	total := int64(-1)
+	if info, err := os.Stat(opts.PartialPath); err == nil && info.Size() > 0 {
+		downloaded = info.Size()
+	}
+	if sidecar := loadResumableSidecar(opts.PartialPath); sidecar != nil {
+		total = sidecar.Total
+	}
+	opts.OnProgress(ResumableProgress{
+		DownloadedBytes: downloaded,
+		TotalBytes:      total,
+		BytesPerSecond:  0,
+		Attempt:         attemptNumber,
+		State:           "retrying",
+	})
+}
+
+func downloadResumableAttempt(ctx context.Context, parsed *url.URL, opts ResumableOptions, headerTimeout, idleTimeout time.Duration, attemptNumber int) (ResumableResult, bool, error) {
 	sidecar := loadResumableSidecar(opts.PartialPath)
 	offset := int64(0)
 	if sidecar != nil && sidecar.URL == parsed.String() {
@@ -125,6 +164,13 @@ func downloadResumableAttempt(ctx context.Context, parsed *url.URL, opts Resumab
 		removeResumablePartial(opts.PartialPath)
 		sidecar = nil
 	}
+	sidecarTotal := int64(-1)
+	if sidecar != nil {
+		sidecarTotal = sidecar.Total
+	}
+	emitter := &resumableProgressEmitter{onProgress: opts.OnProgress, attempt: attemptNumber}
+	emitter.observe(offset)
+	emitter.emit(offset, sidecarTotal, "downloading", true)
 
 	attemptCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -196,6 +242,8 @@ func downloadResumableAttempt(ctx context.Context, parsed *url.URL, opts Resumab
 	// never runs a failure path, and without the sidecar the next call would
 	// discard the partial and restart from byte zero.
 	saveResumableSidecar(opts.PartialPath, pending)
+	emitter.observe(offset)
+	emitter.emit(offset, total, "downloading", true)
 
 	idleTimer := time.AfterFunc(idleTimeout, cancel)
 	defer idleTimer.Stop()
@@ -232,6 +280,8 @@ func downloadResumableAttempt(ctx context.Context, parsed *url.URL, opts Resumab
 				return ResumableResult{}, true, writeErr
 			}
 			written += int64(n)
+			emitter.observe(written)
+			emitter.emit(written, total, "downloading", false)
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
@@ -365,6 +415,74 @@ func (r *idleResetReader) Read(p []byte) (int, error) {
 		r.timer.Reset(r.idle)
 	}
 	return n, err
+}
+
+type resumableProgressEmitter struct {
+	onProgress func(ResumableProgress)
+	attempt    int
+	sampler    resumableRateSampler
+	lastEmit   time.Time
+}
+
+func (e *resumableProgressEmitter) observe(downloaded int64) {
+	e.sampler.observe(time.Now(), downloaded)
+}
+
+func (e *resumableProgressEmitter) emit(downloaded, total int64, state string, force bool) {
+	if e.onProgress == nil {
+		return
+	}
+	now := time.Now()
+	if !force && !e.lastEmit.IsZero() && now.Sub(e.lastEmit) < resumableProgressInterval {
+		return
+	}
+	e.lastEmit = now
+	e.onProgress(ResumableProgress{
+		DownloadedBytes: downloaded,
+		TotalBytes:      total,
+		BytesPerSecond:  e.sampler.rate(now, downloaded),
+		Attempt:         e.attempt,
+		State:           state,
+	})
+}
+
+type resumableRateSample struct {
+	at         time.Time
+	downloaded int64
+}
+
+// resumableRateSampler keeps a roughly 3s window of byte readings so the
+// reported speed does not jump on every 32KB chunk.
+type resumableRateSampler struct {
+	samples []resumableRateSample
+}
+
+func (s *resumableRateSampler) observe(at time.Time, downloaded int64) {
+	if n := len(s.samples); n > 0 && at.Sub(s.samples[n-1].at) < resumableRateSampleInterval {
+		return
+	}
+	s.samples = append(s.samples, resumableRateSample{at: at, downloaded: downloaded})
+	cutoff := at.Add(-resumableRateWindow)
+	first := 0
+	for first < len(s.samples) && s.samples[first].at.Before(cutoff) {
+		first++
+	}
+	if first > 0 {
+		s.samples = append([]resumableRateSample(nil), s.samples[first:]...)
+	}
+}
+
+func (s *resumableRateSampler) rate(now time.Time, downloaded int64) int64 {
+	if len(s.samples) < 2 {
+		return 0
+	}
+	oldest := s.samples[0]
+	elapsed := now.Sub(oldest.at).Seconds()
+	delta := downloaded - oldest.downloaded
+	if elapsed <= 0 || delta <= 0 {
+		return 0
+	}
+	return int64(float64(delta) / elapsed)
 }
 
 type resumableDownloadLock struct {
