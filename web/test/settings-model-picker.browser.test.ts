@@ -46,12 +46,16 @@ test("删除渠道保持现有按钮与确认框，确认后渠道移除并留�
         await trigger.click();
         const ok = page.locator(".ant-popconfirm button").filter({ hasText: /^删\s?除$/ });
         await ok.waitFor();
-        // Real pointer click at the button's centre: it only lands if nothing covers it.
+        // The popconfirm is visible before its enter motion accepts pointer events.
+        // Wait for hit testing, then use an actual pointer click at the button centre.
+        const handle = await ok.elementHandle();
+        await page.waitForFunction((button: Element) => {
+            const box = button.getBoundingClientRect();
+            const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+            return hit === button || button.contains(hit);
+        }, handle, { timeout: 3000 });
         const box = (await ok.boundingBox())!;
-        console.log("CHANNEL_DELETE_HIT", await page.evaluate(({x, y}) => { const el = document.elementFromPoint(x, y); return {tag: el?.tagName, className: el?.getAttribute("class"), text: el?.textContent?.slice(0, 80)}; }, {x: box.x + box.width / 2, y: box.y + box.height / 2}));
         await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-        await page.waitForTimeout(200);
-        console.log("CHANNEL_DELETE_DEBUG", await page.evaluate(() => ({ count: document.querySelector("[data-testid=channel-count]")?.textContent, events: (window as unknown as { diagnostics: () => DiagnosticEvent[] }).diagnostics().map(e => e.code), body: document.body.innerText.slice(-600) })));
         await page.getByTestId("channel-count").filter({ hasText: /^0$/ }).waitFor({ timeout: 3000 });
         const codes = (await events(page)).map(event => event.code);
         expect(codes).toContain("CHANNEL_DELETE_CONFIRM_OPEN");
