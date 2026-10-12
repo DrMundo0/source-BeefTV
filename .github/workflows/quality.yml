@@ -31,11 +31,14 @@ jobs:
         working-directory: backend
         run: go test ./internal/desktopstorage -count=1 -v
       - uses: msys2/setup-msys2@v2
+        id: storage-msys2
         with:
           msystem: UCRT64
           update: false
           install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils
       - name: Select supported Windows compiler
+        env:
+          MSYSTEM_PREFIX: ${{ steps.storage-msys2.outputs.msys2-location }}\ucrt64
         run: powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\assert-windows-dwarf5-cgo.ps1
       - name: Verify open desktop migration and rollback
         working-directory: backend
