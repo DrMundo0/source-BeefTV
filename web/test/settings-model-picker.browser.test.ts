@@ -49,6 +49,8 @@ test("删除渠道保持现有按钮与确认框，确认后渠道移除并留�
         // Real pointer click at the button's centre: it only lands if nothing covers it.
         const box = (await ok.boundingBox())!;
         await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+        await page.waitForTimeout(200);
+        console.log("CHANNEL_DELETE_DEBUG", await page.evaluate(() => ({ count: document.querySelector("[data-testid=channel-count]")?.textContent, events: (window as unknown as { diagnostics: () => DiagnosticEvent[] }).diagnostics().map(e => e.code), body: document.body.innerText.slice(-600) })));
         await page.getByTestId("channel-count").filter({ hasText: /^0$/ }).waitFor({ timeout: 3000 });
         const codes = (await events(page)).map(event => event.code);
         expect(codes).toContain("CHANNEL_DELETE_CONFIRM_OPEN");
