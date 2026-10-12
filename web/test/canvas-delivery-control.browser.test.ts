@@ -10,7 +10,9 @@ let releaseCancellation: (() => void) | undefined;
 let holdCancellation = false;
 
 beforeAll(async () => {
-    const build = await Bun.build({ entrypoints: [import.meta.dir + "/fixtures/canvas-delivery-control-harness.tsx"], target: "browser", define: { "import.meta.env": "{}", "process.env.NODE_ENV": '"production"' } });
+    const build = await Bun.build({ entrypoints: [import.meta.dir + "/fixtures/canvas-delivery-control-harness.tsx"], target: "browser", define: { "import.meta.env": "{}", "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "source-alias", setup(builder) {
+        builder.onResolve({ filter: /^@\// }, (args) => ({ path: Bun.resolveSync("../src/" + args.path.slice(2), import.meta.dir) }));
+    } }] });
     if (!build.success) throw new Error(build.logs.join("\n"));
     const script = await build.outputs[0].text();
     server = Bun.serve({ port: 0, async fetch(request) {
