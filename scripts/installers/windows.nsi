@@ -3,6 +3,7 @@ Unicode true
 !include "LogicLib.nsh"
 !include "StrFunc.nsh"
 !include "TextFunc.nsh"
+!include "FileFunc.nsh"
 ${StrStr}
 ${UnStrStr}
 Name "BeefTV"
@@ -10,9 +11,12 @@ OutFile "${OUTPUT}"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 InstallDir "$LOCALAPPDATA\Programs\BeefTV"
+# Upgrades default to the previous location; the user can still choose another folder.
+InstallDirRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "InstallLocation"
 Var StageDir
 Var BackupDir
 Var CleanDir
+Var InstallParent
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "BeefTV"
 VIAddVersionKey "FileVersion" "${VERSION}"
@@ -20,12 +24,113 @@ VIAddVersionKey "FileDescription" "BeefTV Setup"
 !define MUI_ABORTWARNING
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_COMPONENTS
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE DirectoryPageLeave
+!insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "SimpChinese"
+
+LangString BEEFTV_DIR_ROOT ${LANG_ENGLISH} "Choose a folder on a drive, not the drive root itself."
+LangString BEEFTV_DIR_ROOT ${LANG_SIMPCHINESE} "请选择硬盘上的一个文件夹，而不是盘符根目录。"
+LangString BEEFTV_DIR_FOREIGN ${LANG_ENGLISH} "This folder already holds other files and is not a BeefTV installation. Choose an empty folder or the current BeefTV location."
+LangString BEEFTV_DIR_FOREIGN ${LANG_SIMPCHINESE} "这个文件夹里已有其他文件，不是 BeefTV 安装位置。请选择一个空文件夹，或当前的 BeefTV 安装位置。"
+LangString BEEFTV_DIR_WRITE ${LANG_ENGLISH} "BeefTV cannot write here. Administrator rights are required, so choose another folder."
+LangString BEEFTV_DIR_WRITE ${LANG_SIMPCHINESE} "需要管理员权限，请选择其他文件夹。"
+
+# Validates the chosen folder, then guarantees a dedicated BeefTV subfolder.
+# The checks run before appending, so a directory that already holds user data
+# is refused instead of becoming a parent. Sets $0 to 0 when valid, or
+# 1 (drive root), 2 (foreign folder), 3 (not writable).
+Function PrepareInstallDir
+  StrCpy $0 0
+  ${If} $INSTDIR == ""
+    StrCpy $INSTDIR "$LOCALAPPDATA\Programs\BeefTV"
+    Return
+  ${EndIf}
+  # Drop trailing separators so the last component is a real name.
+  StrCpy $1 "$INSTDIR"
+  PrepareInstallDir_trim:
+    StrCpy $2 "$1" 1 -1
+    ${If} $2 == "\"
+    ${OrIf} $2 == "/"
+      StrCpy $3 "$1" -1
+      ${If} $3 != ""
+        StrCpy $1 "$3"
+        Goto PrepareInstallDir_trim
+      ${EndIf}
+    ${EndIf}
+  # A drive or share root is not a dedicated application folder.
+  ${GetRoot} "$1" $2
+  ${If} $2 == "$1"
+    StrCpy $0 1
+    Return
+  ${EndIf}
+  ${If} ${FileExists} "$1\*.*"
+    # An existing folder is only reused when it is a previous BeefTV install.
+    ${IfNot} ${FileExists} "$1\.installed-root-files.txt"
+      StrCpy $3 ""
+      FindFirst $2 $4 "$1\*"
+      PrepareInstallDir_scan:
+        ${If} $4 != ""
+        ${AndIf} $4 != "."
+        ${AndIf} $4 != ".."
+          StrCpy $3 "1"
+        ${EndIf}
+        ${If} $4 != ""
+          FindNext $2 $4
+          Goto PrepareInstallDir_scan
+        ${EndIf}
+      FindClose $2
+      ${If} $3 != ""
+        StrCpy $0 2
+        Return
+      ${EndIf}
+    ${EndIf}
+  ${ElseIf} ${FileExists} "$1"
+    StrCpy $0 2
+    Return
+  ${EndIf}
+  # The installer runs as the current user, so Program Files and other
+  # administrator-only folders must be rejected before anything is written.
+  CreateDirectory "$1"
+  ClearErrors
+  FileOpen $2 "$1\.beef-tv-write-test" w
+  ${If} ${Errors}
+    StrCpy $0 3
+    Return
+  ${EndIf}
+  FileClose $2
+  Delete "$1\.beef-tv-write-test"
+  # Always install into a folder named BeefTV so the payload never mixes with
+  # files the user picked this folder for.
+  ${GetFileName} "$1" $2
+  ${If} $2 == "BeefTV"
+    StrCpy $INSTDIR "$1"
+  ${Else}
+    StrCpy $INSTDIR "$1\BeefTV"
+  ${EndIf}
+FunctionEnd
+
+Function ShowInstallDirError
+  ${If} $0 == 1
+    MessageBox MB_OK|MB_ICONSTOP "$(BEEFTV_DIR_ROOT)" /SD IDOK
+  ${ElseIf} $0 == 2
+    MessageBox MB_OK|MB_ICONSTOP "$(BEEFTV_DIR_FOREIGN)" /SD IDOK
+  ${ElseIf} $0 == 3
+    MessageBox MB_OK|MB_ICONSTOP "$(BEEFTV_DIR_WRITE)" /SD IDOK
+  ${EndIf}
+FunctionEnd
+
+Function DirectoryPageLeave
+  Call PrepareInstallDir
+  ${If} $0 != 0
+    Call ShowInstallDirError
+    Abort
+  ${EndIf}
+FunctionEnd
 
 !macro RequireClosed PREFIX
 Function ${PREFIX}RequireClosed
@@ -101,26 +206,37 @@ FunctionEnd
 
 Function .onInit
   SetShellVarContext current
-  # A fixed app-owned directory prevents /D from targeting the user's project data.
-  StrCpy $INSTDIR "$LOCALAPPDATA\Programs\BeefTV"
   Call RequireClosed
+  # Interactive runs validate on the directory page; /D= needs the same checks here.
+  ${If} ${Silent}
+    Call PrepareInstallDir
+    ${If} $0 != 0
+      Call ShowInstallDirError
+      SetErrorLevel 1
+      Abort
+    ${EndIf}
+  ${EndIf}
 FunctionEnd
 
 Function un.onInit
   SetShellVarContext current
-  StrCpy $INSTDIR "$LOCALAPPDATA\Programs\BeefTV"
   Call un.RequireClosed
 FunctionEnd
 
 Section "BeefTV (required)" SEC_APP
-  SectionIn RO
+  # Stage and backup must live on the same volume as $INSTDIR for Rename to work.
+  ${GetParent} "$INSTDIR" $InstallParent
+  StrCpy $0 "$InstallParent" 1 -1
+  ${If} $0 != "\"
+    StrCpy $InstallParent "$InstallParent\"
+  ${EndIf}
   ClearErrors
-  CreateDirectory "$LOCALAPPDATA\Programs"
-  GetTempFileName $StageDir "$LOCALAPPDATA\Programs"
+  CreateDirectory "$InstallParent"
+  GetTempFileName $StageDir "$InstallParent"
   IfErrors prepare_failed
   Delete "$StageDir"
   IfErrors prepare_failed
-  GetTempFileName $BackupDir "$LOCALAPPDATA\Programs"
+  GetTempFileName $BackupDir "$InstallParent"
   IfErrors prepare_failed
   Delete "$BackupDir"
   IfErrors prepare_failed
@@ -137,7 +253,7 @@ Section "BeefTV (required)" SEC_APP
   File /oname=.installed-root-files.txt "${ROOTFILES}"
   WriteUninstaller "$StageDir\Uninstall.exe"
   ${If} ${Errors}
-    SetOutPath "$LOCALAPPDATA\Programs"
+    SetOutPath "$InstallParent"
     RMDir /r "$StageDir"
     MessageBox MB_OK|MB_ICONSTOP "Installation failed. Please run the installer again. Your projects have been preserved." /SD IDOK
     SetErrorLevel 1
@@ -145,7 +261,7 @@ Section "BeefTV (required)" SEC_APP
   ${EndIf}
   # Directory renames stay on the same volume. No old payload is removed until
   # all new files have been extracted successfully.
-  SetOutPath "$LOCALAPPDATA\Programs"
+  SetOutPath "$InstallParent"
   ClearErrors
   IfFileExists "$INSTDIR\*.*" 0 install_new
   Rename "$INSTDIR" "$BackupDir"
@@ -182,7 +298,14 @@ Section /o "Desktop shortcut" SEC_DESKTOP
 SectionEnd
 
 Section "Uninstall"
-  SetOutPath "$LOCALAPPDATA\Programs"
+  # NSIS sets $INSTDIR to the uninstaller's folder. Keep the working directory
+  # out of it so the empty install folder can be removed.
+  ${GetParent} "$INSTDIR" $0
+  StrCpy $1 "$0" 1 -1
+  ${If} $1 != "\"
+    StrCpy $0 "$0\"
+  ${EndIf}
+  SetOutPath "$0"
   StrCpy $CleanDir "$INSTDIR"
   Call un.RemovePayload
   Delete "$DESKTOP\BeefTV.lnk"
