@@ -564,13 +564,46 @@ export function modelMatchesCapability(model: string, capability?: ModelCapabili
     return isTextModelName(model);
 }
 
+type ChannelModelProfile = NonNullable<ModelChannel["modelProfiles"]>[number];
+type ChannelLookup = { byId: Map<string, ModelChannel>; byModel: Map<string, ModelChannel> };
+
+// Model pickers resolve every option against the channel list. Scanning the
+// list per option is quadratic and freezes settings on large catalogs, so
+// lookups are indexed once per (immutable) channels array / channel object.
+const channelLookups = new WeakMap<ModelChannel[], ChannelLookup>();
+const profileLookups = new WeakMap<ModelChannel, Map<string, ChannelModelProfile>>();
+
+function channelLookup(channels: ModelChannel[]): ChannelLookup {
+    let lookup = channelLookups.get(channels);
+    if (lookup) return lookup;
+    lookup = { byId: new Map(), byModel: new Map() };
+    for (const channel of channels) {
+        if (!lookup.byId.has(channel.id)) lookup.byId.set(channel.id, channel);
+        for (const model of channel.models) if (!lookup.byModel.has(model)) lookup.byModel.set(model, channel);
+    }
+    channelLookups.set(channels, lookup);
+    return lookup;
+}
+
+export function channelModelProfile(channel: ModelChannel | undefined, model: string) {
+    if (!channel?.modelProfiles?.length) return undefined;
+    let lookup = profileLookups.get(channel);
+    if (!lookup) {
+        lookup = new Map();
+        for (const profile of channel.modelProfiles) if (!lookup.has(profile.model)) lookup.set(profile.model, profile);
+        profileLookups.set(channel, lookup);
+    }
+    return lookup.get(model);
+}
+
 export function filterModelsByCapability(models: string[], capability?: ModelCapability, channels?: ModelChannel[]) {
     if (!capability) return models;
+    const lookup = channels ? channelLookup(channels) : undefined;
     return models.filter((model) => {
         const decoded = decodeChannelModel(model);
-        const channel = decoded ? channels?.find((item) => item.id === decoded.channelId) : undefined;
+        const channel = decoded ? lookup?.byId.get(decoded.channelId) : undefined;
         const modelName = decoded?.model || modelOptionName(model);
-        const costEntry = channel?.modelProfiles?.find((item) => item.model === modelName);
+        const costEntry = channelModelProfile(channel, modelName);
         // 协议层优先级最高：协议决定 API 端点，明确属于其他能力时直接排除，
         // 防止用户将 video/image/audio 协议的模型误标为 text 后混入文本下拉。
         const protocolCapability = modelProtocolCapability(costEntry?.protocol);
@@ -720,7 +753,7 @@ export function normalizeConfigSnapshot(snapshot: ConfigStoreSnapshot | undefine
     };
     const hasPersistedChannels = Array.isArray(persistedConfig.channels);
     if (!hasPersistedChannels) config.channels = [];
-    const channels = normalizeChannels(config, !hasPersistedChannels).map(enrichBeefApiMediaChannel);
+    const channels = normalizeChannels(config, !hasPersistedChannels).map(enrichBeefApiMediaChannel).map(reconcileChannelModelProfiles);
     const models = modelOptionsFromChannels(channels);
     const imageModels = filterModelsByCapability(models, "image", channels);
     const videoModels = filterModelsByCapability(models, "video", channels);
@@ -766,7 +799,35 @@ export function normalizeConfigSnapshot(snapshot: ConfigStoreSnapshot | undefine
 }
 
 function beefApiVideoProtocol(model: string, current?: ModelProtocol): ModelProtocol {
-    return (beefAPIVideoContract(model)?.protocol as ModelProtocol | undefined) || current || "newapi-channel-2";
+    const contract = beefAPIVideoContract(model)?.protocol as ModelProtocol | undefined;
+    if (contract) return contract;
+    // A video profile must not keep a protocol that runs a different
+    // capability. BeefAPI often tags video models with a chat/text endpoint;
+    // that stale protocol would make the backend reject the task outright
+    // ("接口类型 chat-completion 不支持video生成"). Unknown/custom protocols
+    // stay untouched.
+    return current && protocolAllowsCapability(current, "video") ? current : defaultProtocolForCapability("video");
+}
+
+function protocolAllowsCapability(protocol: ModelProtocol | undefined, capability: ModelCapability): boolean {
+    const resolved = modelProtocolCapability(protocol);
+    return !resolved || resolved === capability;
+}
+
+// Enforce capability ↔ protocol consistency for every channel. BeefAPI media
+// profiles are already repaired from the shared contracts above; for other
+// channels the request protocol is what the user configured, so the
+// capability follows it instead of inventing a different wire protocol.
+function reconcileChannelModelProfiles(channel: ModelChannel): ModelChannel {
+    if (!channel.modelProfiles?.length) return channel;
+    let changed = false;
+    const modelProfiles = channel.modelProfiles.map((profile) => {
+        const capability = modelProtocolCapability(profile.protocol);
+        if (!capability || capability === profile.capability) return profile;
+        changed = true;
+        return { ...profile, capability };
+    });
+    return changed ? { ...channel, modelProfiles } : channel;
 }
 
 function beefApiVideoCapabilityConfig(model: string, protocol: ModelProtocol, current?: ModelCapabilityConfig, sourced = false): ModelCapabilityConfig | undefined {
@@ -938,7 +999,7 @@ export function modelDisplayName(config: AiConfig, value: string) {
 	if (portrait) return portrait;
     const model = modelOptionName(value);
     const channel = resolveModelChannel(config, value);
-    const displayName = channel.modelProfiles?.find((item) => item.model === model)?.displayName?.trim();
+    const displayName = channelModelProfile(channel, model)?.displayName?.trim();
     if (displayName) return displayName;
     return channel.scope === "system" ? "系统模型" : model;
 }
@@ -992,7 +1053,8 @@ export function normalizeModelOptionValue(value: unknown, channels: ModelChannel
 export function resolveModelChannel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     const model = decoded?.model || value;
-    const matched = decoded ? config.channels.find((channel) => channel.id === decoded.channelId) : config.channels.find((channel) => channel.models.includes(model));
+    const lookup = channelLookup(config.channels);
+    const matched = decoded ? lookup.byId.get(decoded.channelId) : lookup.byModel.get(model);
     return matched || config.channels[0] || createModelChannel({ id: "default", name: "默认渠道", baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: config.models.map(modelOptionName) });
 }
 

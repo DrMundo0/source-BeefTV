@@ -10,7 +10,41 @@ export function protocolGroups(protocols: ModelProtocolDefinition[]) {
 }
 export function modelProtocolDefinition(value: string | undefined, definitions: ModelProtocolDefinition[] = []) { return definitions.find((item) => item.value === value); }
 export function modelProtocolLabel(value: string | undefined, definitions: ModelProtocolDefinition[] = []) { return modelProtocolDefinition(value, definitions)?.label || (value ? value : "未安装协议"); }
-export function modelProtocolCapability(value: string | undefined, definitions: ModelProtocolDefinition[] = []) { return modelProtocolDefinition(value, definitions)?.capability; }
+// Protocol → capability for the protocols the host ships without a plugin
+// catalog. Runtime definitions win; unknown/custom ids stay unresolved so a
+// user's own contract is never silently rewritten.
+const BUILTIN_PROTOCOL_CAPABILITIES: Record<ModelProtocol, ProtocolCapability> = {
+    "chat-completion": "text",
+    "openai-response": "text",
+    responses: "text",
+    "claude-api": "text",
+    "gemini-generate-content": "text",
+    "openai-image": "image",
+    "gemini-image": "image",
+    "grok-image": "image",
+    "volcengine-ark-image": "image",
+    "volcengine-ark-agent-plan-image": "image",
+    "volcengine-jimeng-image": "image",
+    newapi: "video",
+    "newapi-channel-1": "video",
+    "newapi-channel-2": "video",
+    "xai-video": "video",
+    "volcengine-ark-video": "video",
+    "volcengine-ark-agent-plan-video": "video",
+    "volcengine-jimeng-video": "video",
+    "gemini-veo": "video",
+    "novita-video": "video",
+    "minimax-video": "video",
+    "agnes-video": "video",
+    "full-video": "video",
+    "openai-audio": "audio",
+    "async-audio": "audio",
+};
+export function modelProtocolCapability(value: string | undefined, definitions: ModelProtocolDefinition[] = []) {
+    const definition = modelProtocolDefinition(value, definitions);
+    if (definition) return definition.capability;
+    return value ? BUILTIN_PROTOCOL_CAPABILITIES[value] : undefined;
+}
 export function isVolcengineArkImageProtocol(protocol?: string) {
     return protocol === "volcengine-ark-image" || protocol === "volcengine-ark-agent-plan-image";
 }
