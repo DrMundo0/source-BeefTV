@@ -78,7 +78,42 @@ type collection struct {
 	Tasks        []taskRecord
 	TaskLogs     []taskLogRecord
 	APICalls     []apiCallRecord
+	ModelConfig  *modelConfigSummary
 	Truncated    bool
+}
+
+// modelConfigSummary is the redacted model-configuration view written to the
+// bundle. It never carries apiKey, secretKey, header values, full URLs or
+// query strings — only the base-URL host.
+type modelConfigSummary struct {
+	Channels []channelConfigSummary `json:"channels"`
+	Defaults defaultModelSelection  `json:"defaults"`
+}
+
+type channelConfigSummary struct {
+	ID            string             `json:"id"`
+	Name          string             `json:"name,omitempty"`
+	APIFormat     string             `json:"apiFormat,omitempty"`
+	InterfaceType string             `json:"interfaceType,omitempty"`
+	Scope         string             `json:"scope,omitempty"`
+	Enabled       bool               `json:"enabled"`
+	BaseURLHost   string             `json:"baseUrlHost,omitempty"`
+	ModelCount    int                `json:"modelCount"`
+	Models        []modelConfigEntry `json:"models"`
+}
+
+type modelConfigEntry struct {
+	Model      string `json:"model"`
+	Capability string `json:"capability,omitempty"`
+	Protocol   string `json:"protocol,omitempty"`
+}
+
+type defaultModelSelection struct {
+	ImageModel     string `json:"imageModel,omitempty"`
+	VideoModel     string `json:"videoModel,omitempty"`
+	TextModel      string `json:"textModel,omitempty"`
+	AudioModel     string `json:"audioModel,omitempty"`
+	AssistantModel string `json:"assistantModel,omitempty"`
 }
 
 type runtimeRecord struct {

@@ -42,6 +42,15 @@ func buildZIP(brandName string, bundleID string, manifest manifest, collection *
 	if err := writeZipFile(archive, "context/runtime.json", append(runtimeData, byte(10))); err != nil {
 		return nil, err
 	}
+	if collection.ModelConfig != nil {
+		configData, err := json.MarshalIndent(collection.ModelConfig, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		if err := writeZipFile(archive, "context/model-config.json", append(configData, byte(10))); err != nil {
+			return nil, err
+		}
+	}
 	if err := archive.Close(); err != nil {
 		return nil, err
 	}

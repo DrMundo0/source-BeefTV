@@ -61,6 +61,59 @@ func TestExportRedactsSensitiveValuesFromFixture(t *testing.T) {
 	}
 }
 
+func TestExportRedactsModelConfigSummary(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:diagnostics-config?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&model.Task{}, &model.TaskLog{}, &model.ApiCallLog{}); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte(`{
+		"imageModel": "studio::image-y",
+		"textModel": "studio::chat-x",
+		"assistantModel": "studio::chat-x",
+		"channels": [
+			{
+				"id": "studio", "name": "工作室渠道", "apiFormat": "openai", "scope": "user", "enabled": true,
+				"baseUrl": "https://api.example.com/v1?token=query-secret",
+				"apiKey": "sk-secret-key", "secretKey": "secret-key-value",
+				"headers": [{"name": "X-Key", "value": "header-value"}],
+				"models": ["chat-x", "image-y"],
+				"modelProfiles": [
+					{"model": "chat-x", "capability": "text", "protocol": "chat-completion"},
+					{"model": "image-y", "capability": "image", "protocol": "openai-image"}
+				]
+			}
+		]
+	}`)
+	now := time.Now().UTC()
+	svc := New(Dependencies{Store: repository.New(db), Brand: staticBrand{name: "BeefTV", slug: "beeftv"}, Config: stubModelConfig{body: body}})
+	bundle, err := svc.Export("user-1", ExportRequest{From: now.Add(-time.Minute).Format(time.RFC3339Nano), To: now.Format(time.RFC3339Nano)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := readTestZIP(t, bundle.Data)
+	summary, ok := files["context/model-config.json"]
+	if !ok {
+		t.Fatal("missing context/model-config.json")
+	}
+	for _, secret := range []string{"sk-secret-key", "secret-key-value", "header-value", "query-secret", "https://api.example.com/v1"} {
+		if strings.Contains(summary, secret) {
+			t.Fatalf("model config leaked %q: %s", secret, summary)
+		}
+	}
+	for _, want := range []string{`"baseUrlHost": "api.example.com"`, `"protocol": "chat-completion"`, `"protocol": "openai-image"`, `"capability": "text"`, `"modelCount": 2`} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("model config missing %q: %s", want, summary)
+		}
+	}
+}
+
+type stubModelConfig struct{ body []byte }
+
+func (s stubModelConfig) ReadLocalModelConfig() ([]byte, error) { return s.body, nil }
+
 func TestExportRejectsForeignTaskFixture(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:diagnostics-ownership-test?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

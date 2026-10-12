@@ -12,17 +12,19 @@ import (
 )
 
 type Dependencies struct {
-	Store Store
-	Brand Brand
-	Now   func() time.Time
-	NewID func() string
+	Store  Store
+	Brand  Brand
+	Config ModelConfigProvider
+	Now    func() time.Time
+	NewID  func() string
 }
 
 type Service struct {
-	store Store
-	brand Brand
-	now   func() time.Time
-	newID func() string
+	store  Store
+	brand  Brand
+	config ModelConfigProvider
+	now    func() time.Time
+	newID  func() string
 }
 
 func New(deps Dependencies) *Service {
@@ -38,7 +40,7 @@ func New(deps Dependencies) *Service {
 	if brand == nil {
 		brand = staticBrand{name: defaultBrandName, slug: defaultBrandSlug}
 	}
-	return &Service{store: deps.Store, brand: brand, now: now, newID: newID}
+	return &Service{store: deps.Store, brand: brand, config: deps.Config, now: now, newID: newID}
 }
 
 func (s *Service) Preview(userID string, req ExportRequest) (*Preview, error) {
@@ -150,6 +152,13 @@ func (s *Service) collect(userID string, req ExportRequest) (*collection, error)
 	}
 	for _, apiCall := range apiCalls {
 		collected.APICalls = append(collected.APICalls, sanitizeAPICall(apiCall))
+	}
+	// Best-effort: a missing or unreadable provider snapshot must not fail the
+	// export the user is trying to send.
+	if s.config != nil {
+		if body, readErr := s.config.ReadLocalModelConfig(); readErr == nil {
+			collected.ModelConfig = buildModelConfigSummary(body)
+		}
 	}
 	return collected, nil
 }

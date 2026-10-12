@@ -24,7 +24,7 @@ func (s *Service) DiagnosticsDomain() *diagnostics.Service {
 		return diagnostics.New(diagnostics.Dependencies{})
 	}
 	s.diagnosticsOnce.Do(func() {
-		s.diagnostics = diagnostics.New(diagnostics.Dependencies{Store: s.repo, Brand: diagnosticBrand{svc: s}})
+		s.diagnostics = diagnostics.New(diagnostics.Dependencies{Store: s.repo, Brand: diagnosticBrand{svc: s}, Config: s})
 	})
 	return s.diagnostics
 }
