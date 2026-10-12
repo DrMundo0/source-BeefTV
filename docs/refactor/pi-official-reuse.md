@@ -7,7 +7,7 @@
 ## 新会话的官方 Durable 路径
 
 - `durable-session-owner.mjs` 使用 `Harness.open`、`openNodeSqliteStorage`、`defineDoc`、`defineExtension`、`defineTool` 与 `watchEvents` 管理会话、提交、工具与持久事件；不在 AgentSession 外再套 Harness。
-- 旧 JSONL 会话退役交接：`handoffSession` 用官方 `root.reset(handoffNote)` 把旧会话文本写成新上下文的开头，再 `install` 并发布指针；不调用模型生成摘要，也不把旧 JSONL 导入 Durable。
+- 旧 JSONL 会话退役交接：每个画布内的旧会话固定对应一条 Durable 接续会话，身份写入清单，交接完成状态写入官方 SQLite；`handoffSession` 仅首次用官方 `root.reset(handoffNote)` 写入旧文本，再发布当前指针。失败、断线或重启后的旧 ID 重试复用该会话，不重置已有上下文；显式新建仍创建独立会话，切换旧会话仍可只读历史。NDJSON 在首轮开始时发送 `session` 行，让界面及断流恢复立即使用实际会话 ID；未收到此行也不影响服务端幂等。不调用模型生成摘要，也不把旧 JSONL 导入 Durable。
 - Go 拥有业务回合、素材归属、权限、付费批准、操作去重与撤销。宿主开始或恢复执行前读取 Go 回合记录；HTTP 客户端离开不自动结算持久执行。
 - 每轮工具通过官方 `registry.install` 和 `root.configure` 配置。内置“只读 / 当前画布 / 完全访问”由 Go 持久记录决定，补充消息和恢复不能升权；具体合同见 [Agent 权限与外部工具](agent-access-20261008.md)。
 - 媒体短引用保存在会话中，实际发出模型请求前读取已校验的文件并重新核对当前业务归属。Skills 使用明确选定的版本与内容摘要，经官方扩展展开正文，不自动扫描宿主机文件或执行包内脚本。

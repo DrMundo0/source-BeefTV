@@ -239,13 +239,28 @@ export function createDurableSessionStore({ sessionRoot, workspaceRoot, getModel
     } catch (error) { await entry.harness.close(CTX); throw error; }
   }
   // 新建候选：写清单、打开官方 Harness，但不发布指针、不写入 sessions。
-  async function prepareSession(canvasId) {
-    const sessionId = `durable:${crypto.randomUUID()}`;
+  async function prepareSession(canvasId, handoffSourceId = '') {
+    // A legacy source has one durable successor even if the process dies before
+    // publishing current.json or the client receives no response.
+    const digest = handoffSourceId && crypto.createHash('sha256').update(JSON.stringify([canvasId, handoffSourceId])).digest('hex');
+    const uuid = digest ? `${digest.slice(0,8)}-${digest.slice(8,12)}-${digest.slice(12,16)}-${digest.slice(16,20)}-${digest.slice(20,32)}` : crypto.randomUUID();
+    const sessionId = `durable:${uuid}`;
     fs.mkdirSync(durableDirectory(canvasId), { recursive: true, mode: 0o700 });
     const file = path.join(durableDirectory(canvasId), `${idPattern.exec(sessionId)[1]}.json`);
-    fs.writeFileSync(file, JSON.stringify({ sessionId, canvasId, version: DURABLE_VERSION, createdAt: new Date().toISOString() }), { flag: 'wx', mode: 0o600 });
+    const created = !handoffSourceId || !fs.existsSync(file);
+    if (created) {
+      const temporary = `${file}.${crypto.randomUUID()}.tmp`;
+      try {
+        fs.writeFileSync(temporary, JSON.stringify({ sessionId, canvasId, handoffSourceId, version: DURABLE_VERSION, createdAt: new Date().toISOString() }), { flag: 'wx', mode: 0o600 });
+        fs.renameSync(temporary, file);
+      } finally { fs.rmSync(temporary, { force: true }); }
+    } else if (JSON.parse(fs.readFileSync(file, 'utf8')).handoffSourceId !== handoffSourceId) {
+      throw fail('handoff_source_conflict');
+    }
+    const current = sessions.get(canvasId);
+    if (current?.sessionId === sessionId) return current;
     const entry = await open(canvasId, sessionId);
-    entry.persistence = 'created';
+    entry.persistence = created ? 'created' : 'restored';
     return entry;
   }
   async function createSession(canvasId) {
@@ -254,16 +269,20 @@ export function createDurableSessionStore({ sessionRoot, workspaceRoot, getModel
       return install(await prepareSession(canvasId));
     });
   }
-  // 旧 JSONL 会话退役后的接续：新建 Durable 会话，并用官方 reset(handoffNote) 写入
-  // 交接说明作为新上下文的开头（没有旧消息时 handoffNote 为空，等价于普通新建）。
-  async function handoffSession(canvasId, handoffNote = '') {
+  // An initialized successor must never reset when an old client retries.
+  async function handoffSession(canvasId, handoffNote = '', handoffSourceId = '') {
     return lock(canvasId, async () => {
-      if (sessions.get(canvasId)?.busy) throw fail('session_busy');
-      const entry = await prepareSession(canvasId);
-      if (handoffNote) {
-        try { await entry.root.reset(handoffNote, CTX); }
+      const current = sessions.get(canvasId);
+      if (current?.busy) throw fail('session_busy');
+      const entry = await prepareSession(canvasId, handoffSourceId);
+      if (!(await state(entry)).handoffInitialized) {
+        try {
+          if (handoffNote) await entry.root.reset(handoffNote, CTX);
+          await update(entry, (doc) => { doc.handoffInitialized = true; });
+        }
         catch (error) { await entry.harness.close(CTX).catch(() => {}); throw error; }
       }
+      if (entry === current) { publish(entry); return entry; }
       return install(entry);
     });
   }

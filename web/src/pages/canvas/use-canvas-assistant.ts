@@ -387,6 +387,13 @@ export function useCanvasAssistant({ canvasId, onCanvasChanged }: Options) {
             run.recovery = { sessionId: run.sessionId, knownTurnIds: run.turns.map((turn) => turn.turnId), text: message, selectedNodeIds: selectedSnapshot };
             run.dispatched = true;
             await streamAgentChat(targetCanvas, message, {
+                onSession: (sessionId) => {
+                    if (!userScopeMatches(expectedScope)) return;
+                    const current = runFor(targetCanvas);
+                    current.sessionId = sessionId;
+                    if (current.recovery) current.recovery.sessionId = sessionId;
+                    rerenderIfActive(targetCanvas);
+                },
                 onDelta: (delta) => {
                     if (!userScopeMatches(expectedScope)) return;
                     const current = runFor(targetCanvas);

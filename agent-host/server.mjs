@@ -468,12 +468,14 @@ const server = http.createServer(async (req, res) => {
       // 新建一条 Durable 会话，并用旧会话文本作为交接说明开头。
       const entry = isDurableSessionId(chosen)
         ? await durable.ensureSession(canvasId,chosen)
-        : await durable.handoffSession(canvasId, chosen ? legacy.readHandoffNote(canvasId,chosen) : '');
+        : chosen ? await durable.handoffSession(canvasId, legacy.readHandoffNote(canvasId,chosen), chosen)
+          : await durable.ensureSession(canvasId);
       const content = await attachmentContent(body,turnId);
       content[0].text = `${turnContextPrefix(body)}\n${content[0].text}`;
       const submission = await durable.submit(entry,{...body,content,userText,revisionBefore,requestId:body.requestId || turnId});
       res.durableTurn = true;
       res.writeHead(200,{'Content-Type':'application/x-ndjson'});
+      sendLine(res, { type: 'session', sessionId: entry.sessionId, turnId });
       const result = followDurable(entry,submission);
       const listener = payload=>{ if (!res.destroyed) sendLine(res,payload); };
       entry.listeners.add(listener);

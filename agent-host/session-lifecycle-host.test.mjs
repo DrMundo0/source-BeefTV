@@ -58,6 +58,11 @@ async function withHost(run, envExtra = {}, options = {}) {
   const model = createServer(async (req, res) => {
     modelPayloads.push(await jsonBody(req));
     modelCalls += 1;
+    if (options.failFirstModel && modelCalls === 1) {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'synthetic provider rejection', type: 'invalid_request_error' } }));
+      return;
+    }
     if (slowFirstModel && modelCalls === 1) {
       await delay(8000);
       if (res.writableEnded) return;
@@ -113,7 +118,7 @@ async function withHost(run, envExtra = {}, options = {}) {
       await start();
     };
     await start();
-    await run({ api, waitFor, directory, child, restart, getLog: () => log, getModelCalls: () => modelCalls, getModelPayloads: () => modelPayloads });
+    await run({ api, waitFor, directory, child, restart, base, hostToken, getLog: () => log, getModelCalls: () => modelCalls, getModelPayloads: () => modelPayloads });
   } finally {
     if (child && child.exitCode === null) {
       const exited = new Promise((resolve) => child.once('close', resolve));
@@ -243,8 +248,8 @@ test('真实宿主：SIGTERM 释放活动会话后退出', async () => {
   });
 }, 35000);
 
-test('真实宿主：旧 JSONL 会话发新消息会新建 Durable 会话并带上交接说明', async () => {
-  await withHost(async ({ api, directory, getModelPayloads }) => {
+for (const failFirstModel of [false, true]) test(`真实宿主：旧 JSONL 交接首轮${failFirstModel ? '失败' : '成功'}后重启仍复用会话和上下文`, async () => {
+  await withHost(async ({ api, directory, getModelPayloads, restart }) => {
     const canvasId = 'legacy-handoff';
     const canvasDir = path.join(directory, 'sessions', canvasKey(canvasId));
     mkdirSync(canvasDir, { recursive: true });
@@ -273,21 +278,60 @@ test('真实宿主：旧 JSONL 会话发新消息会新建 Durable 会话并带�
     const end = chat.text.trim().split('\n').map((line) => JSON.parse(line)).find((line) => line.type === 'turn_end');
     expect(end.sessionId).toMatch(/^durable:/);
     expect(end.sessionId).not.toBe(sessionId);
+    expect(Boolean(end.error)).toBe(failFirstModel);
+    expect(JSON.parse(chat.text.trim().split('\n')[0])).toMatchObject({ type: 'session', sessionId: end.sessionId });
     const payload = JSON.stringify(getModelPayloads().at(-1));
     expect(payload).toContain('旧会话里的原始需求');
     expect(payload).toContain('旧会话里的历史回执');
 
-    // 之后的回合都走新会话。
-    const next = await api('/chat', { canvasId, message: '再改一处', turnId: 'handoff-turn-2', revisionBefore: 1, sessionId: end.sessionId });
+    // 客户端可能没收到终态；宿主重启后，仍拿旧 ID 重试不能再次创建会话。
+    await restart();
+    const next = await api('/chat', { canvasId, message: '再改一处', turnId: 'handoff-turn-2', revisionBefore: 1, sessionId });
     expect(next.status).toBe(200);
     const nextEnd = next.text.trim().split('\n').map((line) => JSON.parse(line)).find((line) => line.type === 'turn_end');
     expect(nextEnd.sessionId).toBe(end.sessionId);
     expect(nextEnd.reply).toBe('ok');
+    expect(JSON.stringify(getModelPayloads().at(-1))).toContain('继续改一下');
 
     const listed = await api(`/sessions?canvasId=${canvasId}`);
     expect(listed.payload.currentSessionId).toBe(end.sessionId);
     const ids = listed.payload.sessions.map((item) => item.sessionId);
     expect(ids).toContain(sessionId);
     expect(ids).toContain(end.sessionId);
-  }, {}, { canvasId: 'legacy-handoff', slowFirstModel: false });
+    expect(ids.filter((id) => id.startsWith('durable:'))).toHaveLength(1);
+  }, {}, { canvasId: 'legacy-handoff', slowFirstModel: false, failFirstModel });
+}, 35000);
+
+test('真实宿主：旧会话交接首轮断线，重启后重发原请求复用会话和回执', async () => {
+  await withHost(async ({ api, directory, restart, base, hostToken, waitFor, getModelCalls }) => {
+    const canvasId = 'canvas';
+    const sessionId = 'legacy-disconnected';
+    const canvasDir = path.join(directory, 'sessions', canvasKey(canvasId));
+    mkdirSync(canvasDir, { recursive: true });
+    const row = { type: 'session', version: 3, id: sessionId, timestamp: '2026-10-07T12:00:00.000Z', cwd: path.join(directory, 'workspace', canvasKey(canvasId)) };
+    writeFileSync(path.join(canvasDir, `2026-10-07T12-00-00-000Z_${sessionId}.jsonl`), JSON.stringify(row) + '\n');
+    const body = { canvasId, sessionId, turnId: 'lost-response', requestId: 'lost-response', message: '保留这条消息' };
+    const controller = new AbortController();
+    const response = await fetch(base + '/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Beeftv-Agent-Token': hostToken }, body: JSON.stringify(body), signal: controller.signal });
+    const reader = response.body.getReader();
+    const first = new TextDecoder().decode((await reader.read()).value);
+    const successor = JSON.parse(first.trim().split('\n')[0]).sessionId;
+    expect(successor).toMatch(/^durable:/);
+    controller.abort();
+    await reader.cancel().catch(() => {});
+    await waitFor(async () => (await api(`/history?canvasId=${canvasId}&sessionId=${successor}`)).payload.turns?.length === 1, 15000);
+    await restart();
+    const retry = await api('/chat', body);
+    const end = retry.text.trim().split('\n').map(JSON.parse).find(event => event.type === 'turn_end');
+    expect(end.sessionId).toBe(successor);
+    expect(getModelCalls()).toBe(1);
+    const listed = await api(`/sessions?canvasId=${canvasId}`);
+    expect(listed.payload.sessions.filter(item => item.sessionId.startsWith('durable:'))).toHaveLength(1);
+    const fresh = await api('/sessions', { canvasId });
+    expect(fresh.payload.sessionId).not.toBe(successor);
+    await api('/sessions/activate', { canvasId, sessionId });
+    const again = await api('/chat', { ...body, turnId: 'next-turn', requestId: 'next-turn', message: '继续同一接续会话' });
+    expect(again.text).toContain(successor);
+    expect(getModelCalls()).toBe(2);
+  });
 }, 35000);

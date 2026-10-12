@@ -62,6 +62,39 @@ test('failed or unanswered submission cannot reuse a prior assistant as a succes
   const budget = durableCompletion({ status: 'unanswered', reason: 'model_error' }, null, { reason: 'turn_request_budget_exhausted', message: 'limit' });
   assert.equal(budget.errorReason, 'turn_request_budget_exhausted');
 });
+processTest('legacy handoff survives failed pointer publication and restart without duplicate sessions or resetting context', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'beeftv-handoff-publication-'));
+  let fixture = await modelFixture(directory, 'fixture', ['fixture']);
+  try {
+    const previous = await fixture.store.createSession('canvas');
+    const rename = fs.renameSync;
+    t.mock.method(fs, 'renameSync', (source, destination) => {
+      if (destination.endsWith('current.json')) throw Object.assign(new Error('fixture denied'), { code: 'EACCES' });
+      return rename(source, destination);
+    });
+    await assert.rejects(fixture.store.handoffSession('canvas', '原始交接说明', 'legacy-a'), { reason: 'session_pointer_failed' });
+    assert.equal(fixture.store.sessions.get('canvas'), previous);
+    t.mock.restoreAll();
+    await fixture.close();
+    fixture = await modelFixture(directory, 'fixture', ['fixture']);
+    const entry = await fixture.store.handoffSession('canvas', '不应覆盖先前交接', 'legacy-a');
+    const submission = await fixture.store.submit(entry, { turnId: 'handoff-turn', content: '首轮消息' });
+    await fixture.store.wait(entry, submission);
+    const again = await fixture.store.handoffSession('canvas', '不应重置已有轮次', 'legacy-a');
+    assert.equal(again, entry);
+    assert.equal((await fixture.store.history('canvas', entry.sessionId)).turns.length, 1);
+    assert(JSON.stringify(fixture.payloads).includes('原始交接说明'));
+    assert(!JSON.stringify(fixture.payloads).includes('不应覆盖先前交接'));
+    const other = await fixture.store.handoffSession('canvas', '另一个旧会话', 'legacy-b');
+    assert.notEqual(other.sessionId, entry.sessionId);
+    const sessions = await fixture.store.listCanvasSessions('canvas');
+    assert.equal(sessions.length, 3); // Explicit new session plus two distinct legacy sources.
+  } finally {
+    t.mock.restoreAll();
+    await fixture.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
 for (const phase of ['pending-success', 'pending-failure', 'pending-stop', 'partial-stop', 'multi-steer', 'persisted-supplement-stop', 'prep-error-partial']) processTest(`official owner ${phase} preserves latest input and current partial`, async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), `beeftv-durable-${phase}-`)); t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const result = await run(directory, phase); assert.equal(result.code, 0, result.output);

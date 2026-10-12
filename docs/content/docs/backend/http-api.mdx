@@ -107,7 +107,7 @@ Wails 和浏览器开发模式共用同一套 `127.0.0.1` HTTP 合同。路由�
 | --- | --- |
 | `GET /assistant/status` | 免身份的宿主状态查询（不含任何凭据）；未就绪时返回明确原因而不是空回复 |
 | `POST /assistant/ui-session` | 签发短期限 UI 会话凭据；需本机同源，并且能出示 owner 凭据（或显式本地引导开关） |
-| `POST /assistant/chat` | NDJSON 流式对话：`text_delta` 增量 + 一次 `turn_end` 结算；可带 `references: [{kind,id}]` 追加已校验的素材/画布引用；宿主凭据与模型密钥由后端注入，页面不接触 |
+| `POST /assistant/chat` | NDJSON 流式对话：先用 `session` 行返回实际 `sessionId`，再发 `text_delta` 增量与 `turn_end` 结算；断流或 `observer_error` 不表示结算。旧 JSONL 会话交接后重复请求复用其 Durable 接续会话，界面应立即保存 `sessionId` 用于恢复。可带 `references: [{kind,id}]` 追加已校验的素材/画布引用；宿主凭据与模型密钥由后端注入，页面不接触 |
 | `POST /assistant/cancel` | 取消指定画布正在进行的回合 |
 | `GET/PUT /assistant/host/config`、`POST /assistant/host/start|stop` | 宿主生命周期：需 owner 凭据 + 本机同源；启动命令只取本机配置，绝不接受请求体传入的可执行命令 |
 

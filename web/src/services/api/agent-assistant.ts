@@ -314,6 +314,7 @@ export type AgentLifecycleEvent = {
 };
 
 export type StreamHandlers = {
+    onSession?: (sessionId: string) => void;
     onDelta?: (delta: string) => void;
     onTurnEnd?: (end: AgentTurnEnd) => void;
     onLifecycle?: (event: AgentLifecycleEvent) => void;
@@ -461,6 +462,10 @@ async function readAgentTurnStream(
             payload = JSON.parse(trimmed) as Record<string, unknown>;
         } catch {
             malformedLine = trimmed.slice(0, 200);
+            return;
+        }
+        if (payload.type === "session" && typeof payload.sessionId === "string" && payload.sessionId) {
+            handlers.onSession?.(payload.sessionId);
             return;
         }
         if (payload.type === "text_delta" && typeof payload.delta === "string") {
