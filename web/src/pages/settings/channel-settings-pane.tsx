@@ -1,4 +1,4 @@
-import { App, Button, Form, Input, Popconfirm, Segmented, Select, Tooltip } from "antd";
+import { App, Button, Form, Input, Popconfirm, Segmented, Select } from "antd";
 import { Bug, Pencil, Plus, RefreshCw, Trash2, Workflow } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
@@ -380,19 +380,11 @@ export function ChannelSettingsPane({ onOpenDiagnostics, onOpenModels, onOpenRun
                                             编辑
                                         </Button>
                                         {!builtinBeefAPI ? (
-                                            <Popconfirm title="删除个人模型渠道？" description="该渠道关联的模型选择会同时移除。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => deleteChannel(channel.id)}>
-                                                <Tooltip title="删除渠道">
-                                                    <Button
-                                                        className="size-10 p-0 sm:size-8"
-                                                        aria-label={`删除渠道 ${channel.name || "未命名渠道"}`}
-                                                        size="small"
-                                                        type="text"
-                                                        danger
-                                                        disabled={loadingChannelIds.includes(channel.id) || loadingChannelIds.includes("all")}
-                                                        icon={<Trash2 className="size-3.5" />}
-                                                    />
-                                                </Tooltip>
-                                            </Popconfirm>
+                                            <ChannelDeleteConfirm
+                                                channelName={channel.name}
+                                                disabled={loadingChannelIds.includes(channel.id) || loadingChannelIds.includes("all")}
+                                                onConfirm={() => deleteChannel(channel.id)}
+                                            />
                                         ) : null}
                                     </div>
                                 </div>
@@ -734,6 +726,25 @@ export function modelConfigChannelPresentation(channel: ModelChannel) {
         deletable: !builtin,
         adapterLabel: builtin ? "应用内置适配" : "",
     };
+}
+
+// The delete trigger must stay a plain button. Wrapping it in a Tooltip puts
+// the tooltip overlay above the Popconfirm's OK button, so the confirm click
+// never reaches 删除 while the pointer stays on the trigger.
+export function ChannelDeleteConfirm({ channelName, disabled, onConfirm }: { channelName?: string; disabled?: boolean; onConfirm: () => void }) {
+    return (
+        <Popconfirm title="删除个人模型渠道？" description="该渠道关联的模型选择会同时移除。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={onConfirm}>
+            <Button
+                className="size-10 p-0 sm:size-8"
+                aria-label={`删除渠道 ${channelName || "未命名渠道"}`}
+                size="small"
+                type="text"
+                danger
+                disabled={disabled}
+                icon={<Trash2 className="size-3.5" />}
+            />
+        </Popconfirm>
+    );
 }
 
 function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
