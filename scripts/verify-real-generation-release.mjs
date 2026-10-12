@@ -36,21 +36,25 @@ if (version === 'v1.7.17' && receipt.ownerException?.scope === 'generation-deliv
   const cost = value => Number.isFinite(value) && value > 0;
   const uniqueIds = (value, size) => Array.isArray(value) && value.length === size && value.every(nonempty) && new Set(value).size === size;
   if (receipt.ownerException.approvedBy !== 'Ender'
-    || receipt.ownerException.instruction !== 'A. 专项验收后发布（推荐）'
+    || receipt.ownerException.instruction !== '专项验收后发布，本版只跑图片批量和视频各一次'
     || !evidence(receipt.ownerException.evidence) || receipt.paidSubmissionLimit !== 5
     || receipt.newBudgetCNY !== 10 || !Array.isArray(receipt.cases) || receipt.cases.length !== 2
     || receipt.liveMatrixStatus !== 'not_run_owner_waived'
     || receipt.agentAcceptanceStatus !== 'not_run_owner_waived'
     || receipt.acceptanceComplete !== false) fail('v1.7.17 requires exact image-batch/video owner authorization and unexecuted full suites');
+  // Settlement is only verifiable on the official BeefAPI channel; a custom
+  // channel's ledger is outside our reach and cannot prove "no double charge".
   const native = item => item.status === 'succeeded' && item.method === 'native' && item.clientSubmitted === true
-    && item.canvasVerified === true && item.mediaDecoded === true && item.mediaOpened === true
+    && item.channel === 'beefapi' && item.canvasVerified === true && item.mediaDecoded === true && item.mediaOpened === true
     && item.billing === 'settled' && cost(item.costCNY)
     && item.executedSourceDigest === sourceDigest && item.clientVersion === version && evidence(item.evidence);
   const [batch, video] = receipt.cases;
-  if (batch?.path !== 'image-batch' || !nonempty(batch.model) || batch.imageCount !== 4 || batch.dispatches !== 4
+  if (batch?.path !== 'image-batch' || batch.model !== 'gpt-image-2.5' || batch.quality !== 'low' || batch.imageCount !== 4 || batch.dispatches !== 4
     || !native(batch) || !uniqueIds(batch.taskIds, 4) || !uniqueIds(batch.providerRequestIds, 4)
+    || !Array.isArray(batch.attempts) || batch.attempts.length !== 4 || !batch.attempts.every(n => n === 1)
     || !Array.isArray(batch.artifactSHA256s) || batch.artifactSHA256s.length !== 4 || !batch.artifactSHA256s.every(sha)) fail('v1.7.17 requires one native settled four-image batch with four single dispatches');
-  if (video?.path !== 'text-video' || !nonempty(video.model) || video.attempts !== 1 || !native(video)
+  if (video?.path !== 'text-video' || video.model !== 'seedance-2.0-fast' || video.resolution !== '480p' || video.durationSeconds !== 5
+    || video.attempts !== 1 || !native(video)
     || video.deliveryProgressVisible !== true || video.durationVerified !== true
     || !nonempty(video.taskId) || !nonempty(video.providerRequestId) || !sha(video.artifactSHA256)) fail('v1.7.17 requires one native settled video with visible delivery progress');
   const spent = Math.round((batch.costCNY + video.costCNY) * 1e6) / 1e6;

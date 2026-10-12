@@ -56,18 +56,18 @@ test('v1.7.17 requires one native image batch and one native video within CNY 10
     assert.throws(() => run());
     const sourceDigest = run('--fingerprint').trim();
     const evidence = ['synthetic test receipt, not live acceptance'];
-    const common = { status: 'succeeded', method: 'native', clientSubmitted: true, canvasVerified: true, mediaDecoded: true, mediaOpened: true,
+    const common = { status: 'succeeded', method: 'native', clientSubmitted: true, channel: 'beefapi', canvasVerified: true, mediaDecoded: true, mediaOpened: true,
       billing: 'settled', executedSourceDigest: sourceDigest, clientVersion: 'v1.7.17', evidence };
     const value = {
       version: 'v1.7.17', sourceDigest, newBudgetCNY: 10, newSpentCNY: 4.5, newPendingCNY: 0,
       budgetCNY: null, spentCNY: null, pendingCNY: null, paidSubmissionLimit: 5,
       liveMatrixStatus: 'not_run_owner_waived', agentAcceptanceStatus: 'not_run_owner_waived',
       acceptanceComplete: false, releasePublished: false, releaseComplete: false,
-      ownerException: { approvedBy: 'Ender', instruction: 'A. 专项验收后发布（推荐）', scope: 'generation-delivery-targeted-20261012', evidence },
+      ownerException: { approvedBy: 'Ender', instruction: '专项验收后发布，本版只跑图片批量和视频各一次', scope: 'generation-delivery-targeted-20261012', evidence },
       cases: [
-        { ...common, path: 'image-batch', model: 'image-2.5', imageCount: 4, dispatches: 4, costCNY: 1.5,
+        { ...common, path: 'image-batch', model: 'gpt-image-2.5', quality: 'low', imageCount: 4, dispatches: 4, costCNY: 1.5, attempts: [1, 1, 1, 1],
           taskIds: ['t1', 't2', 't3', 't4'], providerRequestIds: ['r1', 'r2', 'r3', 'r4'], artifactSHA256s: ['a', 'b', 'c', 'd'].map(c => c.repeat(64)) },
-        { ...common, path: 'text-video', model: 'seedance-2.0-fast', attempts: 1, costCNY: 3, deliveryProgressVisible: true, durationVerified: true,
+        { ...common, path: 'text-video', model: 'seedance-2.0-fast', resolution: '480p', durationSeconds: 5, attempts: 1, costCNY: 3, deliveryProgressVisible: true, durationVerified: true,
           taskId: 'tv', providerRequestId: 'rv', artifactSHA256: 'e'.repeat(64) },
       ],
       priorFinancialUncertainty: { status: 'unresolved', carriedFromVersion: 'v1.7.16', pendingCNY: null, evidence },
@@ -86,6 +86,9 @@ test('v1.7.17 requires one native image batch and one native video within CNY 10
       r => { r.cases[1].costCNY = 9; r.newSpentCNY = 10.5; },
       r => r.cases[0].imageCount = 3, r => r.cases[0].dispatches = 5, r => r.cases[0].taskIds = ['t1', 't1', 't2', 't3'],
       r => r.cases[0].providerRequestIds.pop(), r => r.cases[0].artifactSHA256s[0] = 'x', r => r.cases[0].model = '',
+      r => r.cases[0].model = 'gpt-image-2.5-flare', r => r.cases[0].quality = 'high', r => r.cases[0].attempts = [1, 1, 1, 2], r => r.cases[0].attempts.pop(),
+      r => r.ownerException.instruction = 'A. 专项验收后发布（推荐）',
+      r => r.cases[1].model = '原生不卡人脸-全参2.5', r => r.cases[1].resolution = '720p', r => r.cases[1].durationSeconds = 4,
       r => r.cases[1].attempts = 2, r => r.cases[1].deliveryProgressVisible = false, r => r.cases[1].durationVerified = false,
       r => r.cases[1].taskId = '', r => r.cases[1].providerRequestId = '', r => r.cases[1].artifactSHA256 = '', r => r.cases[1].path = 'image-video',
       r => r.priorFinancialUncertainty.pendingCNY = 0, r => r.priorFinancialUncertainty.carriedFromVersion = 'v1.7.15', r => r.pendingCNY = 0,
@@ -97,6 +100,7 @@ test('v1.7.17 requires one native image batch and one native video within CNY 10
     ];
     for (const index of [0, 1]) {
       for (const field of ['clientSubmitted', 'canvasVerified', 'mediaDecoded', 'mediaOpened']) mutations.push(r => r.cases[index][field] = false);
+      mutations.push(r => r.cases[index].channel = 'M3q8wGsdwkNiya_suRJQo', r => delete r.cases[index].channel);
       mutations.push(r => r.cases[index].status = 'pending', r => r.cases[index].method = 'mock', r => r.cases[index].billing = 'unknown',
         r => r.cases[index].costCNY = 0, r => r.cases[index].executedSourceDigest = 'old', r => r.cases[index].clientVersion = 'v1.7.16', r => r.cases[index].evidence = []);
     }
