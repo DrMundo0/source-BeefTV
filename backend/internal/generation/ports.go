@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"infinite-canvas/backend/internal/outbound"
 )
 
 // ResourceInfo is the executor view of an owned workspace asset.
@@ -143,11 +145,20 @@ type CallMeta struct {
 	ConcurrencyLimit  int
 }
 
+// DeliveryProgressPort carries in-generation result download progress (for
+// example a video fetched from a gateway before the task succeeds). The adapter
+// owns identity; nil means nothing is reported.
+type DeliveryProgressPort interface {
+	ReportDelivery(taskID string, progress outbound.ResumableProgress)
+	ClearDelivery(taskID string)
+}
+
 type Runtime struct {
 	Resources ResourcePort
 	Limits    LimitsPort
 	Receipts  ReceiptPort
 	Stages    StagePort
+	Delivery  DeliveryProgressPort
 	Images    ImageSubmissionPort
 	Workflow  WorkflowPort
 	Prompt    PromptPort

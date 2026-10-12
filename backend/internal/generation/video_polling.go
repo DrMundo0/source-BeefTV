@@ -161,9 +161,11 @@ func RunVideoDownload(ctx context.Context, taskID string, policy VideoPollPolicy
 		return nil, "", err
 	}
 	policy = NormalizeVideoPollPolicy(policy)
+	reporter := newVideoDownloadReporter(runtime.Delivery, taskID)
+	defer reporter.clear()
 	var lastErr error
 	for attempt := 1; attempt <= policy.MaxDownloadTries; attempt++ {
-		data, mimeType, err := download(ctx)
+		data, mimeType, err := download(reporter.beginAttempt(ctx, attempt))
 		if err == nil {
 			return data, mimeType, nil
 		}
@@ -173,6 +175,7 @@ func RunVideoDownload(ctx context.Context, taskID string, policy VideoPollPolicy
 			return nil, "", VideoDownloadError{TaskID: taskID, Cause: err}
 		}
 		delay := max(policy.Interval, ProviderRetryAfter(err))
+		reporter.waitForRetry(attempt + 1)
 		if err := policy.Sleep(ctx, delay); err != nil {
 			return nil, "", err
 		}

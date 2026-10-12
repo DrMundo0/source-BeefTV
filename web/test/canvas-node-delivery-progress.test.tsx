@@ -50,3 +50,11 @@ test("结果已保留的失败节点提供「继续取回」", () => {
     expect(markup).toContain("继续取回");
     expect(markup).not.toContain("重新加载资源");
 });
+
+test("正在取回生成结果阶段即使还没有字节也显示取回中，不显示已用时间", () => {
+    const fetchingNode: CanvasNodeData = { ...loadingVideo, metadata: { status: "loading", taskId: "task-1", taskStatus: "running", taskStage: "正在取回生成结果" } };
+    const markup = render(fetchingNode);
+    expect(markup).toContain("正在取回结果");
+    expect(markup).not.toContain("已用");
+    expect(markup).not.toContain("生成中");
+});

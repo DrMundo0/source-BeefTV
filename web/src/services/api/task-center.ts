@@ -3,6 +3,7 @@ import { assertUserScope, isUserScopeAbandonedError, type CapturedUserScope } fr
 import { http, apiBaseURL, type BackendEnvelope, type HttpRequestConfig } from "@/services/api/request";
 import { consumeTaskTextStream, createTaskTextStreamParser, type TaskTextStreamEvent } from "@/services/api/task-text-stream";
 import { recordDiagnosticEvent } from "@/services/diagnostics/client-diagnostics";
+import { publishGenerationDeliveryProgress } from "@/stores/use-generation-delivery-progress";
 
 export type { BackendEnvelope } from "@/services/api/request";
 
@@ -23,7 +24,7 @@ export type GenerationTaskDeliveryProgress = {
     /** -1 when the remote size is unknown. */
     totalBytes: number;
     bytesPerSecond: number;
-    state: "downloading" | "retrying";
+    state: "downloading" | "retrying" | "waiting";
 };
 
 export type GenerationTask = {
@@ -401,6 +402,9 @@ export async function waitForGenerationTask(id: string, options?: WaitForGenerat
     let lastTask = options?.initialTask;
     let lastQueryError: unknown;
     let consecutiveFailures = 0;
+    // Only the progress this waiter published is cleared on exit, so a second
+    // waiter for the same task keeps its own view.
+    let publishedDelivery = false;
     try {
         while (Date.now() - startedAt < (options?.timeoutMs || taskWaitTimeoutMs(lastTask))) {
             if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -424,6 +428,16 @@ export async function waitForGenerationTask(id: string, options?: WaitForGenerat
                 await delay(intervalMs, options?.signal);
                 continue;
             }
+            if (task.status === "queued" || task.status === "running") {
+                const progress = task.delivery?.outputs[0];
+                if (progress) {
+                    publishGenerationDeliveryProgress(id, progress);
+                    publishedDelivery = true;
+                } else if (publishedDelivery) {
+                    publishGenerationDeliveryProgress(id, undefined);
+                    publishedDelivery = false;
+                }
+            }
             if (task.status === "succeeded") {
                 return task;
             }
@@ -438,6 +452,8 @@ export async function waitForGenerationTask(id: string, options?: WaitForGenerat
             throw new DOMException("Aborted", "AbortError");
         }
         throw error;
+    } finally {
+        if (publishedDelivery) publishGenerationDeliveryProgress(id, undefined);
     }
     throw new Error(lastQueryError instanceof Error ? `任务状态同步失败：${lastQueryError.message}` : "任务执行超时，请稍后重试");
 }

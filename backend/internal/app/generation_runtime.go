@@ -10,6 +10,7 @@ import (
 
 	"infinite-canvas/backend/internal/generation"
 	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/outbound"
 )
 
 type appResourcePort struct{ service *Service }
@@ -95,6 +96,27 @@ func (p appTaskStagePort) SetStage(ctx context.Context, stage string) error {
 		return err
 	}
 	return p.service.repo.WithContext(ctx).UpdateTaskStageForLease(p.task.ID, p.task.LeaseOwner, stage)
+}
+
+// appTaskDeliveryPort mirrors in-generation result downloads into the same
+// task delivery projection that post-success artifact delivery uses.
+type appTaskDeliveryPort struct {
+	service *Service
+}
+
+func (p appTaskDeliveryPort) ReportDelivery(taskID string, progress outbound.ResumableProgress) {
+	if p.service == nil {
+		return
+	}
+	identity := strings.TrimSpace(taskID) + ":0"
+	p.service.deliveryProgressRegistry().record(identity, deliveryProgressFromOutbound(identity, progress))
+}
+
+func (p appTaskDeliveryPort) ClearDelivery(taskID string) {
+	if p.service == nil {
+		return
+	}
+	p.service.deliveryProgressRegistry().clear(strings.TrimSpace(taskID) + ":0")
 }
 
 func (p appReceiptPort) Observe(observation generation.TransportObservation) {
@@ -299,6 +321,7 @@ func (s *Service) applyGenerationRuntime(ctx context.Context, meta generation.Ca
 	if existing, ok := generation.RuntimeFromContext(ctx); ok {
 		runtime.Endpoints = existing.Endpoints
 		runtime.Stages = existing.Stages
+		runtime.Delivery = existing.Delivery
 		if !replaceCall {
 			runtime.Call = generation.IdentityCallMeta(existing.Call, meta)
 		}

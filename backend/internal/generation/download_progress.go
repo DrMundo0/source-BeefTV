@@ -1,0 +1,115 @@
+package generation
+
+import (
+	"context"
+	"io"
+	"time"
+
+	"infinite-canvas/backend/internal/outbound"
+)
+
+// downloadProgressInterval throttles byte observations; the final read (io.EOF
+// or a read error) is always observed so the last count is never lost.
+const downloadProgressInterval = 500 * time.Millisecond
+
+type downloadObserverContext struct{}
+
+// downloadObserver receives the bytes read from a response body. total is -1
+// when the server did not declare a length.
+type downloadObserver func(downloaded, total int64)
+
+// withDownloadObserver scopes byte observation to one download attempt. Requests
+// without an observer read the body exactly as before.
+func withDownloadObserver(ctx context.Context, observe downloadObserver) context.Context {
+	return context.WithValue(ctx, downloadObserverContext{}, observe)
+}
+
+func downloadObserverFrom(ctx context.Context) downloadObserver {
+	observe, _ := ctx.Value(downloadObserverContext{}).(downloadObserver)
+	return observe
+}
+
+type progressReader struct {
+	reader   io.Reader
+	total    int64
+	read     int64
+	observe  downloadObserver
+	lastSent time.Time
+}
+
+// newProgressReader reports total as the response's declared length; net/http
+// already uses -1 when the server did not send one.
+func newProgressReader(reader io.Reader, contentLength int64, observe downloadObserver) io.Reader {
+	return &progressReader{reader: reader, total: contentLength, observe: observe}
+}
+
+func (r *progressReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	r.read += int64(n)
+	now := time.Now()
+	if err != nil || now.Sub(r.lastSent) >= downloadProgressInterval {
+		r.lastSent = now
+		r.observe(r.read, r.total)
+	}
+	return n, err
+}
+
+// videoDownloadReporter turns attempt-level byte observations into delivery
+// progress for one task. It is inert when the runtime has no Delivery port.
+type videoDownloadReporter struct {
+	port    DeliveryProgressPort
+	taskID  string
+	attempt int
+	rate    outbound.ProgressRate
+}
+
+func newVideoDownloadReporter(port DeliveryProgressPort, taskID string) *videoDownloadReporter {
+	if port == nil {
+		return nil
+	}
+	return &videoDownloadReporter{port: port, taskID: taskID}
+}
+
+func (r *videoDownloadReporter) report(state string, downloaded, total int64) {
+	now := time.Now()
+	r.rate.Observe(now, downloaded)
+	r.port.ReportDelivery(r.taskID, outbound.ResumableProgress{
+		DownloadedBytes: downloaded,
+		TotalBytes:      total,
+		BytesPerSecond:  r.rate.Rate(now, downloaded),
+		Attempt:         r.attempt,
+		State:           state,
+	})
+}
+
+// beginAttempt reports the attempt as started and returns a context whose body
+// reads are reported as "downloading" for this attempt.
+func (r *videoDownloadReporter) beginAttempt(ctx context.Context, attempt int) context.Context {
+	if r == nil {
+		return ctx
+	}
+	r.attempt = attempt
+	r.rate = outbound.ProgressRate{}
+	r.report("downloading", 0, -1)
+	return withDownloadObserver(ctx, func(downloaded, total int64) {
+		r.report("downloading", downloaded, total)
+	})
+}
+
+// waitForRetry reports the next attempt as waiting for the provider to make the
+// result ready, before the retry sleep begins.
+func (r *videoDownloadReporter) waitForRetry(nextAttempt int) {
+	if r == nil {
+		return
+	}
+	r.attempt = nextAttempt
+	r.rate = outbound.ProgressRate{}
+	r.report("waiting", 0, -1)
+}
+
+func (r *videoDownloadReporter) clear() {
+	if r == nil {
+		return
+	}
+	r.port.ClearDelivery(r.taskID)
+}

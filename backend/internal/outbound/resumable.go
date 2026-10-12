@@ -41,7 +41,7 @@ type ResumableProgress struct {
 	TotalBytes      int64  // -1 when unknown
 	BytesPerSecond  int64  // smoothed over roughly the last 3s; 0 when stalled/unknown
 	Attempt         int    // 1-based
-	State           string // "downloading" | "retrying"
+	State           string // "downloading" | "retrying" | "waiting"
 }
 
 // ResumableResult is a fully materialized artifact. Data is read from the .part
@@ -470,6 +470,20 @@ func (s *resumableRateSampler) observe(at time.Time, downloaded int64) {
 	if first > 0 {
 		s.samples = append([]resumableRateSample(nil), s.samples[first:]...)
 	}
+}
+
+// ProgressRate applies the resumable-download speed smoothing to any byte
+// counter, so generation transfers report speeds on the same scale.
+type ProgressRate struct {
+	sampler resumableRateSampler
+}
+
+func (r *ProgressRate) Observe(at time.Time, downloaded int64) {
+	r.sampler.observe(at, downloaded)
+}
+
+func (r *ProgressRate) Rate(now time.Time, downloaded int64) int64 {
+	return r.sampler.rate(now, downloaded)
 }
 
 func (s *resumableRateSampler) rate(now time.Time, downloaded int64) int64 {

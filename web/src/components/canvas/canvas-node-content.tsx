@@ -4,7 +4,7 @@ import { AlertCircle, BookOpenCheck, Clock3, Download, FileText, Image as ImageI
 import { VideoPlayer } from "@/components/video-player";
 import { CachedResourceImage } from "@/components/cached-resource-image";
 import { GenerationFailureNotice } from "@/components/generation/generation-failure-notice";
-import { generationDeliveryProgressView } from "@/lib/generation-delivery-progress";
+import { generationDeliveryProgressView, generationTaskFetchingResult } from "@/lib/generation-delivery-progress";
 import { explainGenerationError } from "@/lib/generation-error";
 import { formatGenerationElapsed, generationProgressDisplay, generationTaskShowsProgress, isGenerationTaskSubmissionUncertain, trackGenerationProgressChange, type GenerationProgressRecord } from "@/lib/generation-task-display";
 import { canvasRichTextHTML } from "@/lib/canvas/canvas-rich-text";
@@ -219,8 +219,10 @@ function LoadingContent({ node, theme, onOpenTaskDetails, onCancelTask }: Pick<C
     });
     const deliveryProgress = useGenerationDeliveryProgress((state) => (taskId ? state.byTask[taskId] : undefined));
     const delivery = deliveryProgress ? generationDeliveryProgressView(deliveryProgress) : null;
-    const fetchingResult = Boolean(delivery) || displayTask.status === "succeeded";
-    const progressView = delivery ? { percent: delivery.percent, bar: delivery.percent !== null ? "determinate" : "indeterminate" } : generationView;
+    const fetchingResult = generationTaskFetchingResult(displayTask, Boolean(deliveryProgress));
+    const progressView = delivery
+        ? { percent: delivery.percent, bar: delivery.percent !== null ? "determinate" : "indeterminate" }
+        : fetchingResult && displayTask.status === "running" ? { percent: null, bar: "indeterminate" } : generationView;
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2.5 px-5 text-center" style={{ color: theme.node.activeStroke }}>
             {submissionUncertain ? <AlertCircle className="size-10" /> : <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />}
