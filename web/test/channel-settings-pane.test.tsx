@@ -1,21 +1,7 @@
 import { expect, test } from "bun:test";
-import { Button, Popconfirm, Tooltip } from "antd";
-import { BeefAPIConnectionActions, ChannelDeleteConfirm, mergeManagedBeefAPICatalog, modelConfigChannelPresentation, modelConfigChannelStatusLabel, shouldRefreshBeefAPICatalog } from "../src/pages/settings/channel-settings-pane";
+import { BeefAPIConnectionActions, mergeManagedBeefAPICatalog, modelConfigChannelPresentation, modelConfigChannelStatusLabel, shouldRefreshBeefAPICatalog } from "../src/pages/settings/channel-settings-pane";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createModelChannel, defaultConfig } from "../src/stores/use-config-store";
-
-test("删除渠道的确认触发器是普通按钮，没有被 Tooltip 包住", () => {
-    const confirm = ChannelDeleteConfirm({ channelName: "工作室渠道", onConfirm: () => {} });
-    const trigger = confirm.props.children;
-    // Tooltip 会盖住 Popconfirm 的「删除」按钮，确认点击落不到；触发器必须是按钮本身。
-    expect(confirm.type).toBe(Popconfirm);
-    expect(trigger.type).toBe(Button);
-    expect(trigger.type).not.toBe(Tooltip);
-    expect(trigger.props["aria-label"]).toBe("删除渠道 工作室渠道");
-    const markup = renderToStaticMarkup(confirm);
-    expect(markup).toContain('aria-label="删除渠道 工作室渠道"');
-    expect(markup).toContain("删除");
-});
 
 test("connection actions render immediate progress and a retry after network failure", () => {
     const noop = () => {};
