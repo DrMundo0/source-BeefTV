@@ -113,6 +113,46 @@ test('v1.7.17 requires one native image batch and one native video within CNY 10
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('v1.7.17 owner acceptance forbids new spending, preserves evidence and cannot carry forward', () => {
+  const { run, save, commitVersion, dir } = setupRepo('v1.7.17');
+  try {
+    const sourceDigest = run('--fingerprint').trim();
+    const evidence = ['synthetic test receipt, not live acceptance'];
+    const accepted = { confirmedBy: 'Ender', method: 'native', status: 'passed', testedSourceDigest: 'a'.repeat(64), instruction: '实测通过', evidence };
+    const value = {
+      version: 'v1.7.17', sourceDigest, newBudgetCNY: 0, newSpentCNY: 0, newPendingCNY: 0, paidSubmissionLimit: 0,
+      budgetCNY: null, spentCNY: null, pendingCNY: null, cases: [],
+      liveMatrixStatus: 'not_run_owner_waived', agentAcceptanceStatus: 'not_run_owner_waived',
+      acceptanceComplete: false, releasePublished: false, releaseComplete: false,
+      ownerException: { approvedBy: 'Ender', instruction: '采用本次实测，不重复付费（推荐）', scope: 'generation-delivery-owner-accepted-20261013', evidence },
+      ownerAcceptance: { generationDelivery: { ...accepted }, videoFullscreen: { ...accepted } },
+      priorFinancialUncertainty: { status: 'unresolved', carriedFromVersion: 'v1.7.16', pendingCNY: null, evidence },
+      review: { result: 'approved', independent: true, reviewer: 'fixture', sourceDigest, evidence },
+      upgrade: { preservedData: true, sourceDigest, evidence },
+      verification: Object.fromEntries(['generationDelivery', 'imageRecoveryBudget', 'noDuplicateSubmission', 'videoFullscreen', 'localReleaseGate', 'ci'].map(id => [id, { status: 'passed', sourceDigest, evidence }])),
+      packages: { status: 'pending_release_workflow', archives: null, platforms: ['darwin-arm64', 'darwin-amd64', 'windows-amd64', 'linux-amd64'],
+        windowsReleasedUpgradeAndRollbackBeforeUpload: true, finalArchiveSmokeBeforeUpload: true, linuxNativeWindowBeforeUpload: true,
+        signedManifestBeforePublish: true, publicReadbackAfterPublish: true, workflowEvidence: evidence },
+    };
+    save(value); assert.match(run(), /owner native acceptance; no new paid generation.*package gates pending/);
+    const mutations = [
+      r => r.ownerException.instruction = '发吧', r => r.ownerException.approvedBy = 'other', r => r.ownerException.evidence = [],
+      r => r.paidSubmissionLimit = 1, r => r.newBudgetCNY = 1, r => r.newSpentCNY = 1, r => r.newPendingCNY = 1, r => r.cases.push({}),
+      r => r.liveMatrixStatus = 'passed', r => r.agentAcceptanceStatus = 'passed', r => r.acceptanceComplete = true,
+      r => r.spentCNY = 0, r => r.priorFinancialUncertainty.status = 'resolved', r => r.review.independent = false,
+      r => r.review.sourceDigest = 'old', r => r.upgrade.preservedData = false, r => r.releasePublished = true,
+      r => r.packages.platforms.pop(), r => r.packages.publicReadbackAfterPublish = false,
+    ];
+    for (const id of Object.keys(value.ownerAcceptance)) mutations.push(r => delete r.ownerAcceptance[id], r => r.ownerAcceptance[id].confirmedBy = 'agent',
+      r => r.ownerAcceptance[id].method = 'mock', r => r.ownerAcceptance[id].status = 'pending', r => r.ownerAcceptance[id].testedSourceDigest = 'unknown', r => r.ownerAcceptance[id].evidence = []);
+    for (const id of Object.keys(value.verification)) mutations.push(r => r.verification[id].status = 'pending', r => r.verification[id].sourceDigest = 'old');
+    for (const mutate of mutations) { const invalid = structuredClone(value); mutate(invalid); save(invalid); assert.throws(() => run()); }
+    commitVersion('v1.7.18');
+    save({ ...value, version: 'v1.7.18', sourceDigest: run('--fingerprint').trim() }, 'v1.7.18');
+    assert.throws(() => run());
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('v1.7.16 requires one settled native ASR and cannot waive evidence or carry forward', () => {
   const { dir, run, save, commitVersion } = setupRepo('v1.7.16');
   try {
