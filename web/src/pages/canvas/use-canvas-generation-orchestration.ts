@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } fr
 import { useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
 import { nanoid } from "nanoid";
+import { captureUserScope, userScopeMatches } from "@/lib/user-scope-guard";
 
 import { promoteLegacyBatchTableSize } from "@/lib/canvas/canvas-batch-table";
 import { persistCanvasDocument } from "@/services/local-workspace-repository";
@@ -213,6 +214,9 @@ export function useCanvasGenerationOrchestration({
     const cancelCanvasTask = useCallback(
         (task: GenerationTask) => {
             const deliveryOnly = task.status === "succeeded";
+            const owner = lifetime.capture(projectId);
+            const userScope = captureUserScope();
+            const isCurrent = () => lifetime.matches(owner, projectIdRef.current) && userScopeMatches(userScope);
             modal.confirm({
                 ...canvasTaskConfirmation,
                 title: deliveryOnly ? "停止取回结果？" : "取消生成任务？",
@@ -220,20 +224,24 @@ export function useCanvasGenerationOrchestration({
                 okText: deliveryOnly ? "停止取回" : "取消任务",
                 cancelText: "继续等待",
                 onOk: async () => {
+                    if (!isCurrent()) return;
                     try {
-                        const next = await cancelGenerationTask(task.id);
+                        const next = await cancelGenerationTask(task.id, userScope);
+                        if (!isCurrent()) return;
                         const node = nodesRef.current.find((item) => item.metadata?.taskId === task.id);
                         if (node) bindGenerationTask(node.id, next);
                         setTaskDetail((current) => (current?.id === task.id ? next : current));
                         await queryClient.invalidateQueries({ queryKey: ["canvas-active-tasks", projectId] });
+                        if (!isCurrent()) return;
                         message.success(deliveryOnly ? "已停止取回" : "任务已取消");
                     } catch (error) {
+                        if (!isCurrent()) return;
                         message.error(error instanceof Error ? error.message : "取消任务失败");
                     }
                 },
             });
         },
-        [bindGenerationTask, localOnly, message, modal, nodesRef, projectId, queryClient, setTaskDetail],
+        [bindGenerationTask, lifetime, localOnly, message, modal, nodesRef, projectId, queryClient, setTaskDetail],
     );
 
     const insertGenerationHistoryTask = useCallback(

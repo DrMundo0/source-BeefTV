@@ -87,15 +87,17 @@ export function canvasGenerationTaskNodes(nodes: CanvasNodeData[], targetNodeId:
     return nodes.map((node) => {
         if (node.id !== targetNodeId) return node;
         const failed = task.status === "failed" || task.status === "cancelled";
-        const hasCompletedContent = task.status === "succeeded" && Boolean(node.metadata?.content || node.metadata?.storageKey);
+        const output = task.outputs?.find((item) => item.outputIndex === 0) ?? task.outputs?.[0];
+        const paused = task.status === "succeeded" && !output?.materializedAssetId && [task.stage, output?.materializationErrorCode].some((code) => code === "delivery_paused" || code === "delivery_timed_out");
+        const hasCompletedContent = task.status === "succeeded" && !paused && (!output || Boolean(output.materializedAssetId)) && Boolean(node.metadata?.content || node.metadata?.storageKey);
         const retainRecovery = task.status === "succeeded" && !hasCompletedContent && Boolean(node.metadata?.resourceReloadAvailable || isKeptGenerationResultCode(node.metadata?.generationErrorCode));
-        const failure = failed ? canvasTaskFailureMetadata(task, node.metadata) : undefined;
+        const failure = paused ? { resourceReloadAvailable: true, generationErrorCode: "download_failed", errorDetails: task.stage === "delivery_timed_out" ? "取回结果已超时，可以继续取回" : "已停止取回，可以继续取回" } : failed ? canvasTaskFailureMetadata(task, node.metadata) : undefined;
         return {
             ...node,
             metadata: {
                 ...node.metadata,
                 ...generationTaskMetadata(task),
-                status: failed || retainRecovery ? "error" : hasCompletedContent ? "success" : "loading",
+                status: failed || paused || retainRecovery ? "error" : hasCompletedContent ? "success" : "loading",
                 ...(failure || (retainRecovery
                     ? { resourceReloadAvailable: true, generationErrorCode: node.metadata?.generationErrorCode, errorDetails: node.metadata?.errorDetails || "生成结果已保留，请点击「继续取回」" }
                     : { errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined, failedPromptFingerprint: undefined, failedInputFingerprint: undefined })),

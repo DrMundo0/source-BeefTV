@@ -128,7 +128,7 @@ const CATEGORY_COPY: Record<GenerationErrorCategory, CategoryCopy> = {
     async_failed: { reason: "生成任务没有完成", action: "请查看详情后决定是否重试" },
     cancelled: { reason: "任务已取消", action: "可按原输入重新提交" },
     partial_success: { reason: "部分结果已生成，其余失败", action: "请查看已有结果后再决定是否补做" },
-    download_failed: { reason: "生成结果还没取回", action: "点击「继续取回」会从中断处接着下载，不会重新生成" },
+    download_failed: { reason: "生成结果还没取回", action: "点击「继续取回」可继续下载原结果，不会重新生成" },
     delivery_failed: { reason: "视频已生成，但暂时无法取回", action: "请联系支持恢复成片，恢复后点击「取回结果」；无需重新付费生成" },
     results_missing: { reason: "任务结束但没有可用结果", action: "请查看详情后再决定是否重试" },
     malformed_response: { reason: "模型服务返回了无法解析的内容", action: "请查看详情并核对原任务状态后，再决定是否重新生成" },

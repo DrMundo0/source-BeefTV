@@ -22,6 +22,29 @@ const succeededTask: GenerationTask = {
 };
 
 describe("generation result-apply error codes", () => {
+    test("paused delivery keeps a recovery action even when the node retains old media", () => {
+        for (const stage of ["delivery_paused", "delivery_timed_out"]) {
+            for (const content of [undefined, "old-video.mp4"]) {
+                const original = node({ taskId: "task-1", status: "loading", content });
+                const [next] = canvasGenerationTaskNodes([original], "n1", { ...succeededTask, stage, outputs: [{ outputIndex: 0, mediaType: "video", materializationErrorCode: stage }] });
+                expect(next.metadata?.status).toBe("error");
+                expect(next.metadata?.resourceReloadAvailable).toBe(true);
+                expect(next.metadata?.generationErrorCode).toBe("download_failed");
+                expect(next.metadata?.content).toBe(content);
+            }
+        }
+    });
+
+    test("old media is not the pending task output and completed outputs still win over pause", () => {
+        const original = node({ taskId: "task-1", status: "loading", content: "old-video.mp4" });
+        const pending = { ...succeededTask, outputs: [{ outputIndex: 0, mediaType: "video" as const }] };
+        expect(canvasGenerationTaskNodes([original], "n1", pending)[0].metadata?.status).toBe("loading");
+        const complete = { ...pending, stage: "delivery_paused", outputs: [{ outputIndex: 0, mediaType: "video" as const, materializedAssetId: "asset-current" }] };
+        const [next] = canvasGenerationTaskNodes([original], "n1", complete);
+        expect(next.metadata?.status).toBe("success");
+        expect(next.metadata?.resourceReloadAvailable).toBeUndefined();
+        expect(canvasGenerationTaskNodes([original], "n1", succeededTask)[0].metadata?.status).toBe("success");
+    });
     test("durable ack is a canvas conflict only for a revision conflict", () => {
         const conflict = new CanvasGenerationDurableAckError(new ApiError("云端画布已有更新", { status: 409, reason: "stale_revision" }));
         expect(conflict.code).toBe("canvas_conflict");
