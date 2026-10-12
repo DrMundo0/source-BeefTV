@@ -52,6 +52,7 @@ export default function CanvasPage() {
     const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
     const loadMoreRef = useRef<HTMLDivElement>(null);
     const [loadedProjectCount, setLoadedProjectCount] = useState(50);
+    const [creationError, setCreationError] = useState(false);
     const hydrated = useCanvasStore((state) => state.hydrated);
     const localProjects = useCanvasStore((state) => state.projects);
     const folders = useCanvasStore((state) => state.folders);
@@ -121,10 +122,13 @@ export default function CanvasPage() {
         [forwardedQuery, navigate, preloadProject],
     );
     const createAndEnter = () => {
+        setCreationError(false);
         const { id, saved } = beginLocalCanvasProject("未命名项目");
-        // 允许浏览器验收脚本在项目库内保留新卡片，真实用户仍沿用 LibTV 的直接进入画布行为。
-        if (searchParams.get("stay") !== "1") enterProject(id);
-        void saved.catch((error) => {
+        void saved.then(() => {
+            // Only enter after the desktop repository has accepted the new canvas.
+            if (searchParams.get("stay") !== "1") enterProject(id);
+        }).catch((error) => {
+            setCreationError(true);
             message.error(error instanceof Error ? error.message : "创建项目失败，请重试");
         });
     };
@@ -269,13 +273,13 @@ export default function CanvasPage() {
             return;
         }
         const { id, saved } = beginLocalCanvasProject("未命名项目");
-        enterProject(id);
-        void saved.catch((error) => {
+        void saved.then(() => enterProject(id)).catch((error) => {
+            setCreationError(true);
             message.error(error instanceof Error ? error.message : "创建项目失败，请重试");
         });
     }, [hydrated, message, mode, projects, remoteMode, sessionHydrated, libraryQuery.isSuccess,canvasHealth]);
 
-    if (!libraryQuery.isError && !(canvasHealth.error && !remoteMode) && (mode === "new" || mode === "recent" || mode === "handoff")) return <main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">正在打开画布...</main>;
+    if (!creationError && !libraryQuery.isError && !(canvasHealth.error && !remoteMode) && (mode === "new" || mode === "recent" || mode === "handoff")) return <main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">正在打开画布...</main>;
 
     return (
         <WorkspacePage className="studio-collection-page lib-tv-project-page">
