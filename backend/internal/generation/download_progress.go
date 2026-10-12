@@ -62,17 +62,16 @@ func (r *progressReader) Read(p []byte) (int, error) {
 // progress for one task. It is inert when the runtime has no Delivery port.
 type videoDownloadReporter struct {
 	port       DeliveryProgressPort
-	taskID     string
 	attempt    int
 	downloaded int64
 	rate       outbound.ProgressRate
 }
 
-func newVideoDownloadReporter(port DeliveryProgressPort, taskID string) *videoDownloadReporter {
+func newVideoDownloadReporter(port DeliveryProgressPort) *videoDownloadReporter {
 	if port == nil {
 		return nil
 	}
-	return &videoDownloadReporter{port: port, taskID: taskID}
+	return &videoDownloadReporter{port: port}
 }
 
 func (r *videoDownloadReporter) report(state string, downloaded, total int64) {
@@ -84,7 +83,7 @@ func (r *videoDownloadReporter) report(state string, downloaded, total int64) {
 	r.downloaded = downloaded
 	now := time.Now()
 	r.rate.Observe(now, downloaded)
-	r.port.ReportDelivery(r.taskID, outbound.ResumableProgress{
+	r.port.ReportDelivery(outbound.ResumableProgress{
 		DownloadedBytes: downloaded,
 		TotalBytes:      total,
 		BytesPerSecond:  r.rate.Rate(now, downloaded),
@@ -124,5 +123,5 @@ func (r *videoDownloadReporter) clear() {
 	if r == nil {
 		return
 	}
-	r.port.ClearDelivery(r.taskID)
+	r.port.ClearDelivery()
 }

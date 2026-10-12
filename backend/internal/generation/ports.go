@@ -147,10 +147,11 @@ type CallMeta struct {
 
 // DeliveryProgressPort carries in-generation result download progress (for
 // example a video fetched from a gateway before the task succeeds). The adapter
-// owns identity; nil means nothing is reported.
+// is bound to the executing BeefTV task and owns identity; provider task ids
+// must never be used as the key. nil means nothing is reported.
 type DeliveryProgressPort interface {
-	ReportDelivery(taskID string, progress outbound.ResumableProgress)
-	ClearDelivery(taskID string)
+	ReportDelivery(progress outbound.ResumableProgress)
+	ClearDelivery()
 }
 
 type Runtime struct {

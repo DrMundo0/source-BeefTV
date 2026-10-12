@@ -161,7 +161,7 @@ func RunVideoDownload(ctx context.Context, taskID string, policy VideoPollPolicy
 		return nil, "", err
 	}
 	policy = NormalizeVideoPollPolicy(policy)
-	reporter := newVideoDownloadReporter(runtime.Delivery, taskID)
+	reporter := newVideoDownloadReporter(runtime.Delivery)
 	defer reporter.clear()
 	var lastErr error
 	for attempt := 1; attempt <= policy.MaxDownloadTries; attempt++ {

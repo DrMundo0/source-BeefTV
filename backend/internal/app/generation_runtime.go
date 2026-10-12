@@ -102,21 +102,24 @@ func (p appTaskStagePort) SetStage(ctx context.Context, stage string) error {
 // task delivery projection that post-success artifact delivery uses.
 type appTaskDeliveryPort struct {
 	service *Service
+	taskID  string
 }
 
-func (p appTaskDeliveryPort) ReportDelivery(taskID string, progress outbound.ResumableProgress) {
-	if p.service == nil {
+func (p appTaskDeliveryPort) ReportDelivery(progress outbound.ResumableProgress) {
+	taskID := strings.TrimSpace(p.taskID)
+	if p.service == nil || taskID == "" {
 		return
 	}
-	identity := strings.TrimSpace(taskID) + ":0"
+	identity := taskID + ":0"
 	p.service.deliveryProgressRegistry().record(identity, deliveryProgressFromOutbound(identity, progress))
 }
 
-func (p appTaskDeliveryPort) ClearDelivery(taskID string) {
-	if p.service == nil {
+func (p appTaskDeliveryPort) ClearDelivery() {
+	taskID := strings.TrimSpace(p.taskID)
+	if p.service == nil || taskID == "" {
 		return
 	}
-	p.service.deliveryProgressRegistry().clear(strings.TrimSpace(taskID) + ":0")
+	p.service.deliveryProgressRegistry().clear(taskID + ":0")
 }
 
 func (p appReceiptPort) Observe(observation generation.TransportObservation) {

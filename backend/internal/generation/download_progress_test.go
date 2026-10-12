@@ -19,17 +19,15 @@ type fakeDeliveryPort struct {
 	mu      sync.Mutex
 	reports []outbound.ResumableProgress
 	cleared int32
-	taskIDs []string
 }
 
-func (f *fakeDeliveryPort) ReportDelivery(taskID string, progress outbound.ResumableProgress) {
+func (f *fakeDeliveryPort) ReportDelivery(progress outbound.ResumableProgress) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.taskIDs = append(f.taskIDs, taskID)
 	f.reports = append(f.reports, progress)
 }
 
-func (f *fakeDeliveryPort) ClearDelivery(string) { atomic.AddInt32(&f.cleared, 1) }
+func (f *fakeDeliveryPort) ClearDelivery() { atomic.AddInt32(&f.cleared, 1) }
 
 func (f *fakeDeliveryPort) snapshot() []outbound.ResumableProgress {
 	f.mu.Lock()
@@ -98,11 +96,6 @@ func TestRunVideoDownloadReportsStreamedProgressAndClearsOnce(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&port.cleared); got != 1 {
 		t.Fatalf("expected one clear, got %d", got)
-	}
-	for _, taskID := range port.taskIDs {
-		if taskID != "task-1" {
-			t.Fatalf("progress reported for %q", taskID)
-		}
 	}
 }
 
@@ -238,7 +231,7 @@ func TestProgressReaderNeverReportsMoreThanRetainedBytes(t *testing.T) {
 // retry after a failed direct read); the speed must be recomputed from scratch.
 func TestVideoDownloadReporterResetsSpeedWhenBodyRestarts(t *testing.T) {
 	port := &fakeDeliveryPort{}
-	reporter := newVideoDownloadReporter(port, "task-restart")
+	reporter := newVideoDownloadReporter(port)
 	reporter.attempt = 1
 	reporter.report("downloading", 1000, -1)
 	time.Sleep(100 * time.Millisecond)
