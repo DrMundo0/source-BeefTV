@@ -877,12 +877,16 @@ function enrichBeefApiMediaChannel(channel: ModelChannel): ModelChannel {
     const existing = new Map((channel.modelProfiles || []).map((item) => [item.model, item]));
     for (const model of models.filter(isImageModelName)) {
         const current = existing.get(model);
+        // These BeefAPI models use Images, even when an older generic catalog
+        // saved a text protocol. Do not rewrite arbitrary custom model routes.
+        const staleTextProtocol = /^(gpt-image(?:-|$)|dall-e(?:-|$))/i.test(model) && modelProtocolCapability(current?.protocol) === "text";
+        const protocol = staleTextProtocol ? "openai-image" : current?.protocol || "openai-image";
         existing.set(model, {
             ...(current || {}),
             model,
             capability: "image",
-            protocol: current?.protocol || "openai-image",
-            capabilityConfig: current?.capabilityConfig || defaultModelCapabilityConfig("openai-image", model),
+            protocol,
+            capabilityConfig: current?.capabilityConfig || defaultModelCapabilityConfig(protocol, model),
         });
     }
     for (const model of models.filter(isTextModelName)) {

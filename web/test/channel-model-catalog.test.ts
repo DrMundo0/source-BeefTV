@@ -153,6 +153,15 @@ describe("public channel model catalog", () => {
         expect(resolveModelRequestConfig(normalized, "beefapi::gpt-5.6-sol").interfaceType).toBe("chat-completion");
     });
 
+    test("repairs stale chat protocols on known BeefAPI image models without changing custom routes", () => {
+        const make = (baseUrl: string) => createModelChannel({ id: "test", baseUrl, apiKey: "synthetic-key", models: ["gpt-image-2"], modelProfiles: [{ model: "gpt-image-2", capability: "text", protocol: "chat-completion" }] });
+        const official = normalizeConfigSnapshot({ config: { ...defaultConfig, channels: [make("https://enterprise.beefapi.com")] } }).config;
+        expect(selectableModelsByCapability(official, "image")).toEqual(["test::gpt-image-2"]);
+        expect(resolveModelRequestConfig(official, "test::gpt-image-2").interfaceType).toBe("openai-image");
+        const custom = normalizeConfigSnapshot({ config: { ...defaultConfig, channels: [make("https://studio.example")] } }).config;
+        expect(resolveModelRequestConfig(custom, "test::gpt-image-2").interfaceType).toBe("chat-completion");
+    });
+
     test("maps BeefAPI speech and music to audio without treating ASR as chat or TTS", () => {
         const catalog: ChannelModelCatalogItem[] = [
             { id: "gpt-5.6-sol", modelType: "text", supportedEndpointTypes: ["openai"] },

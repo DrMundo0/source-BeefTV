@@ -190,6 +190,9 @@ describe("desktop update progress", () => {
         expect(desktopUpdateDetailLabel(state({ status: "downloading", downloadedBytes: 30 * mb, totalBytes: 150 * mb, bytesPerSecond: 512 * 1024 }))).toBe("512 KB/s · 剩余约 4 分钟");
         expect(desktopUpdateDetailLabel(state({ status: "downloading", downloadedBytes: 30 * mb, totalBytes: 150 * mb }))).toBe("30 MB / 150 MB");
         expect(desktopUpdateDetailLabel(state({ status: "downloading", totalBytes: 150 * mb }))).toBe("正在连接");
+        const downloaded = state({ status: "downloading", downloadedBytes: 150 * mb, totalBytes: 150 * mb, bytesPerSecond: mb });
+        expect(desktopUpdateDetailLabel(downloaded)).toBe("下载完成，正在校验更新包");
+        expect(desktopUpdateProgressPercent(downloaded)).toBeLessThan(100);
         expect(desktopUpdateDetailLabel(state({ status: "downloading", downloadedBytes: 30 * mb, totalBytes: 150 * mb, bytesPerSecond: mb, reconnecting: true }))).toBe("网络中断，正在重新连接");
         expect(desktopUpdateDetailLabel(state({ status: "error", error: "网络不稳定，已保留下载进度" }))).toBe("网络不稳定，已保留下载进度");
     });

@@ -24,7 +24,7 @@ function statusLine(state: DesktopUpdateState, persistBusy: boolean, latest: str
     if (persistBusy) return { title: "正在保存工作区", detail: "保存完成后开始安装", percent: null, tone: "active" };
     switch (state.status) {
         case "downloading":
-            return { title: latest ? `正在下载 ${latest}` : "正在下载更新", detail: desktopUpdateDetailLabel(state), percent: state.downloadedBytes > 0 ? percent : null, tone: "active" };
+            return { title: state.totalBytes > 0 && state.downloadedBytes >= state.totalBytes ? "正在校验更新包" : latest ? `正在下载 ${latest}` : "正在下载更新", detail: desktopUpdateDetailLabel(state), percent: state.downloadedBytes > 0 ? percent : null, tone: "active" };
         case "installing":
             return { title: latest ? `正在安装 ${latest}` : "正在安装更新", detail: "完成后应用会自动重启", percent: null, tone: "active" };
         case "error":

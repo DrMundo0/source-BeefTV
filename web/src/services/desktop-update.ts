@@ -162,6 +162,7 @@ export function formatDesktopUpdateRemaining(seconds: number | null): string {
 export function desktopUpdateDetailLabel(state: DesktopUpdateState): string {
     if (state.status === "downloading") {
         if (state.reconnecting) return "网络中断，正在重新连接";
+        if (state.totalBytes > 0 && state.downloadedBytes >= state.totalBytes) return "下载完成，正在校验更新包";
         const speed = formatDesktopUpdateSpeed(state.bytesPerSecond);
         if (speed) return [speed, formatDesktopUpdateRemaining(desktopUpdateRemainingSeconds(state))].filter(Boolean).join(" · ");
         return state.downloadedBytes > 0 && state.totalBytes > 0 ? desktopUpdateProgressLabel(state) : "正在连接";

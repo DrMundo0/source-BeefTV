@@ -14,6 +14,7 @@ export function StorageSettingsPane() {
     const [target, setTarget] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
+    const [cleanupInterrupted, setCleanupInterrupted] = useState(false);
     const [errorSummary, ...errorDetails] = error.split("\n\n");
     useEffect(() => {
         let active = true;
@@ -68,8 +69,10 @@ export function StorageSettingsPane() {
                 setError("");
                 try {
                     setUsage(await binding.CleanupPreviousStorage!());
+                    setCleanupInterrupted(false);
                     message.success("原目录已清理");
                 } catch (error) {
+                    setCleanupInterrupted(true);
                     setError(error instanceof Error ? error.message : String(error));
                     // Cleanup may have removed durable copies while leaving busy scratch.
                     try {
@@ -123,7 +126,8 @@ export function StorageSettingsPane() {
             </Button>
             {usage?.previousDir && binding.CleanupPreviousStorage ? (
                 <div className="space-y-2 border-t border-border pt-4">
-                    <p className="text-sm break-all">待清理的原目录：{usage.previousDir}。请保留当前存储目录，原目录可能已部分清理。</p>
+                    <p className="text-sm break-all">待清理的原目录：{usage.previousDir}。</p>
+                    {cleanupInterrupted ? <p className="text-sm">清理未完成，原目录可能已部分清理。请保留当前存储目录。</p> : null}
                     <Button danger disabled={busy} onClick={cleanup}>
                         清理原目录，释放磁盘空间
                     </Button>

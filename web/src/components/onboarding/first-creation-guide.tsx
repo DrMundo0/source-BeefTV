@@ -10,7 +10,7 @@ import "./first-creation-guide.css";
 
 const lessons = [
     { title: "连接算力", description: "点击连接，在浏览器确认授权。" },
-    { title: "新建项目", description: "点击「新建项目」，开始创作。" },
+    { title: "新建项目", description: "点击侧栏「新建项目」，打开一张新画布。" },
     { title: "添加图片", description: "点击添加按钮，选择「图片」。" },
     { title: "生成图片", description: "选中图片节点，输入描述并生成。" },
     { title: "查看生成历史", description: "刚生成的图片会保存在这里。" },
@@ -174,7 +174,7 @@ export function FirstCreationGuide() {
             <p className="first-creation-intro">随时从侧栏重新打开引导。</p>
         </AppModal>
         <AppModal open={welcome} transitionName="" maskTransitionName="" title="完成第一次创作" onCancel={dismiss} footer={null} width={420} destroyOnHidden>
-            <p className="first-creation-intro">跟着高亮操作，用左右箭头切换步骤。</p>
+            <p className="first-creation-intro">跟着高亮操作，点击引导卡上的箭头按钮切换步骤。</p>
             <div className="first-creation-actions"><Button onClick={dismiss}>稍后</Button><Button type="primary" onClick={() => { guide.restart(); goToLesson(onboardingSteps[0]); setWelcome(false); setCollapsed(false); }}>开始</Button></div>
         </AppModal>
         {guide.status === "active" && !welcome && <aside className={`first-creation-guide${/^\/canvas\/[^/]+/.test(pathname) ? " is-canvas" : ""}${collapsed ? " is-collapsed" : ""}`} style={position ? { left: position.x, top: position.y, right: "auto", bottom: "auto" } : undefined} aria-label="新手引导" data-step={step} data-canvas-no-zoom onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>
