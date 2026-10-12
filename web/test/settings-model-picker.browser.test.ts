@@ -57,6 +57,7 @@ test("删除渠道保持现有按钮与确认框，确认后渠道移除并留�
         const box = (await ok.boundingBox())!;
         await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
         await page.getByTestId("channel-count").filter({ hasText: /^0$/ }).waitFor({ timeout: 3000 });
+        await page.waitForFunction(() => (window as unknown as { diagnostics: () => DiagnosticEvent[] }).diagnostics().some(event => event.code === "CHANNEL_DELETED"), undefined, { timeout: 3000 });
         const codes = (await events(page)).map(event => event.code);
         expect(codes).toContain("CHANNEL_DELETE_CONFIRM_OPEN");
         expect(codes).toContain("CHANNEL_DELETED");

@@ -3,6 +3,7 @@ import { App, ConfigProvider } from "antd";
 import { ChannelSettingsPane } from "@/pages/settings/channel-settings-pane";
 import { ModelDefaultGrid } from "@/pages/settings/model-default-grid";
 import { getClientDiagnosticEvents } from "@/services/diagnostics/client-diagnostics";
+import { hydrateModelConfig } from "@/services/model-config-repository";
 import { createModelChannel, defaultConfig, normalizeConfigSnapshot, useConfigStore } from "@/stores/use-config-store";
 
 const config = normalizeConfigSnapshot({
@@ -26,4 +27,4 @@ function Harness() {
         </main>
     </App></ConfigProvider>;
 }
-createRoot(document.getElementById("root")!).render(<Harness />);
+void hydrateModelConfig().then(() => createRoot(document.getElementById("root")!).render(<Harness />));
