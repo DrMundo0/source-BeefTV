@@ -344,7 +344,7 @@ func doBinaryWithAdmission(req *http.Request, onChunk func(string, []byte), admi
 	var buffered bytes.Buffer
 	body := io.Reader(resp.Body)
 	if observe := downloadObserverFrom(req.Context()); observe != nil {
-		body = newProgressReader(resp.Body, resp.ContentLength, observe)
+		body = newProgressReader(resp.Body, resp.ContentLength, responseLimit, observe)
 	}
 	reader := io.LimitReader(body, responseLimit+1)
 	chunk := make([]byte, 32<<10)

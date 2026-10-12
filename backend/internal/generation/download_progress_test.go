@@ -3,6 +3,7 @@ package generation
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -204,5 +205,56 @@ func TestDoBinaryWithoutObserverMatchesObservedRead(t *testing.T) {
 	}
 	if observed == 0 {
 		t.Fatal("observer was never called")
+	}
+}
+
+// DoBinary reads through io.LimitReader(body, limit+1) and keeps only limit bytes;
+// the observer must never report the overflow byte as retained progress.
+func TestProgressReaderNeverReportsMoreThanRetainedBytes(t *testing.T) {
+	const keep = 4096
+	body := bytes.Repeat([]byte("o"), keep+1)
+	var observed []int64
+	reader := io.LimitReader(newProgressReader(bytes.NewReader(body), int64(len(body)), keep, func(downloaded, _ int64) {
+		observed = append(observed, downloaded)
+	}), keep+1)
+	data, err := io.ReadAll(reader)
+	if err != nil || len(data) != keep+1 {
+		t.Fatalf("read %d bytes, err %v", len(data), err)
+	}
+	if len(observed) == 0 {
+		t.Fatal("overflow read was not observed")
+	}
+	for _, count := range observed {
+		if count > keep {
+			t.Fatalf("observed %d bytes, retained limit is %d", count, keep)
+		}
+	}
+	if last := observed[len(observed)-1]; last != keep {
+		t.Fatalf("final observed count = %d, want retained length %d", last, keep)
+	}
+}
+
+// A count that drops within one attempt means the body restarted (the proxy
+// retry after a failed direct read); the speed must be recomputed from scratch.
+func TestVideoDownloadReporterResetsSpeedWhenBodyRestarts(t *testing.T) {
+	port := &fakeDeliveryPort{}
+	reporter := newVideoDownloadReporter(port, "task-restart")
+	reporter.attempt = 1
+	reporter.report("downloading", 1000, -1)
+	time.Sleep(100 * time.Millisecond)
+	reporter.report("downloading", 1010, -1)
+	reporter.report("downloading", 1, -1) // restart from zero
+	time.Sleep(150 * time.Millisecond)
+	reporter.report("downloading", 2001, -1)
+
+	reports := port.snapshot()
+	last := reports[len(reports)-1]
+	if last.DownloadedBytes != 2001 {
+		t.Fatalf("unexpected last report %+v", last)
+	}
+	// Measured only from the restart: about 2000 bytes over 150 ms. Keeping the
+	// pre-restart baseline would give about 1000 bytes over 300 ms, far lower.
+	if last.BytesPerSecond < 10_000 {
+		t.Fatalf("speed was not restarted after the body reset: %+v", last)
 	}
 }

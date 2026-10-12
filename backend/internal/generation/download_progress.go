@@ -33,23 +33,27 @@ type progressReader struct {
 	reader   io.Reader
 	total    int64
 	read     int64
+	cap      int64
 	observe  downloadObserver
 	lastSent time.Time
 }
 
 // newProgressReader reports total as the response's declared length; net/http
-// already uses -1 when the server did not send one.
-func newProgressReader(reader io.Reader, contentLength int64, observe downloadObserver) io.Reader {
-	return &progressReader{reader: reader, total: contentLength, observe: observe}
+// already uses -1 when the server did not send one. Reported bytes never exceed
+// keep, the amount the caller retains; a read past it is the caller's overflow.
+func newProgressReader(reader io.Reader, contentLength, keep int64, observe downloadObserver) io.Reader {
+	return &progressReader{reader: reader, total: contentLength, cap: keep, observe: observe}
 }
 
 func (r *progressReader) Read(p []byte) (int, error) {
 	n, err := r.reader.Read(p)
 	r.read += int64(n)
 	now := time.Now()
-	if err != nil || now.Sub(r.lastSent) >= downloadProgressInterval {
+	// A read past cap is the overflow the caller rejects, so it is the final count.
+	overflow := r.read > r.cap
+	if err != nil || overflow || now.Sub(r.lastSent) >= downloadProgressInterval {
 		r.lastSent = now
-		r.observe(r.read, r.total)
+		r.observe(min(r.read, r.cap), r.total)
 	}
 	return n, err
 }
@@ -57,10 +61,11 @@ func (r *progressReader) Read(p []byte) (int, error) {
 // videoDownloadReporter turns attempt-level byte observations into delivery
 // progress for one task. It is inert when the runtime has no Delivery port.
 type videoDownloadReporter struct {
-	port    DeliveryProgressPort
-	taskID  string
-	attempt int
-	rate    outbound.ProgressRate
+	port       DeliveryProgressPort
+	taskID     string
+	attempt    int
+	downloaded int64
+	rate       outbound.ProgressRate
 }
 
 func newVideoDownloadReporter(port DeliveryProgressPort, taskID string) *videoDownloadReporter {
@@ -71,6 +76,12 @@ func newVideoDownloadReporter(port DeliveryProgressPort, taskID string) *videoDo
 }
 
 func (r *videoDownloadReporter) report(state string, downloaded, total int64) {
+	// A count that drops within one attempt means the body restarted (for
+	// example the proxy retry after a failed direct read); speed starts over.
+	if downloaded < r.downloaded {
+		r.rate = outbound.ProgressRate{}
+	}
+	r.downloaded = downloaded
 	now := time.Now()
 	r.rate.Observe(now, downloaded)
 	r.port.ReportDelivery(r.taskID, outbound.ResumableProgress{
@@ -90,6 +101,7 @@ func (r *videoDownloadReporter) beginAttempt(ctx context.Context, attempt int) c
 	}
 	r.attempt = attempt
 	r.rate = outbound.ProgressRate{}
+	r.downloaded = 0
 	r.report("downloading", 0, -1)
 	return withDownloadObserver(ctx, func(downloaded, total int64) {
 		r.report("downloading", downloaded, total)
@@ -104,6 +116,7 @@ func (r *videoDownloadReporter) waitForRetry(nextAttempt int) {
 	}
 	r.attempt = nextAttempt
 	r.rate = outbound.ProgressRate{}
+	r.downloaded = 0
 	r.report("waiting", 0, -1)
 }
 
