@@ -14,6 +14,7 @@ import { createModelChannel, type ModelCapability, type ModelChannel } from "@/s
 import { ChannelModelSettings } from "./channel-model-settings";
 import { currentModelConnectionReceipt, useModelConnectionTests } from "@/stores/use-model-connection-tests";
 import "./model-service-editor.css";
+import { getTransportFailureKind } from "@/services/api/request";
 
 export function ModelServiceEditor({ initial, onClose, onSave }: { initial?: ModelChannel; onClose: () => void; onSave: (channel: ModelChannel) => Promise<void> }) {
     const [draft, setDraft] = useState<ModelChannel>(() => initial ? structuredClone(initial) : { ...createModelChannel(), name: "", baseUrl: "" });
@@ -25,6 +26,8 @@ export function ModelServiceEditor({ initial, onClose, onSave }: { initial?: Mod
     const [protocols, setProtocols] = useState<ModelProtocolDefinition[]>([]);
     const [protocolLoading, setProtocolLoading] = useState(true);
     const [busy, setBusy] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const catalogRequest = useRef<AbortController | null>(null);
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
     const [query, setQuery] = useState("");
@@ -41,7 +44,7 @@ export function ModelServiceEditor({ initial, onClose, onSave }: { initial?: Mod
             .then((items) => { if (alive.current) setProtocols(items); })
             .catch(() => { if (alive.current) setError("无法读取模型能力，请关闭后重试"); })
             .finally(() => { if (alive.current) setProtocolLoading(false); });
-        return () => { alive.current = false; };
+        return () => { alive.current = false; catalogRequest.current?.abort(); };
     }, []);
 
     const patch = (value: Partial<ModelChannel>) => {
@@ -84,15 +87,18 @@ export function ModelServiceEditor({ initial, onClose, onSave }: { initial?: Mod
     };
     const fetchModels = async () => {
         if (!validateConnection()) return;
+        catalogRequest.current?.abort();
+        const request = new AbortController();
+        catalogRequest.current = request;
         setBusy(true);
         setError("");
         setNotice("");
         try {
-            const result = await fetchChannelModels(draft, true);
-            if (alive.current) applyCatalog(result);
+            const result = await fetchChannelModels(draft, true, request.signal);
+            if (alive.current && !request.signal.aborted) applyCatalog(result);
         } catch (failure) {
-            if (alive.current) {
-                setError(failure instanceof Error ? failure.message : "读取模型失败");
+            if (alive.current && !request.signal.aborted) {
+                setError(getTransportFailureKind(failure) === "timeout" ? "读取模型目录超时，请检查地址和网络后重试" : failure instanceof Error ? failure.message : "读取模型失败");
                 setNotice("部分服务不提供模型目录，你仍可手动添加模型 ID。");
             }
         } finally { if (alive.current) setBusy(false); }
@@ -124,12 +130,13 @@ export function ModelServiceEditor({ initial, onClose, onSave }: { initial?: Mod
         const missing = profiles.find((profile) => !profile.protocol);
         if (missing) { setError(`${missing.model} 还需要选择请求协议，请打开高级模型设置`); setEditingCapabilities(true); return; }
         setBusy(true);
+        setSaving(true);
         setError("");
         try {
             await onSave({ ...draft, name: draft.name.trim() || "我的模型服务", baseUrl: draft.baseUrl.trim().replace(/\/+$/, ""), apiKey: draft.apiKey.trim(), modelProfiles: profiles });
             onClose();
         } catch (failure) { setError(failure instanceof Error ? failure.message : "保存失败，请重试"); }
-        finally { if (alive.current) setBusy(false); }
+        finally { if (alive.current) { setBusy(false); setSaving(false); } }
     };
     const visibleModels = catalog.filter((item) => {
         const profile = serviceModelProfile(draft, item, protocols);
@@ -137,7 +144,7 @@ export function ModelServiceEditor({ initial, onClose, onSave }: { initial?: Mod
     });
     const selectedPreset = MODEL_SERVICE_PRESETS.find((item) => item.id === presetId)!;
 
-    return <AppModal open centered width={1000} flush footer={null} title={null} closable={!busy} keyboard={!busy} mask={{ closable: false }} onCancel={onClose} rootClassName="model-service-modal">
+    return <AppModal open centered width={1000} flush footer={null} title={null} closable={!saving} keyboard={!saving} mask={{ closable: false }} onCancel={() => { catalogRequest.current?.abort(); onClose(); }} rootClassName="model-service-modal">
         <div className="model-service-header">
             <h2>{initial ? `管理 ${initial.name}` : "连接你的模型服务"}</h2>
             <ol className="model-service-steps" aria-label="接入步骤">
