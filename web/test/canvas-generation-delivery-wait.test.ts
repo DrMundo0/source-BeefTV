@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 
-import { bindBackendCanvasGenerationResult, CanvasGenerationDurableAckError } from "@/services/canvas-generation-consumer";
+import { bindBackendCanvasGenerationResult, CanvasGenerationDurableAckError, CanvasGenerationMaterializationError } from "@/services/canvas-generation-consumer";
 import { ApiError } from "@/services/api/request";
 import { useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
@@ -176,6 +176,36 @@ describe("bindBackendCanvasGenerationResult waits for delivery", () => {
 
         expect(refreshes).toBeGreaterThanOrEqual(1);
         expect(bindCalls).toBe(2);
+    });
+
+    test.each(["output_not_ready", "resource_not_ready"])("stops repeated %s rejections even when the output claims a materialized asset", async (reason) => {
+        const identity = captured("user-a", 1);
+        const deliveredTask = mediaTask({ outputs: [{ outputIndex: 0, mediaType: "image", materializedAssetId: "missing-asset" }] });
+        let elapsed = 0;
+        let bindCalls = 0;
+        const operationIds = new Set<string>();
+        const published: unknown[] = [];
+        const binding = bindBackendCanvasGenerationResult({
+            canvasId: "canvas-1", nodeId: "node-1", task: deliveredTask, isCurrent: () => true,
+            nodesRef: { current: [] }, setNodes: () => { throw new Error("failed binding must not change the canvas"); },
+            runtime: {
+                captureScope: () => identity, liveScope: () => identity,
+                hydrateOutputs: async () => undefined, persistDocument: async () => undefined,
+                bindOutput: async (input) => {
+                    operationIds.add(input.operationId);
+                    if (++bindCalls > 901) throw new Error("binding escaped its deadline");
+                    throw new ApiError("素材尚未就绪", { status: 412, reason });
+                },
+                refreshTask: async () => deliveredTask,
+                sleep: async (delay) => { elapsed += delay; }, now: () => elapsed,
+                publishDeliveryProgress: (_, progress) => published.push(progress),
+            },
+        });
+        await expect(binding).rejects.toBeInstanceOf(CanvasGenerationMaterializationError);
+        expect(elapsed).toBe(15 * 60 * 1000);
+        expect(bindCalls).toBeLessThanOrEqual(900);
+        expect(operationIds.size).toBe(1);
+        expect(published.at(-1)).toBeUndefined();
     });
 
     test("publishes fetch progress while waiting and clears it once delivered", async () => {
