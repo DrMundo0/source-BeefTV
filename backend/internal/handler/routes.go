@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -193,7 +194,12 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *app.Service, hostedProfile ...b
 		}
 		task, err := svc.RetryTask(user.ID, c.Param("id"))
 		if err != nil {
-			fail(c, http.StatusBadRequest, err)
+			var appErr *app.AppError
+			if errors.As(err, &appErr) {
+				failService(c, err)
+			} else {
+				fail(c, http.StatusBadRequest, err)
+			}
 			return
 		}
 		ok(c, task)
