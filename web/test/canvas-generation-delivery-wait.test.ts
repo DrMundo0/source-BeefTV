@@ -208,6 +208,31 @@ describe("bindBackendCanvasGenerationResult waits for delivery", () => {
         expect(published.at(-1)).toBeUndefined();
     });
 
+    test.each(["delivery_paused", "delivery_timed_out"])("stops observing %s without binding or submitting another generation", async (stage) => {
+        const identity = captured("user-a", 1);
+        const published: unknown[] = [];
+        let refreshes = 0;
+        const binding = bindBackendCanvasGenerationResult({
+            canvasId: "canvas-1", nodeId: "node-1", isCurrent: () => true,
+            task: mediaTask({ outputs: [{ outputIndex: 0, mediaType: "video" }] }),
+            nodesRef: { current: [] }, setNodes: () => { throw new Error("unfinished result must not change the canvas"); },
+            runtime: {
+                captureScope: () => identity, liveScope: () => identity,
+                hydrateOutputs: async () => { throw new Error("unfinished result must not hydrate"); },
+                bindOutput: async () => { throw new Error("unfinished result must not bind"); },
+                refreshTask: async () => {
+                    if (++refreshes > 1) throw new Error("paused delivery must stop polling");
+                    return mediaTask({ stage, outputs: [{ outputIndex: 0, mediaType: "video", materializationErrorCode: stage }] });
+                },
+                sleep: async () => undefined, now: () => 0,
+                publishDeliveryProgress: (_, progress) => published.push(progress),
+            },
+        });
+        await expect(binding).rejects.toBeInstanceOf(CanvasGenerationMaterializationError);
+        expect(refreshes).toBe(1);
+        expect(published.at(-1)).toBeUndefined();
+    });
+
     test("publishes fetch progress while waiting and clears it once delivered", async () => {
         const loading = canvasNode("node-1", { taskId: "task-1", status: "loading" });
         const project = canvasProject("canvas-1", [{ ...loading, metadata: { ...loading.metadata, status: "success", content: "/api/resources/res-1/file" } }], 4);
