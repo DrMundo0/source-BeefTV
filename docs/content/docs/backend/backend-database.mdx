@@ -17,7 +17,7 @@ description: BeefTV后端核心持久化表与状态边界
 
 旧版本不能读取这个加密封装。降级前须停止所有工作区写入者，恢复升级前的完整工作区备份；不能只替换可执行文件后继续写入新配置。自动更新器的二进制回滚与工作区数据恢复是不同操作。
 
-当前本地候选的结构版本为 v16。正式 v1.6.21 的结构版本为 v3，历史 Agent 候选曾使用 v3–v6，另有图片恢复预览分支使用 v3 或 v7；这些预览编号不能当作正式版本已发布的证据。以下旧托管数据库的 `schema_migrations` 版本历史与本地版本分开维护，不共用版本号。
+当前本地候选的结构版本为 v16。正式 v1.6.21 的结构版本为 v3，历史 Agent 候选曾使用 v3–v6，另有图片恢复预览分支使用 v3 或 v7；这些预览编号不能当作正式版本已发布的证据。
 
 v14 `assistant-skill-version-pins` 为 `assistant_turns` 追加文本列 `skill_pins_json`。保存用户明确选定的技能、版本和内容摘要；旧回合留空。迁移保留未知字段、旧历史和回合快照。恢复时重新校验安装授权与包文件校验和，不自动切换新版。
 
@@ -77,7 +77,7 @@ $env:CANVAS_DESKTOP_DATA_DIR = 'D:\BeefTV-tests\candidate-workspace'
 
 ### 桌面本地任务诊断
 
-本地 SQLite 使用 `local_schema_migrations` 记录版本。本地候选目前为 v15，正式 v1.6.21 为 v3；历史图片恢复预览曾使用 v7。正式 v3 为 `tasks` 新增可空文本列 `failure_diagnostics`，存储有界、脱敏的执行证据和失败摘要；旧任务保留空值。失败诊断与任务终态在同一次带租约校验的更新中保存，成功任务也保留执行证据，主动重试时清除上一轮诊断。任务列表和详情均读取该列，字段说明见 [HTTP API](./http-api)。整合 v8 同时补齐历史分支可能缺失的产品与 Agent 结构，v9 修复已标 v8 的已知结构缺损并强化完整性检查，v10 追加助手业务回合表，v11 追加创作对话表，v12 追加画布文件夹与画板，v13 追加上传预留恢复索引，v14 追加固定技能版本，v15 追加内置权限和跨画布快照，保留原迁移记录、Agent 表和任务扩展列。
+本地 SQLite 使用 `local_schema_migrations` 记录版本。本地候选目前为 v16，正式 v1.6.21 为 v3；历史图片恢复预览曾使用 v7。正式 v3 为 `tasks` 新增可空文本列 `failure_diagnostics`，存储有界、脱敏的执行证据和失败摘要；旧任务保留空值。失败诊断与任务终态在同一次带租约校验的更新中保存，成功任务也保留执行证据，主动重试时清除上一轮诊断。任务列表和详情均读取该列，字段说明见 [HTTP API](./http-api)。整合 v8 同时补齐历史分支可能缺失的产品与 Agent 结构，v9 修复已标 v8 的已知结构缺损并强化完整性检查，v10 追加助手业务回合表，v11 追加创作对话表，v12 追加画布文件夹与画板，v13 追加上传预留恢复索引，v14 追加固定技能版本，v15 追加内置权限和跨画布快照，v16 追加助手持久会话绑定，保留原迁移记录、Agent 表和任务扩展列。
 
 部分预览版曾将 v3–v6 用于其他迁移。启动时还会按实际表结构检查并补齐 `failure_diagnostics`，不覆盖迁移记录、不删除预览版字段或旧任务；就绪检查同时要求最低版本和该字段存在。任务入库失败返回 HTTP 500、`reason=local_storage_failed`，界面明确显示本地保存失败、尚未提交生成。内部错误链保留数据库原因，HTTP 响应不包含 SQL 原文；handler 日志记录错误类型。
 
@@ -107,7 +107,6 @@ $env:CANVAS_DESKTOP_DATA_DIR = 'D:\BeefTV-tests\candidate-workspace'
 
 | 表 | 用途 | 关键边界 |
 | --- | --- | --- |
-| `schema_migrations` | 保存已成功应用的结构版本、名称、校验和与时间 | 已应用版本的校验和发生变化时拒绝启动；数据库版本高于当前二进制支持版本时拒绝旧程序连接 |
 | `cloud_agent_executions` | 保存旧内置 Agent 每轮的持久化执行状态、修订号和运行状态（保留，不再有新写入） | `(id, user_id)` 归属受服务端校验；状态通过 revision CAS 更新；`state_json` 包含技能快照、工具调用、审批、活动子任务和事件，不保存浏览器密钥 |
 | `agent_profiles` | 保存用户、项目和画布层的旧内置 Agent 常驻偏好、哈希和独立 revision（保留，不再有新写入） | `(user_id, scope, project_id, canvas_id)` 唯一；归属由 service 校验，写入使用 revision CAS；正文不能授权新能力 |
 | `agent_lessons` | 用户私有的旧内置 Agent 记忆（保留）。原设计中 Agent 写入待审、用户批准后才会注入该用户的会话 | 按 `author_user_id` 隔离；写入机械脱敏；`steps_json` 存路线；`hits` 是主动查阅、`injected` 是自动注入；管理员可按用户查看和删除，不能代批 |
@@ -115,7 +114,7 @@ $env:CANVAS_DESKTOP_DATA_DIR = 'D:\BeefTV-tests\candidate-workspace'
 
 ### 本地工作区结构（桌面形态）
 
-桌面形态使用由 `local_schema_migrations` 管理的本地结构版本（当前候选为 15，见 `backend/internal/database/local_schema.go`），
+桌面形态使用由 `local_schema_migrations` 管理的本地结构版本（当前候选为 16，见 `backend/internal/database/local_schema.go`），
 与上面的托管版本序列相互独立。版本 11 由会话工作单独占用，本序列从 10 直接进入 12。
 
 版本 3 `agent-operation-records` 为既有版本 2 工作区创建 `agent_op_records` 及用户、操作 ID 联合主键；版本 4/5 为任务的客户端操作编号补充结构；版本 6 `agent-operation-turn-attribution` 为 `agent_op_records` 增加可空的 `turn_id` 与索引，用于把内置助手一轮对话的写入回执归到该轮上。迁移只新增结构，不重写画布、项目或任务数据；结构创建与迁移记录在同一事务中提交。重复启动不会重复迁移，已成功操作的幂等结果在重启后继续回放。
@@ -138,15 +137,9 @@ $env:CANVAS_DESKTOP_DATA_DIR = 'D:\BeefTV-tests\candidate-workspace'
 
 版本 12 `canvas-library-drawings` 为既有工作区创建 `canvas_library_folders`、`canvas_drawings`，并为 `canvas_projects` 增加 `library_folder_id`。两张新表带 `deleted_at` 墓碑列：删除保留身份、释放资源引用，禁止同 ID 自动重建。未保存的画板草稿由前端保留为可恢复内容并决定如何提示恢复，后端不另存一份正文。画板快照由 SQLite 持有，预览和成品字节引用已有资源；IndexedDB 只作草稿和缓存。写入按账号画布和素材数据上限（`StructuredDataMB`，默认 256MB）核算字节，HTTP 请求体为该上限加 JSON 信封余量，没有单独的 8MB 画板上限。保留版本 11 的会话迁移身份。
 
-公开镜像不附带独立迁移程序。`CANVAS_AUTO_MIGRATE=true` 时，Backend 在开始接受请求前完成迁移与兼容性检查；失败时进程直接退出，不会带着不兼容结构提供服务。后续迁移必须新增版本，不得修改已经发布迁移的实现或校验和。
+公开镜像不附带独立迁移程序。`CANVAS_AUTO_MIGRATE=true` 时，Backend 在开始接受请求前完成迁移与兼容性检查；失败时进程直接退出，不会带着不兼容结构提供服务。后续迁移必须新增版本，不得改写已应用迁移记录的版本名称与时间。
 
-当前结构版本为 23。版本 2 为 `schema_migrations.applied_at` 增加 `idx_schema_migrations_applied_at` 索引；版本 3 `asset_taxonomy_candidate_identity` 为资产候选增加规范化名称和来源，收敛资产分类，并为待确认候选建立项目内部分唯一索引；版本 4 `resource_upload_key` 为资源上传幂等补充 `resources.upload_key` 列和用户维度唯一索引；版本 5 `payment_topup` 创建积分充值、支付通知和对账所需结构；版本 6 `resource_playback_variant` 增加资源播放副本状态；版本 7 `asset_library_folders` 增加用户素材自定义分类及 `assets.folder_id`；版本 8 `logical_model_active_code` 将前台模型 code 的唯一约束限定为未归档记录；版本 9 `channel_presentation` 为渠道添加 `public_alias`（默认空字符串）与 `sort_order`（默认 0），为渠道模型添加 `sort_order`（默认 0），不重写既有凭据、价格或能力配置；版本 10 `creation_runtime` 创建创作运行与提交表，并为任务增加可空且唯一的 `creation_submission_id`，旧任务无需伪造提交标识即可继续使用；版本 11 `cloud_agent_runtime` 创建 `cloud_agent_executions`；版本 12 `agent_token_charge_limit` 为账单增加 Agent Token 收费上限；版本 13 `cloud_agent_canvas_mutation` 持久化 Agent 画布变更；版本 14 `cloud_agent_recovery_control` 增加运行恢复控制字段和旧运行回填；版本 15 `agent_profiles` 创建常驻偏好表；版本 16 `agent_lessons` 创建用户记忆表（含分类、路线 JSON、注入/查阅计数）；版本 17 `agent_lessons_owner_index` 为 `(author_user_id, status)` 增加复合索引；版本 18 `agent_memory_settings` 创建按用户隔离的压缩周期与最近一次压缩任务状态；版本 19 `payment_plugin_version` 为已有 `payment_provider_configs` 和 `payment_orders` 补上 `plugin_version`，用于把配置和订单钉在具体插件版本上；版本 20 `banner_announcements` 创建首页常驻滚动通知表；版本 21 `banner_announcement_title_runs` 为通知标题增加样式分段；版本 22 `banner_announcement_notice_type` 增加通知类型底色；版本 23 `canvas_revision_history` 为既有画布回填 `revision = 1` 并新增历史快照与资源引用表。已发布版本的实现和校验和不得修改。
-
-历史发布曾使用版本 6 `asset_library_folders`，之后合并引入了上述 6/7 顺序冲突。迁移器仅在该历史记录的名称和校验和均精确匹配时选择历史顺序：保留版本 6 的素材目录记录及时间，在版本 7 应用 `resource_playback_variant`，再继续版本 8。新数据库及已采用“6 播放副本、7 素材目录”的数据库保持原顺序；状态检查与启动校验采用同一套识别规则。未知名称、被改动的校验和或冲突的版本 7 记录仍会拒绝迁移，不通过删除、改名或伪造已应用记录绕过检查。
-
-升级前必须备份数据库，并确保新 Backend 沿用部署实际配置的数据库连接和数据目录。重新启动新镜像后应等待健康检查通过；迁移失败时先查看 Backend 日志并保持旧版本与备份，不手工改迁移表。迁移与记录写入在事务中执行；回退旧二进制可能无法识别新结构，必要时应恢复匹配的备份和版本。
-
-版本 3 会将 `wardrobe`、`weapon`、`accessory` 迁移为 `prop`，将 `style` 迁移为 `material`，并把原先归入 `other` 的图片、视频、音频和 3D 模型迁移为 `material`。迁移只合并重复的待确认候选：保留最早记录，其余标记为 `ignored`；已经确认的资产不会被自动删除或归并。
+本地 v2 `retire-hosted-schema` 迁移会删除遗留的托管版表：`migrateRetiredHostedSchema` 调用 `dropHostedTables`，并在删除前把可迁移的旧创作执行项和渠道模型规格转入本地结构。
 
 ## 画布版本与快照
 
@@ -267,11 +260,11 @@ $env:CANVAS_DESKTOP_DATA_DIR = 'D:\BeefTV-tests\candidate-workspace'
 | 表 | 用途 | 关键边界 |
 | --- | --- | --- |
 | `resources` | 保存资源元数据和实际存储位置引用 | `user_id + upload_key` 唯一约束保证逻辑上传幂等；浏览器默认经同源接口读取 |
-| `resource_deletion_jobs` | 在业务记录删除后可靠清理物理对象 | 固化资源的对象键；删除失败保留任务并重试，S3 404 按幂等成功处理 |
+| `resource_deletion_jobs` | 在业务记录删除后可靠清理物理对象 | 固化资源的对象键；删除失败保留任务并重试，本地文件已不存在时按幂等成功处理 |
 
-`resources.upload_key` 保存客户端 `X-Idempotency-Key` 的 SHA-256 摘要。相同用户重复提交同一逻辑上传时复用已有资源；失败重试继续使用原对象路径，避免对象存储已经接收请求但响应丢失时产生第二份物理对象。未提供幂等标识的后台生成资源保持 `NULL`，不参与该唯一约束。
+`resources.upload_key` 保存客户端 `X-Idempotency-Key` 的 SHA-256 摘要。相同用户重复提交同一逻辑上传时复用已有资源。未提供幂等标识的后台生成资源保持 `NULL`，不参与该唯一约束。
 
-个人画布中的图片、视频和音频采用 `Asset -> Resource` 所有权约束：前端先提交素材，再提交带 `assetId` 的画布节点或时间线直连媒体；后端保存画布前校验资源属于当前用户、状态为 `ready`、素材存在且引用同一资源。素材更新、全量替换和删除也会反向检查已有画布，不能把仍在使用的资源从素材库中移除或替换成其他资源。登录历史账号时，前端会按资源键补建缺失素材并回写 `assetId`。这项修复复用现有表和 Outbox，不新增结构迁移。
+个人画布中的图片、视频和音频采用 `Asset -> Resource` 所有权约束：前端先提交素材，再提交带 `assetId` 的画布节点或时间线直连媒体；后端保存画布前校验资源属于当前用户、状态为 `ready`、素材存在且引用同一资源。素材更新、全量替换和删除也会反向检查已有画布，不能把仍在使用的资源从素材库中移除或替换成其他资源。
 
 账号文件容量只统计 `ready` 资源，并按 Provider、Endpoint、Bucket、ObjectKey 对同一物理对象去重。上传中或失败记录不占用已存储容量。后台每小时检查资源生命周期：超过 1 小时的 `pending/failed` 记录，以及超过 24 小时仍没有任何素材、画布、任务或其他业务引用的 `ready` 记录，会在再次校验引用后删除数据库记录并写入 `resource_deletion_jobs`，由幂等 Worker 清理物理对象。
 
