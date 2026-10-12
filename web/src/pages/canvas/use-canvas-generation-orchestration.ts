@@ -212,11 +212,12 @@ export function useCanvasGenerationOrchestration({
 
     const cancelCanvasTask = useCallback(
         (task: GenerationTask) => {
+            const deliveryOnly = task.status === "succeeded";
             modal.confirm({
                 ...canvasTaskConfirmation,
-                title: "取消生成任务？",
-                content: localOnly ? "任务会立即停止本地执行。" : "任务会立即停止本地执行；如果已经提交到上游，系统会继续核对取消结果和积分状态。",
-                okText: "取消任务",
+                title: deliveryOnly ? "停止取回结果？" : "取消生成任务？",
+                content: deliveryOnly ? "已生成的结果会保留，之后可以继续取回。" : localOnly ? "任务会立即停止本地执行。" : "任务会立即停止本地执行；如果已经提交到上游，系统会继续核对取消结果和积分状态。",
+                okText: deliveryOnly ? "停止取回" : "取消任务",
                 cancelText: "继续等待",
                 onOk: async () => {
                     try {
@@ -225,7 +226,7 @@ export function useCanvasGenerationOrchestration({
                         if (node) bindGenerationTask(node.id, next);
                         setTaskDetail((current) => (current?.id === task.id ? next : current));
                         await queryClient.invalidateQueries({ queryKey: ["canvas-active-tasks", projectId] });
-                        message.success("任务已取消");
+                        message.success(deliveryOnly ? "已停止取回" : "任务已取消");
                     } catch (error) {
                         message.error(error instanceof Error ? error.message : "取消任务失败");
                     }

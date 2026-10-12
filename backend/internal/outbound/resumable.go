@@ -22,7 +22,7 @@ import (
 var ErrResourceTooLarge = errors.New("远程资源超过大小上限")
 
 // ResumableOptions configures DownloadResumable. There is deliberately no total
-// timeout: a slow but steady generation artifact must be able to finish.
+// timeout here: the caller owns the overall delivery deadline through ctx.
 type ResumableOptions struct {
 	PartialPath   string
 	MaxBytes      int64
@@ -155,7 +155,7 @@ func reportResumableRetrying(opts ResumableOptions, attemptNumber int) {
 func downloadResumableAttempt(ctx context.Context, parsed *url.URL, opts ResumableOptions, headerTimeout, idleTimeout time.Duration, attemptNumber int) (ResumableResult, bool, error) {
 	sidecar := loadResumableSidecar(opts.PartialPath)
 	offset := int64(0)
-	if sidecar != nil && sidecar.URL == parsed.String() {
+	if sidecar != nil && resumableSourceMatches(sidecar, parsed) {
 		if info, err := os.Stat(opts.PartialPath); err == nil && info.Size() > 0 {
 			offset = info.Size()
 		}
@@ -214,6 +214,10 @@ func downloadResumableAttempt(ctx context.Context, parsed *url.URL, opts Resumab
 			total = declared
 		}
 	case http.StatusPartialContent:
+		if offset > 0 && sidecar != nil && strongResumableETag(sidecar.ETag) && response.Header.Get("ETag") != sidecar.ETag {
+			removeResumablePartial(opts.PartialPath)
+			return ResumableResult{}, true, errors.New("远程资源标识已变化")
+		}
 		start, contentTotal, ok := parseContentRange(response.Header.Get("Content-Range"))
 		if !ok || start != offset {
 			removeResumablePartial(opts.PartialPath)
@@ -230,7 +234,11 @@ func downloadResumableAttempt(ctx context.Context, parsed *url.URL, opts Resumab
 		if retryableHTTPStatus(response.StatusCode) {
 			return ResumableResult{}, true, fmt.Errorf("远程资源下载失败：%s", response.Status)
 		}
-		removeResumablePartial(opts.PartialPath)
+		// Expired signed links may later be refreshed for the same artifact.
+		// Keep bytes, but require source/validator checks before any reuse.
+		if response.StatusCode != http.StatusUnauthorized && response.StatusCode != http.StatusForbidden {
+			removeResumablePartial(opts.PartialPath)
+		}
 		return ResumableResult{}, false, fmt.Errorf("远程资源下载失败：%s", response.Status)
 	}
 	pending.Total = total
@@ -314,6 +322,18 @@ func downloadResumableAttempt(ctx context.Context, parsed *url.URL, opts Resumab
 		MimeType: mimeType,
 		FileName: resumableFileName(parsed.Path),
 	}, false, nil
+}
+
+func strongResumableETag(value string) bool {
+	return len(value) >= 2 && strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")
+}
+
+func resumableSourceMatches(sidecar *resumableSidecar, next *url.URL) bool {
+	if sidecar.URL == next.String() {
+		return true
+	}
+	previous, err := url.Parse(sidecar.URL)
+	return err == nil && strongResumableETag(sidecar.ETag) && previous.Scheme == next.Scheme && previous.Host == next.Host && previous.EscapedPath() == next.EscapedPath()
 }
 
 func retryableHTTPStatus(status int) bool {

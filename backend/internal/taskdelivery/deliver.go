@@ -30,6 +30,9 @@ func (d *Deliverer) Deliver(task model.Task) error {
 	if d == nil || d.store == nil || strings.TrimSpace(task.ID) == "" || task.Status != model.TaskStatusSucceeded {
 		return nil
 	}
+	if task.Stage == "delivery_paused" || task.Stage == "delivery_timed_out" {
+		return nil
+	}
 	stored, loadErr := d.loadedOutputs(task.ID)
 	if loadErr == nil && localtask.DeliveryComplete(task.ResultJSON, stored, task.Type) {
 		return nil

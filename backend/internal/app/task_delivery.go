@@ -231,12 +231,32 @@ func (s generationDeliveryStore) AssetVersion(id string) (*model.AssetVersion, e
 }
 
 func (s generationDeliveryStore) CommitOwned(item taskdelivery.OwnedDelivery) error {
-	return mapDeliveryStoreErr(s.repo.CommitOwnedGenerationDelivery(repository.GenerationDeliveryItem{
+	if err := mapDeliveryStoreErr(s.repo.CommitOwnedGenerationDelivery(repository.GenerationDeliveryItem{
 		Result:         item.Result,
 		Asset:          item.Asset,
 		Version:        item.Version,
 		Representation: item.Representation,
-	}))
+	})); err != nil {
+		return err
+	}
+	// A stop can race with the final local commit after all network bytes arrived.
+	// Completing every output wins over a now-unnecessary delivery pause.
+	task, err := s.repo.Task(item.Result.TaskID)
+	if err != nil || !deliveryPaused(task.Stage) {
+		return err
+	}
+	rows, err := s.repo.GenerationOutputResults(task.ID)
+	if err != nil {
+		return err
+	}
+	outputs, err := taskdelivery.DecodeStoredOutputs(rows)
+	if err != nil {
+		return err
+	}
+	if localtask.DeliveryComplete(task.ResultJSON, outputs, task.Type) {
+		return s.repo.SetGenerationDeliveryStage(task.UserID, task.ID, "生成完成")
+	}
+	return nil
 }
 
 func (s generationDeliveryStore) SucceededTasksForDelivery(afterID string, limit int) ([]model.Task, error) {
@@ -302,6 +322,11 @@ func (a generationDeliveryMediaAdapter) decodeGenerationArtifact(userID, identit
 		}
 		return kind, data, mimeType, fileName, width, height, durationMs, nil
 	case strings.HasPrefix(artifactURL, "http://") || strings.HasPrefix(artifactURL, "https://"):
+		ctx, finish, contextErr := a.service.beginGenerationDownload(userID, identity, generationDownloadTimeout)
+		if contextErr != nil {
+			return "", nil, "", "", 0, 0, 0, contextErr
+		}
+		defer func() { finish(err == nil) }()
 		if _, urlErr := validateRemoteResourceURL(artifactURL); urlErr != nil {
 			return "", nil, "", "", 0, 0, 0, urlErr
 		}
@@ -311,7 +336,7 @@ func (a generationDeliveryMediaAdapter) decodeGenerationArtifact(userID, identit
 		}
 		maxBytes := megabytes(policy.Resource.GeneratedFileMB) + 1
 		progress := a.service.deliveryProgressRegistry()
-		result, downloadErr := outbound.DownloadResumable(context.Background(), artifactURL, outbound.ResumableOptions{
+		result, downloadErr := outbound.DownloadResumable(ctx, artifactURL, outbound.ResumableOptions{
 			PartialPath: a.artifactDownloadPartialPath(userID, identity),
 			MaxBytes:    maxBytes,
 			OnProgress: func(update outbound.ResumableProgress) {

@@ -85,6 +85,10 @@ type Service struct {
 	deliveryMu               sync.Mutex
 	deliveryProgress         *deliveryProgressRegistry
 	deliveryProgressOnce     sync.Once
+	deliveryControlMu        sync.Mutex
+	deliveryCancels          map[string]context.CancelFunc
+	deliveryDeadlines        map[string]time.Time
+	deliveryClosed           bool
 	tasks                    *localtask.Service
 	tasksOnce                sync.Once
 	workspaceOps             *operations.Registry
@@ -190,9 +194,12 @@ func (s *Service) StartWorker() {
 	s.startResourceDeletionWorker(ctx)
 }
 
-func (s *Service) BeginDrain() { s.backgroundWorkers().BeginDrain() }
+func (s *Service) BeginDrain() { s.stopGenerationDownloads(); s.backgroundWorkers().BeginDrain() }
 
-func (s *Service) StopWorker(ctx context.Context) error { return s.backgroundWorkers().Stop(ctx) }
+func (s *Service) StopWorker(ctx context.Context) error {
+	s.stopGenerationDownloads()
+	return s.backgroundWorkers().Stop(ctx)
+}
 
 func (s *Service) IsDraining() bool { return s.backgroundWorkers().IsDraining() }
 
@@ -262,10 +269,16 @@ func (s *Service) refreshTaskProviderState(task *model.Task) error {
 }
 
 func (s *Service) RetryTask(userID string, id string) (*model.Task, error) {
+	if task, err := s.repo.TaskForUser(userID, id); err == nil && task.Status == model.TaskStatusSucceeded && deliveryPaused(task.Stage) {
+		return s.resumeGenerationDownload(*task)
+	}
 	return s.taskDomain().Retry(userID, id)
 }
 
 func (s *Service) CancelTask(ctx context.Context, userID string, id string) (*model.Task, error) {
+	if task, err := s.repo.TaskForUser(userID, id); err == nil && task.Status == model.TaskStatusSucceeded {
+		return s.pauseGenerationDownload(*task, "delivery_paused")
+	}
 	return s.taskDomain().Cancel(ctx, userID, id)
 }
 

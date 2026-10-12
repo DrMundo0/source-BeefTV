@@ -8,6 +8,7 @@ import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from "re
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { appHref } from "@/lib/app-routing";
 import { isLocalWorkspaceMode } from "@/services/workspace-mode";
+import { queryGenerationTask } from "@/services/api/task-center";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { uploadMediaFile } from "@/services/file-storage";
 import { getActiveUserScope, scopedLocalStorage } from "@/lib/user-scope";
@@ -2682,9 +2683,17 @@ function InfiniteCanvasPage() {
                                                 onRetry={retryCanvasNode}
                                                 onReloadResource={reloadCanvasNodeResource}
                                                 onOpenTaskDetails={openCanvasNodeTaskDetails}
-                                                onCancelTask={(node) => {
-                                                    const task = activeTasks.find((item) => item.id === node.metadata?.taskId);
-                                                    if (task) cancelCanvasTask(task);
+                                                onCancelTask={async (node) => {
+                                                    const taskId = node.metadata?.taskId;
+                                                    if (!taskId) return;
+                                                    const scope = captureUserScope();
+                                                    try {
+                                                        const task = activeTasks.find((item) => item.id === taskId) ?? await queryGenerationTask(taskId);
+                                                        assertUserScope(scope);
+                                                        cancelCanvasTask(task);
+                                                    } catch (error) {
+                                                        message.error(error instanceof Error ? error.message : "读取任务失败");
+                                                    }
                                                 }}
                                                 onOpenVersions={openCanvasNodeVersions}
                                                 onViewImage={viewCanvasNodeImage}

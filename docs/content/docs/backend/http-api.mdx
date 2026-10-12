@@ -178,6 +178,10 @@ NewAPI Channel 2 与 BeefAPI 视频的暂时下载断连会保留原任务 ID �
 
 生成结果正在取回时，任务详情与列表的 `delivery.outputs[]` 给出该任务每个输出的 `downloadedBytes`、`totalBytes`（未知为 -1）、`bytesPerSecond` 和 `state`（`downloading` / `retrying`），供页面显示进度。它只存在进程内存中，不写数据库，取回结束即消失，重启后不保留；没有取回中的下载时该字段省略。
 
+生成成功后仍在下载的结果，可用 `POST /tasks/:id/cancel` 停止取回：生成状态保持 `succeeded`，`stage=delivery_paused`；单次下载满 15 分钟则停止并记为 `delivery_timed_out`。尚未取回的输出使用相同的 `materializationErrorCode`。暂停跨应用重启保留，后台不会自动重启；`POST /tasks/:id/retry` 对这两种成功任务只解除暂停，由交付 worker 继续取回原结果，不重新生成或取消上游任务。应用关闭会停止当前下载，未手动暂停或超时的任务在下次启动后恢复。
+
+远程下载保留临时文件用于续传；鉴权过期的 401/403 不删除已有字节。签名参数变化时，仅同源同路径且持有强 ETag 的文件尝试续传，并核对响应 ETag 与总大小；不匹配时重新下载。供应商不支持 Range、缺少可靠校验标识或更换文件路径时可能从头下载。此能力不代表自动刷新供应商的过期签名链接。
+
 ## 明确不存在的端点
 
 `/auth/*`、`/admin/*`、`/payments/*`、`/wallet/*`、`/public/canvas-shares/*` 以及云存储配置端点不属于本地产品合同。

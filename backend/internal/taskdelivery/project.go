@@ -38,6 +38,9 @@ func Project(task model.Task, stored []localtask.CanonicalOutput, loadErr error,
 		if got, ok := byIndex[output.OutputIndex]; ok {
 			output = got
 		}
+		if output.MaterializedAssetID == "" && (task.Stage == "delivery_paused" || task.Stage == "delivery_timed_out") {
+			output.MaterializationErrorCode = task.Stage
+		}
 		merged = append(merged, localtask.BindOutput(output, task.ID, binding))
 	}
 	return Projection{

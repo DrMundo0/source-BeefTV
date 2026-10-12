@@ -11,7 +11,7 @@ import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { isUserScopeAbandonedError } from "@/lib/user-scope-guard";
 import { createStyleProfileSnapshot, resolveStyleProfile, serializeStyleProfile } from "@/lib/canvas/style-profile";
 import { getProject } from "@/services/api/projects";
-import { queryGenerationTask, type GenerationTask } from "@/services/api/task-center";
+import { queryGenerationTask, retryGenerationTask, type GenerationTask } from "@/services/api/task-center";
 import { loadAssetsForUse } from "@/services/local-workspace-sync";
 import { isLocalWorkspaceMode } from "@/services/workspace-mode";
 import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
@@ -301,9 +301,13 @@ export function useCanvasResourceHandoff({
                 current.map((item) => (item.id === targetNodeId ? { ...item, metadata: { ...item.metadata, status: "loading", errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined } } : item)),
             );
             try {
-                const task = await queryGenerationTask(taskId);
+                let task = await queryGenerationTask(taskId);
                 if (!lifetime.matches(owner, projectIdRef.current)) return;
                 if (task.status !== "succeeded") throw new Error("原生成任务尚未成功，暂时无法取回结果");
+                if (task.stage === "delivery_paused" || task.stage === "delivery_timed_out") {
+                    task = await retryGenerationTask(taskId);
+                    if (!lifetime.matches(owner, projectIdRef.current)) return;
+                }
                 await applyGenerationTaskResult(targetNodeId, task);
             } catch (error) {
                 if (!lifetime.matches(owner, projectIdRef.current)) return;
