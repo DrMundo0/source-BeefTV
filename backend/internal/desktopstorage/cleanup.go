@@ -5,10 +5,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Snapshot contains hashes only, never file contents or credentials.
@@ -127,15 +129,23 @@ func CleanupPrevious(root, current string, acquireLock func(string) (*os.File, e
 			return errors.New("迁移记录无效，无法清理")
 		}
 	}
-	for rel := range location.PreviousFiles {
-		if err = os.Remove(filepath.Join(location.PreviousDir, rel)); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	}
 	// A live desktop child can retain scratch handles after the workspace has
-	// stopped. Keep the receipt so cleanup can be retried after those close.
+	// stopped. Handle scratch first, before deleting any durable copies, and
+	// retain the receipt so cleanup can be retried after those handles close.
 	if err = os.RemoveAll(filepath.Join(location.PreviousDir, "cache", "tmp")); err != nil {
-		return errors.New("旧项目和素材副本已清理，部分临时文件仍在使用中。请重启 BeefTV 后再次清理")
+		if fileInUse(err) {
+			return fmt.Errorf("临时文件仍在使用中，请重启 BeefTV 后再次清理。当前存储目录不受影响\n\n%w", err)
+		}
+		return fmt.Errorf("临时文件未能清理，当前存储目录不受影响。请检查原目录的访问权限和磁盘状态\n\n%w", err)
+	}
+	for rel := range location.PreviousFiles {
+		// Older receipts included scratch files; they are handled above.
+		if strings.HasPrefix(rel, filepath.Join("cache", "tmp")+string(filepath.Separator)) {
+			continue
+		}
+		if err = os.Remove(filepath.Join(location.PreviousDir, rel)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("原目录清理未完成，当前存储目录不受影响。请保留当前目录并检查错误详情\n\n%w", err)
+		}
 	}
 	// Only remove empty directories. Keep the fixed profile pointer intact.
 	var dirs []string

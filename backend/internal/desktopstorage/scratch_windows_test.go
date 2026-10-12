@@ -7,6 +7,7 @@ import (
 	"golang.org/x/sys/windows"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -51,6 +52,27 @@ func TestWindowsLockedScratchMigrationAndCleanupRetry(t *testing.T) {
 	}
 	if err = CleanupPrevious(source, target, Lock); err == nil {
 		t.Fatal("reported full cleanup with locked scratch")
+	}
+	if !fileInUse(err) || !strings.Contains(err.Error(), "请重启 BeefTV") {
+		t.Fatal("lost lock cause or recovery advice", err)
+	}
+	if err = VerifySnapshot(source, files, false); err != nil {
+		t.Fatal("removed durable copies before scratch was released", err)
+	}
+	// Receipts created by older versions also listed temporary files.
+	legacyFiles := make(map[string]string, len(files)+1)
+	for path, hash := range files {
+		legacyFiles[path] = hash
+	}
+	legacyFiles[filepath.Join("cache", "tmp", "busy.tmp")] = "old-scratch-hash"
+	if err = SaveMigration(source, target, source, legacyFiles); err != nil {
+		t.Fatal(err)
+	}
+	if err = CleanupPrevious(source, target, Lock); !fileInUse(err) || !strings.Contains(err.Error(), "请重启 BeefTV") {
+		t.Fatal("old receipt bypassed scratch handling", err)
+	}
+	if err = VerifySnapshot(source, files, false); err != nil {
+		t.Fatal("old receipt lost durable data", err)
 	}
 	location, err := MigrationLocation(source, target)
 	if err != nil || location.PreviousDir == "" {
