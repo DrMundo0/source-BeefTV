@@ -50,66 +50,15 @@ function setupRepo(version) {
   return { dir, git, run, save, commitVersion };
 }
 
-test('v1.7.17 requires one native image batch and one native video within CNY 10 and cannot carry forward', () => {
-  const { run, save, commitVersion, dir } = setupRepo('v1.7.17');
+test('v1.7.17 rejects the superseded paid-rerun authorization', () => {
+  const { run, save, dir } = setupRepo('v1.7.17');
   try {
-    assert.throws(() => run());
-    const sourceDigest = run('--fingerprint').trim();
-    const evidence = ['synthetic test receipt, not live acceptance'];
-    const common = { status: 'succeeded', method: 'native', clientSubmitted: true, channel: 'beefapi', canvasVerified: true, mediaDecoded: true, mediaOpened: true,
-      billing: 'settled', executedSourceDigest: sourceDigest, clientVersion: 'v1.7.17', evidence };
-    const value = {
-      version: 'v1.7.17', sourceDigest, newBudgetCNY: 10, newSpentCNY: 4.5, newPendingCNY: 0,
-      budgetCNY: null, spentCNY: null, pendingCNY: null, paidSubmissionLimit: 5,
-      liveMatrixStatus: 'not_run_owner_waived', agentAcceptanceStatus: 'not_run_owner_waived',
-      acceptanceComplete: false, releasePublished: false, releaseComplete: false,
-      ownerException: { approvedBy: 'Ender', instruction: '专项验收后发布，本版只跑图片批量和视频各一次', scope: 'generation-delivery-targeted-20261012', evidence },
-      cases: [
-        { ...common, path: 'image-batch', model: 'gpt-image-2.5', quality: 'low', imageCount: 4, dispatches: 4, costCNY: 1.5, attempts: [1, 1, 1, 1],
-          taskIds: ['t1', 't2', 't3', 't4'], providerRequestIds: ['r1', 'r2', 'r3', 'r4'], artifactSHA256s: ['a', 'b', 'c', 'd'].map(c => c.repeat(64)) },
-        { ...common, path: 'text-video', model: 'seedance-2.0-fast', resolution: '480p', durationSeconds: 5, attempts: 1, costCNY: 3, deliveryProgressVisible: true, durationVerified: true,
-          taskId: 'tv', providerRequestId: 'rv', artifactSHA256: 'e'.repeat(64) },
-      ],
-      priorFinancialUncertainty: { status: 'unresolved', carriedFromVersion: 'v1.7.16', pendingCNY: null, evidence },
-      review: { result: 'approved', independent: true, reviewer: 'fixture', sourceDigest, evidence },
-      upgrade: { preservedData: true, sourceDigest, evidence },
-      verification: Object.fromEntries(['generationDelivery', 'imageRecoveryBudget', 'noDuplicateSubmission', 'localReleaseGate', 'ci'].map(id => [id, { status: 'passed', sourceDigest, evidence }])),
-      packages: { status: 'pending_release_workflow', archives: null, platforms: ['darwin-arm64', 'darwin-amd64', 'windows-amd64', 'linux-amd64'],
-        windowsReleasedUpgradeAndRollbackBeforeUpload: true, finalArchiveSmokeBeforeUpload: true, linuxNativeWindowBeforeUpload: true,
-        signedManifestBeforePublish: true, publicReadbackAfterPublish: true, workflowEvidence: evidence },
-    };
-    save(value); assert.match(run(), /four-image batch and video settled at CNY 4\.5 within 10.*package gates pending/);
-    const mutations = [
-      r => r.ownerException.instruction = '发布吧', r => r.ownerException.evidence = [], r => r.ownerException.scope = 'other', r => r.ownerException.approvedBy = 'other',
-      r => r.paidSubmissionLimit = 6, r => r.newBudgetCNY = 20, r => r.cases.pop(), r => r.cases.push(r.cases[1]), r => r.cases.reverse(),
-      r => r.newSpentCNY = 4, r => r.newPendingCNY = null, r => r.newPendingCNY = 0.1,
-      r => { r.cases[1].costCNY = 9; r.newSpentCNY = 10.5; },
-      r => r.cases[0].imageCount = 3, r => r.cases[0].dispatches = 5, r => r.cases[0].taskIds = ['t1', 't1', 't2', 't3'],
-      r => r.cases[0].providerRequestIds.pop(), r => r.cases[0].artifactSHA256s[0] = 'x', r => r.cases[0].model = '',
-      r => r.cases[0].model = 'gpt-image-2.5-flare', r => r.cases[0].quality = 'high', r => r.cases[0].attempts = [1, 1, 1, 2], r => r.cases[0].attempts.pop(),
-      r => r.ownerException.instruction = 'A. 专项验收后发布（推荐）',
-      r => r.cases[1].model = '原生不卡人脸-全参2.5', r => r.cases[1].resolution = '720p', r => r.cases[1].durationSeconds = 4,
-      r => r.cases[1].attempts = 2, r => r.cases[1].deliveryProgressVisible = false, r => r.cases[1].durationVerified = false,
-      r => r.cases[1].taskId = '', r => r.cases[1].providerRequestId = '', r => r.cases[1].artifactSHA256 = '', r => r.cases[1].path = 'image-video',
-      r => r.priorFinancialUncertainty.pendingCNY = 0, r => r.priorFinancialUncertainty.carriedFromVersion = 'v1.7.15', r => r.pendingCNY = 0,
-      r => r.review.independent = false, r => r.review.sourceDigest = 'old', r => r.review.result = 'pending',
-      r => r.upgrade.preservedData = false, r => r.upgrade.sourceDigest = 'old',
-      r => r.liveMatrixStatus = 'passed', r => r.agentAcceptanceStatus = 'passed', r => r.acceptanceComplete = true,
-      r => r.releasePublished = true, r => r.releaseComplete = true,
-      r => r.packages.platforms.pop(), r => r.packages.status = 'passed', r => r.packages.archives = {}, r => r.packages.workflowEvidence = [],
-    ];
-    for (const index of [0, 1]) {
-      for (const field of ['clientSubmitted', 'canvasVerified', 'mediaDecoded', 'mediaOpened']) mutations.push(r => r.cases[index][field] = false);
-      mutations.push(r => r.cases[index].channel = 'M3q8wGsdwkNiya_suRJQo', r => delete r.cases[index].channel);
-      mutations.push(r => r.cases[index].status = 'pending', r => r.cases[index].method = 'mock', r => r.cases[index].billing = 'unknown',
-        r => r.cases[index].costCNY = 0, r => r.cases[index].executedSourceDigest = 'old', r => r.cases[index].clientVersion = 'v1.7.16', r => r.cases[index].evidence = []);
-    }
-    for (const field of ['windowsReleasedUpgradeAndRollbackBeforeUpload', 'finalArchiveSmokeBeforeUpload', 'linuxNativeWindowBeforeUpload', 'signedManifestBeforePublish', 'publicReadbackAfterPublish']) mutations.push(r => r.packages[field] = false);
-    for (const id of Object.keys(value.verification)) mutations.push(r => delete r.verification[id], r => r.verification[id].status = 'pending', r => r.verification[id].sourceDigest = 'old', r => r.verification[id].evidence = []);
-    for (const mutate of mutations) { const invalid = structuredClone(value); mutate(invalid); save(invalid); assert.throws(() => run()); }
-    commitVersion('v1.7.18');
-    save({ ...value, version: 'v1.7.18', sourceDigest: run('--fingerprint').trim() }, 'v1.7.18');
-    assert.throws(() => run());
+    save({
+      version: 'v1.7.17', sourceDigest: run('--fingerprint').trim(),
+      ownerException: { approvedBy: 'Ender', scope: 'generation-delivery-targeted-20261012' },
+      paidSubmissionLimit: 5, newBudgetCNY: 10,
+    });
+    assert.throws(() => run(), /paid rerun authorization was superseded/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -125,7 +74,10 @@ test('v1.7.17 owner acceptance forbids new spending, preserves evidence and cann
       liveMatrixStatus: 'not_run_owner_waived', agentAcceptanceStatus: 'not_run_owner_waived',
       acceptanceComplete: false, releasePublished: false, releaseComplete: false,
       ownerException: { approvedBy: 'Ender', instruction: '采用本次实测，不重复付费（推荐）', scope: 'generation-delivery-owner-accepted-20261013', evidence },
-      ownerAcceptance: { generationDelivery: { ...accepted }, videoFullscreen: { ...accepted } },
+      ownerAcceptance: {
+        generationDelivery: { ...accepted, testedSourceDigest: 'd8024f245c9fdbb054a1f4adc705e783caed2e5e6b4fb07ea43e9c043aea9b3c' },
+        videoFullscreen: { ...accepted, testedSourceDigest: 'a25801431e4bf791ee0ef8679fbc6ba1ddae717ac737fc0feeec730225ab6870' },
+      },
       priorFinancialUncertainty: { status: 'unresolved', carriedFromVersion: 'v1.7.16', pendingCNY: null, evidence },
       review: { result: 'approved', independent: true, reviewer: 'fixture', sourceDigest, evidence },
       upgrade: { preservedData: true, sourceDigest, evidence },
@@ -144,7 +96,8 @@ test('v1.7.17 owner acceptance forbids new spending, preserves evidence and cann
       r => r.packages.platforms.pop(), r => r.packages.publicReadbackAfterPublish = false,
     ];
     for (const id of Object.keys(value.ownerAcceptance)) mutations.push(r => delete r.ownerAcceptance[id], r => r.ownerAcceptance[id].confirmedBy = 'agent',
-      r => r.ownerAcceptance[id].method = 'mock', r => r.ownerAcceptance[id].status = 'pending', r => r.ownerAcceptance[id].testedSourceDigest = 'unknown', r => r.ownerAcceptance[id].evidence = []);
+      r => r.ownerAcceptance[id].method = 'mock', r => r.ownerAcceptance[id].status = 'pending', r => r.ownerAcceptance[id].testedSourceDigest = 'unknown',
+      r => r.ownerAcceptance[id].testedSourceDigest = sourceDigest, r => r.ownerAcceptance[id].testedSourceDigest = 'a'.repeat(64), r => r.ownerAcceptance[id].evidence = []);
     for (const id of Object.keys(value.verification)) mutations.push(r => r.verification[id].status = 'pending', r => r.verification[id].sourceDigest = 'old');
     for (const mutate of mutations) { const invalid = structuredClone(value); mutate(invalid); save(invalid); assert.throws(() => run()); }
     commitVersion('v1.7.18');
