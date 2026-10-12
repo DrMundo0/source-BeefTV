@@ -224,7 +224,7 @@ function LoadingContent({ node, theme, onOpenTaskDetails, onCancelTask }: Pick<C
         ? { percent: delivery.percent, bar: delivery.percent !== null ? "determinate" : "indeterminate" }
         : fetchingResult && displayTask.status === "running" ? { percent: null, bar: "indeterminate" } : generationView;
     return (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-2.5 px-5 text-center" style={{ color: theme.node.activeStroke }}>
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2.5 px-5 text-center" style={{ background: theme.node.fill, color: theme.node.activeStroke }}>
             {submissionUncertain ? <AlertCircle className="size-10" /> : <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />}
             <span className="text-[var(--fs-tiny)] font-semibold">{delivery?.title || (fetchingResult ? "正在取回结果" : "生成中")}</span>
             {hasTaskIdentity ? (
