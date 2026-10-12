@@ -5,6 +5,7 @@ import { prepareDesktopEditorsForUpdate, registerDesktopUpdatePreparation } from
 import {
     createDesktopUpdateController,
     desktopUpdateActionLabel,
+    desktopUpdateProgressPercent,
     desktopUpdateDetailLabel,
     desktopUpdateProgressLabel,
     formatDesktopUpdateRemaining,
@@ -575,3 +576,12 @@ describe("desktop update controller", () => {
         controller.dispose();
     });
 });
+
+ test("100 percent requires helper readiness, never just complete bytes", () => {
+    const base = { status: "downloading", currentVersion: "v1.7.16", latestVersion: "v1.7.17", releaseNotes: "", downloadedBytes: 100, totalBytes: 100, bytesPerSecond: 0, reconnecting: false, error: "" } as DesktopUpdateState;
+    expect(desktopUpdateProgressPercent(base)).toBe(95);
+    expect(desktopUpdateProgressPercent({ ...base, status: "ready" })).toBe(96);
+    expect(desktopUpdateProgressPercent({ ...base, status: "installing" })).toBe(98);
+    expect(desktopUpdateProgressPercent({ ...base, status: "installing", installPrepared: true })).toBe(100);
+    expect(desktopUpdateProgressPercent({ ...base, status: "error", installPrepared: true })).toBeLessThan(100);
+ });

@@ -39,12 +39,10 @@ async function open(): Promise<Page> {
 
 const events = (page: Page) => page.evaluate(() => (window as unknown as { diagnostics: () => DiagnosticEvent[] }).diagnostics());
 
-test("删除渠道保持原有悬停提示与确认框，确认后渠道移除并留下诊断", async () => {
+test("删除渠道保持现有按钮与确认框，确认后渠道移除并留下诊断", async () => {
     const page = await open();
     try {
         const trigger = page.getByRole("button", { name: "删除渠道 工作室渠道" });
-        await trigger.hover();
-        await page.locator(".ant-tooltip").filter({ hasText: "删除渠道" }).waitFor();
         await trigger.click();
         const ok = page.locator(".ant-popconfirm button").filter({ hasText: /^删\s?除$/ });
         await ok.waitFor();

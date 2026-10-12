@@ -59,7 +59,7 @@ type AssetStore = {
     addAsset: (asset: NewAsset) => string;
     addGenerationAsset: (effectKey: string, asset: NewAsset, signal?: AbortSignal) => Promise<string>;
     updateAsset: (id: string, patch: Partial<Omit<Asset, "id" | "createdAt">>) => void;
-    removeAsset: (id: string) => Promise<void>;
+    removeAsset: (id: string, options?: { cleanupMedia?: boolean }) => Promise<void>;
     replaceAssets: (assets: Asset[]) => void;
     cleanupImages: (extra?: unknown) => Promise<void>;
 };
@@ -778,7 +778,7 @@ export const useAssetStore = create<AssetStore>()(
                 }));
                 markAssetStoreDraft(id, "upsert");
             },
-            removeAsset: async (id) => {
+            removeAsset: async (id, options) => {
                 let remainingAssets: Asset[] = [];
                 let removedAsset: Asset | undefined;
                 set((state) => {
@@ -790,6 +790,7 @@ export const useAssetStore = create<AssetStore>()(
                 markAssetStoreDraft(id, "delete");
                 // 没有本地媒体定位时没有需要由该删除动作回收的 Blob；跳过全库扫描，
                 // 避免纯文本/远程资源删除依赖浏览器 IndexedDB 驱动。
+                if (options?.cleanupMedia === false) return;
                 if (!removedAsset || (!collectImageStorageKeys(removedAsset).size && !collectMediaStorageKeys(removedAsset).size)) return;
                 await get().cleanupImages({ assets: remainingAssets });
             },

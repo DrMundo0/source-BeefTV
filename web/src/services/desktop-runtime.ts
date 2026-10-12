@@ -11,6 +11,7 @@ export const DESKTOP_UPDATE_STATUSES = ["disabled", "idle", "checking", "availab
 export type DesktopUpdateStatus = (typeof DESKTOP_UPDATE_STATUSES)[number];
 
 export type DesktopUpdateState = {
+    installPrepared?: boolean;
     status: DesktopUpdateStatus;
     currentVersion: string;
     latestVersion: string;
