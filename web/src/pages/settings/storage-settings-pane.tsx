@@ -14,6 +14,7 @@ export function StorageSettingsPane() {
     const [target, setTarget] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
+    const [errorSummary, ...errorDetails] = error.split("\n\n");
     useEffect(() => {
         let active = true;
         void binding
@@ -70,7 +71,12 @@ export function StorageSettingsPane() {
                     message.success("原目录已清理");
                 } catch (error) {
                     setError(error instanceof Error ? error.message : String(error));
-                    throw error;
+                    // Cleanup may have removed durable copies while leaving busy scratch.
+                    try {
+                        setUsage(await binding.StorageSettings!());
+                    } catch {
+                        /* Keep the last known usage. */
+                    }
                 } finally {
                     setBusy(false);
                 }
@@ -103,16 +109,22 @@ export function StorageSettingsPane() {
             </label>
             <p className="text-sm leading-6 text-foreground/60">请选择空文件夹。迁移期间请暂停操作；完成后会重新载入。原目录会保留，请确认项目和素材完整后再清理。</p>
             {error ? (
-                <p role="alert" className="text-sm text-destructive break-words">
-                    {error}
-                </p>
+                <div role="alert" className="text-sm text-destructive break-words">
+                    <p>{errorSummary}</p>
+                    {errorDetails.length > 0 ? (
+                        <details className="mt-2">
+                            <summary className="cursor-pointer">错误详情</summary>
+                            <p className="mt-2 break-all whitespace-pre-wrap">{errorDetails.join("\n\n")}</p>
+                        </details>
+                    ) : null}
+                </div>
             ) : null}
             <Button type="primary" onClick={migrate} loading={busy} disabled={!usage || !target.trim() || target.trim() === usage.dataDir}>
                 {busy ? "正在迁移并校验文件…" : "迁移旧数据并使用新目录"}
             </Button>
             {usage?.previousDir && binding.CleanupPreviousStorage ? (
                 <div className="space-y-2 border-t border-border pt-4">
-                    <p className="text-sm break-all">原数据仍保留在：{usage.previousDir}</p>
+                    <p className="text-sm break-all">待清理的原目录：{usage.previousDir}。请保留当前存储目录，原目录可能已部分清理。</p>
                     <Button danger disabled={busy} onClick={cleanup}>
                         清理原目录，释放磁盘空间
                     </Button>
