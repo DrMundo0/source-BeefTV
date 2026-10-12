@@ -27,6 +27,56 @@ const receipt = JSON.parse(readFileSync(`docs/release-evidence/${version}.json`,
 const fail = message => { throw new Error(`Real generation release gate: ${message}`); };
 const nonempty = value => typeof value === 'string' && value.trim() !== '';
 if (receipt.version !== version || receipt.sourceDigest !== sourceDigest) fail('receipt does not match this release source');
+// One native four-image batch and one native video only. This does not certify
+// the full matrix or assistant suite, and never authorizes a paid retry.
+if (version === 'v1.7.17' && receipt.ownerException?.scope === 'generation-delivery-targeted-20261012') {
+  const evidence = value => Array.isArray(value) && value.length > 0 && value.every(nonempty);
+  const bound = value => value?.sourceDigest === sourceDigest && evidence(value.evidence);
+  const sha = value => /^[a-f0-9]{64}$/.test(value || '');
+  const cost = value => Number.isFinite(value) && value > 0;
+  const uniqueIds = (value, size) => Array.isArray(value) && value.length === size && value.every(nonempty) && new Set(value).size === size;
+  if (receipt.ownerException.approvedBy !== 'Ender'
+    || receipt.ownerException.instruction !== 'A. 专项验收后发布（推荐）'
+    || !evidence(receipt.ownerException.evidence) || receipt.paidSubmissionLimit !== 5
+    || receipt.newBudgetCNY !== 10 || !Array.isArray(receipt.cases) || receipt.cases.length !== 2
+    || receipt.liveMatrixStatus !== 'not_run_owner_waived'
+    || receipt.agentAcceptanceStatus !== 'not_run_owner_waived'
+    || receipt.acceptanceComplete !== false) fail('v1.7.17 requires exact image-batch/video owner authorization and unexecuted full suites');
+  const native = item => item.status === 'succeeded' && item.method === 'native' && item.clientSubmitted === true
+    && item.canvasVerified === true && item.mediaDecoded === true && item.mediaOpened === true
+    && item.billing === 'settled' && cost(item.costCNY)
+    && item.executedSourceDigest === sourceDigest && item.clientVersion === version && evidence(item.evidence);
+  const [batch, video] = receipt.cases;
+  if (batch?.path !== 'image-batch' || !nonempty(batch.model) || batch.imageCount !== 4 || batch.dispatches !== 4
+    || !native(batch) || !uniqueIds(batch.taskIds, 4) || !uniqueIds(batch.providerRequestIds, 4)
+    || !Array.isArray(batch.artifactSHA256s) || batch.artifactSHA256s.length !== 4 || !batch.artifactSHA256s.every(sha)) fail('v1.7.17 requires one native settled four-image batch with four single dispatches');
+  if (video?.path !== 'text-video' || !nonempty(video.model) || video.attempts !== 1 || !native(video)
+    || video.deliveryProgressVisible !== true || video.durationVerified !== true
+    || !nonempty(video.taskId) || !nonempty(video.providerRequestId) || !sha(video.artifactSHA256)) fail('v1.7.17 requires one native settled video with visible delivery progress');
+  const spent = Math.round((batch.costCNY + video.costCNY) * 1e6) / 1e6;
+  if (receipt.newSpentCNY !== spent || receipt.newSpentCNY > receipt.newBudgetCNY || receipt.newPendingCNY !== 0) fail('v1.7.17 settled expense must equal both cases and stay within CNY 10');
+  if (receipt.budgetCNY !== null || receipt.spentCNY !== null || receipt.pendingCNY !== null
+    || receipt.priorFinancialUncertainty?.status !== 'unresolved'
+    || receipt.priorFinancialUncertainty.carriedFromVersion !== 'v1.7.16'
+    || receipt.priorFinancialUncertainty.pendingCNY !== null
+    || !evidence(receipt.priorFinancialUncertainty.evidence)) fail('v1.7.17 must retain historical financial uncertainty');
+  if (receipt.review?.result !== 'approved' || receipt.review.independent !== true
+    || !nonempty(receipt.review.reviewer) || !bound(receipt.review)
+    || receipt.upgrade?.preservedData !== true || !bound(receipt.upgrade)) fail('v1.7.17 requires current-source review and data preservation');
+  for (const id of ['generationDelivery', 'imageRecoveryBudget', 'noDuplicateSubmission', 'localReleaseGate', 'ci']) {
+    if (receipt.verification?.[id]?.status !== 'passed' || !bound(receipt.verification[id])) fail(`v1.7.17 missing targeted evidence: ${id}`);
+  }
+  const packages = receipt.packages;
+  const platforms = ['darwin-arm64', 'darwin-amd64', 'windows-amd64', 'linux-amd64'];
+  if (!Array.isArray(packages?.platforms) || JSON.stringify([...packages.platforms].sort()) !== JSON.stringify([...platforms].sort())
+    || packages.status !== 'pending_release_workflow' || packages.archives != null
+    || receipt.releasePublished !== false || receipt.releaseComplete !== false
+    || packages.windowsReleasedUpgradeAndRollbackBeforeUpload !== true || packages.finalArchiveSmokeBeforeUpload !== true
+    || packages.linuxNativeWindowBeforeUpload !== true || packages.signedManifestBeforePublish !== true
+    || packages.publicReadbackAfterPublish !== true || !evidence(packages.workflowEvidence)) fail('v1.7.17 must enforce all four final-package gates');
+  console.log(`v1.7.17 native four-image batch and video settled at CNY ${spent} within 10; full matrix and assistant suite NOT run; four-platform package gates pending.`);
+  process.exit(0);
+}
 // One native ASR acceptance only. This does not certify the image/video matrix
 // or the assistant suite, and never authorizes an additional paid attempt.
 if (version === 'v1.7.16' && receipt.ownerException?.scope === 'asr-transcription-targeted-20261011') {

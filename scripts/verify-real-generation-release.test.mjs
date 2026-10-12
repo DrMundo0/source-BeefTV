@@ -50,6 +50,65 @@ function setupRepo(version) {
   return { dir, git, run, save, commitVersion };
 }
 
+test('v1.7.17 requires one native image batch and one native video within CNY 10 and cannot carry forward', () => {
+  const { run, save, commitVersion, dir } = setupRepo('v1.7.17');
+  try {
+    assert.throws(() => run());
+    const sourceDigest = run('--fingerprint').trim();
+    const evidence = ['synthetic test receipt, not live acceptance'];
+    const common = { status: 'succeeded', method: 'native', clientSubmitted: true, canvasVerified: true, mediaDecoded: true, mediaOpened: true,
+      billing: 'settled', executedSourceDigest: sourceDigest, clientVersion: 'v1.7.17', evidence };
+    const value = {
+      version: 'v1.7.17', sourceDigest, newBudgetCNY: 10, newSpentCNY: 4.5, newPendingCNY: 0,
+      budgetCNY: null, spentCNY: null, pendingCNY: null, paidSubmissionLimit: 5,
+      liveMatrixStatus: 'not_run_owner_waived', agentAcceptanceStatus: 'not_run_owner_waived',
+      acceptanceComplete: false, releasePublished: false, releaseComplete: false,
+      ownerException: { approvedBy: 'Ender', instruction: 'A. 专项验收后发布（推荐）', scope: 'generation-delivery-targeted-20261012', evidence },
+      cases: [
+        { ...common, path: 'image-batch', model: 'image-2.5', imageCount: 4, dispatches: 4, costCNY: 1.5,
+          taskIds: ['t1', 't2', 't3', 't4'], providerRequestIds: ['r1', 'r2', 'r3', 'r4'], artifactSHA256s: ['a', 'b', 'c', 'd'].map(c => c.repeat(64)) },
+        { ...common, path: 'text-video', model: 'seedance-2.0-fast', attempts: 1, costCNY: 3, deliveryProgressVisible: true, durationVerified: true,
+          taskId: 'tv', providerRequestId: 'rv', artifactSHA256: 'e'.repeat(64) },
+      ],
+      priorFinancialUncertainty: { status: 'unresolved', carriedFromVersion: 'v1.7.16', pendingCNY: null, evidence },
+      review: { result: 'approved', independent: true, reviewer: 'fixture', sourceDigest, evidence },
+      upgrade: { preservedData: true, sourceDigest, evidence },
+      verification: Object.fromEntries(['generationDelivery', 'imageRecoveryBudget', 'noDuplicateSubmission', 'localReleaseGate', 'ci'].map(id => [id, { status: 'passed', sourceDigest, evidence }])),
+      packages: { status: 'pending_release_workflow', archives: null, platforms: ['darwin-arm64', 'darwin-amd64', 'windows-amd64', 'linux-amd64'],
+        windowsReleasedUpgradeAndRollbackBeforeUpload: true, finalArchiveSmokeBeforeUpload: true, linuxNativeWindowBeforeUpload: true,
+        signedManifestBeforePublish: true, publicReadbackAfterPublish: true, workflowEvidence: evidence },
+    };
+    save(value); assert.match(run(), /four-image batch and video settled at CNY 4\.5 within 10.*package gates pending/);
+    const mutations = [
+      r => r.ownerException.instruction = '发布吧', r => r.ownerException.evidence = [], r => r.ownerException.scope = 'other', r => r.ownerException.approvedBy = 'other',
+      r => r.paidSubmissionLimit = 6, r => r.newBudgetCNY = 20, r => r.cases.pop(), r => r.cases.push(r.cases[1]), r => r.cases.reverse(),
+      r => r.newSpentCNY = 4, r => r.newPendingCNY = null, r => r.newPendingCNY = 0.1,
+      r => { r.cases[1].costCNY = 9; r.newSpentCNY = 10.5; },
+      r => r.cases[0].imageCount = 3, r => r.cases[0].dispatches = 5, r => r.cases[0].taskIds = ['t1', 't1', 't2', 't3'],
+      r => r.cases[0].providerRequestIds.pop(), r => r.cases[0].artifactSHA256s[0] = 'x', r => r.cases[0].model = '',
+      r => r.cases[1].attempts = 2, r => r.cases[1].deliveryProgressVisible = false, r => r.cases[1].durationVerified = false,
+      r => r.cases[1].taskId = '', r => r.cases[1].providerRequestId = '', r => r.cases[1].artifactSHA256 = '', r => r.cases[1].path = 'image-video',
+      r => r.priorFinancialUncertainty.pendingCNY = 0, r => r.priorFinancialUncertainty.carriedFromVersion = 'v1.7.15', r => r.pendingCNY = 0,
+      r => r.review.independent = false, r => r.review.sourceDigest = 'old', r => r.review.result = 'pending',
+      r => r.upgrade.preservedData = false, r => r.upgrade.sourceDigest = 'old',
+      r => r.liveMatrixStatus = 'passed', r => r.agentAcceptanceStatus = 'passed', r => r.acceptanceComplete = true,
+      r => r.releasePublished = true, r => r.releaseComplete = true,
+      r => r.packages.platforms.pop(), r => r.packages.status = 'passed', r => r.packages.archives = {}, r => r.packages.workflowEvidence = [],
+    ];
+    for (const index of [0, 1]) {
+      for (const field of ['clientSubmitted', 'canvasVerified', 'mediaDecoded', 'mediaOpened']) mutations.push(r => r.cases[index][field] = false);
+      mutations.push(r => r.cases[index].status = 'pending', r => r.cases[index].method = 'mock', r => r.cases[index].billing = 'unknown',
+        r => r.cases[index].costCNY = 0, r => r.cases[index].executedSourceDigest = 'old', r => r.cases[index].clientVersion = 'v1.7.16', r => r.cases[index].evidence = []);
+    }
+    for (const field of ['windowsReleasedUpgradeAndRollbackBeforeUpload', 'finalArchiveSmokeBeforeUpload', 'linuxNativeWindowBeforeUpload', 'signedManifestBeforePublish', 'publicReadbackAfterPublish']) mutations.push(r => r.packages[field] = false);
+    for (const id of Object.keys(value.verification)) mutations.push(r => delete r.verification[id], r => r.verification[id].status = 'pending', r => r.verification[id].sourceDigest = 'old', r => r.verification[id].evidence = []);
+    for (const mutate of mutations) { const invalid = structuredClone(value); mutate(invalid); save(invalid); assert.throws(() => run()); }
+    commitVersion('v1.7.18');
+    save({ ...value, version: 'v1.7.18', sourceDigest: run('--fingerprint').trim() }, 'v1.7.18');
+    assert.throws(() => run());
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('v1.7.16 requires one settled native ASR and cannot waive evidence or carry forward', () => {
   const { dir, run, save, commitVersion } = setupRepo('v1.7.16');
   try {

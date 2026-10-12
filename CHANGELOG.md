@@ -9,6 +9,19 @@ All notable public changes to BeefTV are documented in this file.
 - Added reproducible local builds, automated quality checks, and multi-architecture container publishing.
 - Standardized public artifacts, runtime identifiers, documentation, and repository links on the BeefTV name.
 
+## v1.7.17
+
+- 生成结果取回显示进度、大小和速度；网络中断后从断点继续下载，「继续取回」不会重新生成或再次扣费。
+- 结果下载完成后才放回画布，并且只更新相关节点，不会覆盖其他编辑。
+- 批量出图时，排队等待不再消耗自动重试次数，只有真正发出的请求才计数。
+- 修复 BeefAPI 视频模型被当作文本模型调用而报错的问题；模型很多时设置页和下拉不再卡顿。
+- 诊断包补齐漏掉的任务记录，并附带脱敏的模型配置摘要，便于排查默认模型和渠道删除问题。
+- 画布列表、编辑器和文件夹中的删除操作都会先确认。
+- 首页新增新手引导，创作入口增加「3D 导演台」和「Beef Agent」。
+- 改进字幕与时间线编辑、素材分类与批量操作、模型目录刷新，以及桌面更新失败后的恢复。
+- Windows 安装包可以选择安装位置；临时文件被占用时不再阻止存储迁移。
+- 内置助手的旧会话保留为只读记录，继续发送消息会自动开启新会话并接上之前的内容。
+
 ## v1.7.16
 
 - 音频和视频节点的字幕窗口支持云端自动转写，可读取已连接 BeefTV 账号的转写模型。
