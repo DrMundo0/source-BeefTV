@@ -6,7 +6,7 @@ import { useState } from "react";
 import { PageHeader } from "@/components/layout/workspace-page";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { EmptyState } from "@/components/ui/product/empty-state";
-import { probeMcpServer, type McpProbeTool } from "@/services/api/assistant-mcp";
+import { probeMcpServer, mcpProbeFailureText, type McpProbeTool } from "@/services/api/assistant-mcp";
 import { flushModelConfig, getModelConfigPersistenceState } from "@/services/model-config-repository";
 import { useConfigStore, type McpKeyValue, type McpServerConfig, type McpTransport } from "@/stores/use-config-store";
 
@@ -19,7 +19,9 @@ export type EditorDraft = {
     url: string;
     env: McpKeyValue[];
     headers: McpKeyValue[];
-};const TRANSPORT_LABELS: Record<McpTransport, string> = { stdio: "本地命令", http: "远程地址" };
+};
+
+const TRANSPORT_LABELS: Record<McpTransport, string> = { stdio: "本地命令", http: "远程地址" };
 const INTRO = "添加后，内置助手可以调用这些工具。助手处于「只读」时只使用只读工具。";
 
 function newKeyValue(): McpKeyValue {
@@ -161,7 +163,7 @@ export function McpSettingsPane() {
             const result = await probeMcpServer(server.id);
             setProbes((current) => ({ ...current, [server.id]: { tools: result.tools, error: "" } }));
         } catch (error) {
-            setProbes((current) => ({ ...current, [server.id]: { tools: [], error: error instanceof Error ? error.message : "检测失败，请检查命令或地址" } }));
+            setProbes((current) => ({ ...current, [server.id]: { tools: [], error: mcpProbeFailureText(error) } }));
         } finally {
             setProbing((current) => current.filter((id) => id !== server.id));
         }

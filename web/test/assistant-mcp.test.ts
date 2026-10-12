@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import { resetAgentUiSession } from "@/services/api/agent-assistant";
-import { probeMcpServer } from "@/services/api/assistant-mcp";
-import { apiClient } from "@/services/api/request";
+import { mcpProbeFailureText, probeMcpServer } from "@/services/api/assistant-mcp";
+import { ApiError, apiClient } from "@/services/api/request";
 
 type Recorded = { method?: string; url?: string; data?: unknown; headers?: Record<string, string> };
 
@@ -42,5 +42,24 @@ describe("检测 MCP 服务器", () => {
             const thrown = await probeMcpServer("srv-2").catch((error) => error);
             expect(thrown).toMatchObject({ reason: "mcp_probe_failed" });
         });
+    });
+});
+
+describe("检测失败的用户语", () => {
+    test("按机器可读原因给出具体提示，未知原因走兜底", () => {
+        const cases: Array<[string, string]> = [
+            ["mcp_connect_timeout", "连接超时，请确认服务正在运行"],
+            ["mcp_connect_failed", "连接不上，请检查命令或地址"],
+            ["mcp_list_failed", "已连接，但读不到工具列表"],
+            ["mcp_server_invalid", "配置不完整，请编辑后再试"],
+            ["mcp_server_not_found", "没找到这个服务器，请保存后再试"],
+            ["host_unreachable", "内置助手还没启动，请稍后再试"],
+        ];
+        for (const [reason, text] of cases) {
+            expect(mcpProbeFailureText(new ApiError("x", { reason }))).toBe(text);
+        }
+        expect(mcpProbeFailureText(new ApiError("x", { reason: "mcp_probe_failed" }))).toBe("检测失败，请稍后再试");
+        expect(mcpProbeFailureText(new Error("boom"))).toBe("检测失败，请稍后再试");
+        expect(mcpProbeFailureText(undefined)).toBe("检测失败，请稍后再试");
     });
 });
