@@ -18,6 +18,9 @@ func Snapshot(dir string) (map[string]string, error) {
 		if err != nil {
 			return err
 		}
+		if skipScratch(dir, path, entry) {
+			return filepath.SkipDir
+		}
 		if entry.IsDir() {
 			return nil
 		}
@@ -31,7 +34,7 @@ func Snapshot(dir string) (map[string]string, error) {
 		if !entry.Type().IsRegular() {
 			return errors.New("数据目录含链接或特殊文件，无法清理或迁移")
 		}
-		file, err := os.Open(path)
+		file, err := openMigrationFile(path)
 		if err != nil {
 			return err
 		}
@@ -128,6 +131,11 @@ func CleanupPrevious(root, current string, acquireLock func(string) (*os.File, e
 		if err = os.Remove(filepath.Join(location.PreviousDir, rel)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+	}
+	// A live desktop child can retain scratch handles after the workspace has
+	// stopped. Keep the receipt so cleanup can be retried after those close.
+	if err = os.RemoveAll(filepath.Join(location.PreviousDir, "cache", "tmp")); err != nil {
+		return errors.New("旧项目和素材副本已清理，部分临时文件仍在使用中。请重启 BeefTV 后再次清理")
 	}
 	// Only remove empty directories. Keep the fixed profile pointer intact.
 	var dirs []string

@@ -14,6 +14,7 @@ export function StorageSettingsPane() {
     const [target, setTarget] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
+    const [migrationFailed, setMigrationFailed] = useState(false);
     useEffect(() => {
         let active = true;
         void binding
@@ -40,6 +41,7 @@ export function StorageSettingsPane() {
     const migrate = async () => {
         setBusy(true);
         setError("");
+        setMigrationFailed(false);
         try {
             await Promise.all([flushModelConfig(), saveRemoteUserDataNow()]);
             const state = getModelConfigPersistenceState();
@@ -48,6 +50,7 @@ export function StorageSettingsPane() {
             window.location.reload();
         } catch (error) {
             setError(error instanceof Error ? error.message : String(error));
+            setMigrationFailed(true);
             setBusy(false);
         }
     };
@@ -65,11 +68,18 @@ export function StorageSettingsPane() {
             onOk: async () => {
                 setBusy(true);
                 setError("");
+                setMigrationFailed(false);
                 try {
                     setUsage(await binding.CleanupPreviousStorage!());
                     message.success("原目录已清理");
                 } catch (error) {
                     setError(error instanceof Error ? error.message : String(error));
+                    // Cleanup may have removed durable copies while leaving busy scratch.
+                    try {
+                        setUsage(await binding.StorageSettings!());
+                    } catch {
+                        /* Keep the last known usage. */
+                    }
                     throw error;
                 } finally {
                     setBusy(false);
@@ -103,9 +113,19 @@ export function StorageSettingsPane() {
             </label>
             <p className="text-sm leading-6 text-foreground/60">请选择空文件夹。迁移期间请暂停操作；完成后会重新载入。原目录会保留，请确认项目和素材完整后再清理。</p>
             {error ? (
-                <p role="alert" className="text-sm text-destructive break-words">
-                    {error}
-                </p>
+                <div role="alert" className="text-sm text-destructive break-words">
+                    {migrationFailed ? (
+                        <>
+                            <p>迁移未完成。请查看错误详情，处理后重试。</p>
+                            <details className="mt-2">
+                                <summary className="cursor-pointer">错误详情</summary>
+                                <p className="mt-2 break-all">{error}</p>
+                            </details>
+                        </>
+                    ) : (
+                        <p>{error}</p>
+                    )}
+                </div>
             ) : null}
             <Button type="primary" onClick={migrate} loading={busy} disabled={!usage || !target.trim() || target.trim() === usage.dataDir}>
                 {busy ? "正在迁移并校验文件…" : "迁移旧数据并使用新目录"}
