@@ -40,15 +40,14 @@ LangString BEEFTV_DIR_FOREIGN ${LANG_SIMPCHINESE} "这个文件夹里已有其�
 LangString BEEFTV_DIR_WRITE ${LANG_ENGLISH} "BeefTV cannot write here. Administrator rights are required, so choose another folder."
 LangString BEEFTV_DIR_WRITE ${LANG_SIMPCHINESE} "需要管理员权限，请选择其他文件夹。"
 
-# Validates the chosen folder, then guarantees a dedicated BeefTV subfolder.
-# The checks run before appending, so a directory that already holds user data
-# is refused instead of becoming a parent. Sets $0 to 0 when valid, or
-# 1 (drive root), 2 (foreign folder), 3 (not writable).
+# Appends a dedicated BeefTV subfolder to the chosen location, then validates
+# that final folder. Choosing D:\Apps therefore installs to D:\Apps\BeefTV and
+# never mixes the payload with the user's other files. Sets $0 to 0 when valid,
+# or 1 (drive root), 2 (foreign folder), 3 (not writable).
 Function PrepareInstallDir
   StrCpy $0 0
   ${If} $INSTDIR == ""
     StrCpy $INSTDIR "$LOCALAPPDATA\Programs\BeefTV"
-    Return
   ${EndIf}
   # Drop trailing separators so the last component is a real name.
   StrCpy $1 "$INSTDIR"
@@ -62,14 +61,20 @@ Function PrepareInstallDir
         Goto PrepareInstallDir_trim
       ${EndIf}
     ${EndIf}
-  # A drive or share root is not a dedicated application folder.
+  # A drive or share root is not an application folder.
   ${GetRoot} "$1" $2
   ${If} $2 == "$1"
     StrCpy $0 1
     Return
   ${EndIf}
+  ${GetFileName} "$1" $2
+  ${If} $2 != "BeefTV"
+    StrCpy $1 "$1\BeefTV"
+  ${EndIf}
+  # An existing final folder is only reused when it is a previous BeefTV
+  # install or empty.
+  StrCpy $5 ""
   ${If} ${FileExists} "$1\*.*"
-    # An existing folder is only reused when it is a previous BeefTV install.
     ${IfNot} ${FileExists} "$1\.installed-root-files.txt"
       StrCpy $3 ""
       FindFirst $2 $4 "$1\*"
@@ -92,25 +97,26 @@ Function PrepareInstallDir
   ${ElseIf} ${FileExists} "$1"
     StrCpy $0 2
     Return
+  ${Else}
+    StrCpy $5 "created"
   ${EndIf}
   # The installer runs as the current user, so Program Files and other
   # administrator-only folders must be rejected before anything is written.
-  CreateDirectory "$1"
   ClearErrors
-  FileOpen $2 "$1\.beef-tv-write-test" w
+  CreateDirectory "$1"
+  FileOpen $2 "$1\.beeftv-write-test" w
   ${If} ${Errors}
     StrCpy $0 3
-    Return
-  ${EndIf}
-  FileClose $2
-  Delete "$1\.beef-tv-write-test"
-  # Always install into a folder named BeefTV so the payload never mixes with
-  # files the user picked this folder for.
-  ${GetFileName} "$1" $2
-  ${If} $2 == "BeefTV"
-    StrCpy $INSTDIR "$1"
   ${Else}
-    StrCpy $INSTDIR "$1\BeefTV"
+    FileClose $2
+    Delete "$1\.beeftv-write-test"
+  ${EndIf}
+  # Leave no empty folder behind if the user goes back and picks another one.
+  ${If} $5 == "created"
+    RMDir "$1"
+  ${EndIf}
+  ${If} $0 == 0
+    StrCpy $INSTDIR "$1"
   ${EndIf}
 FunctionEnd
 
@@ -224,6 +230,7 @@ Function un.onInit
 FunctionEnd
 
 Section "BeefTV (required)" SEC_APP
+  SectionIn RO
   # Stage and backup must live on the same volume as $INSTDIR for Rename to work.
   ${GetParent} "$INSTDIR" $InstallParent
   StrCpy $0 "$InstallParent" 1 -1

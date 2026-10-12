@@ -211,14 +211,34 @@ def windows_custom_install_dir(installer, root):
     assert (installed / 'BeefTV.exe').is_file()
     assert install_location() == str(installed), install_location()
 
-    # A non-empty foreign folder must be refused without touching its files.
-    foreign = root / 'Foreign'
-    foreign.mkdir()
+    # Choosing a folder that already holds other files installs into its own
+    # BeefTV subfolder and leaves those files alone.
+    apps = root / 'Apps'
+    apps.mkdir()
+    (apps / 'other.txt').write_bytes(b'other app')
+    result = run('/S', '/D=' + str(apps))
+    assert result.returncode == 0, f'install under a shared folder failed with {result.returncode}'
+    assert (apps / 'BeefTV' / 'BeefTV.exe').is_file()
+    assert (apps / 'other.txt').read_bytes() == b'other app'
+    assert install_location() == str(apps / 'BeefTV'), install_location()
+    subprocess.run([str(apps / 'BeefTV' / 'Uninstall.exe'), '/S'], check=True, timeout=90)
+    deadline = time.monotonic() + 90
+    while (apps / 'BeefTV').exists() and time.monotonic() < deadline:
+        time.sleep(.5)
+    assert not (apps / 'BeefTV').exists(), 'uninstall under a shared folder left files behind'
+    assert (apps / 'other.txt').read_bytes() == b'other app'
+    result = run('/S', '/D=' + str(custom))
+    assert result.returncode == 0, f'reinstall into the chosen folder failed with {result.returncode}'
+
+    # A non-empty BeefTV folder that is not a BeefTV install must be refused
+    # without touching its files.
+    foreign = root / 'Foreign' / 'BeefTV'
+    foreign.mkdir(parents=True)
     (foreign / 'keep.txt').write_bytes(b'keep foreign file')
     result = run('/S', '/D=' + str(foreign))
     assert result.returncode != 0, 'installer accepted a non-empty foreign folder'
+    assert sorted(p.name for p in foreign.iterdir()) == ['keep.txt']
     assert (foreign / 'keep.txt').read_bytes() == b'keep foreign file'
-    assert not (foreign / 'BeefTV').exists(), 'refused install still created the application folder'
     assert install_location() == str(installed), 'refused install changed the registered location'
 
     subprocess.run([str(installed / 'Uninstall.exe'), '/S'], check=True, timeout=90)
