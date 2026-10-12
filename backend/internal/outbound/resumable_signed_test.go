@@ -2,7 +2,6 @@ package outbound
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,8 +11,8 @@ import (
 
 func TestResumableRefreshSignedURLRequiresMatchingStrongValidator(t *testing.T) {
 	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
-	for _, changed := range []bool{false, true} {
-		t.Run(fmt.Sprint(changed), func(t *testing.T) {
+	for _, responseETag := range []string{`"v1"`, `"v2"`, `W/"v1"`, ""} {
+		t.Run("response-etag="+responseETag, func(t *testing.T) {
 			calls := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
@@ -21,11 +20,7 @@ func TestResumableRefreshSignedURLRequiresMatchingStrongValidator(t *testing.T) 
 					if r.Header.Get("Range") != "bytes=3-" || r.Header.Get("If-Range") != `"v1"` {
 						t.Errorf("missing validated resume headers: %v", r.Header)
 					}
-					etag := `"v1"`
-					if changed {
-						etag = `"v2"`
-					}
-					w.Header().Set("ETag", etag)
+					w.Header().Set("ETag", responseETag)
 					w.Header().Set("Content-Range", "bytes 3-5/6")
 					w.WriteHeader(206)
 					_, _ = w.Write([]byte("def"))
@@ -44,7 +39,7 @@ func TestResumableRefreshSignedURLRequiresMatchingStrongValidator(t *testing.T) 
 			saveResumableSidecar(partial, resumableSidecar{URL: server.URL + "/image?signature=old", ETag: `"v1"`, Total: 6})
 			got, err := DownloadResumable(context.Background(), server.URL+"/image?signature=new", ResumableOptions{PartialPath: partial, MaxBytes: 1024, Attempts: 2})
 			want := "abcdef"
-			if changed {
+			if responseETag != `"v1"` {
 				want = "uvwxyz"
 			}
 			if err != nil || string(got.Data) != want {

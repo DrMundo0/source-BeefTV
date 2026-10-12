@@ -230,17 +230,21 @@ func TestVideoDownloadDoesNotReportErrorBodyAsMedia(t *testing.T) {
 }
 
 func TestVideoDeliveryPendingDoesNotExhaustTransferRetries(t *testing.T) {
-	policy := fastPolicy(2, func(context.Context, time.Duration) error { return nil })
-	calls := 0
-	data, _, err := RunVideoDownload(context.Background(), "original", policy, func(context.Context) ([]byte, string, error) {
-		calls++
-		if calls <= 4 {
-			return nil, "", HTTPError{StatusCode: 503, Body: `{"error":{"code":"video_delivery_pending"}}`, RetryAfter: time.Second}
-		}
-		return []byte("saved video"), "video/mp4", nil
-	})
-	if err != nil || calls != 5 || string(data) != "saved video" {
-		t.Fatalf("calls=%d data=%q error=%v", calls, data, err)
+	for _, retryAfter := range []time.Duration{0, time.Second} {
+		t.Run(retryAfter.String(), func(t *testing.T) {
+			policy := fastPolicy(2, func(context.Context, time.Duration) error { return nil })
+			calls := 0
+			data, _, err := RunVideoDownload(context.Background(), "original", policy, func(context.Context) ([]byte, string, error) {
+				calls++
+				if calls <= 4 {
+					return nil, "", HTTPError{StatusCode: 503, Body: `{"error":{"code":"video_delivery_pending"}}`, RetryAfter: retryAfter}
+				}
+				return []byte("saved video"), "video/mp4", nil
+			})
+			if err != nil || calls != 5 || string(data) != "saved video" {
+				t.Fatalf("calls=%d data=%q error=%v", calls, data, err)
+			}
+		})
 	}
 }
 
