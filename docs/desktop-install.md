@@ -2,7 +2,7 @@
 
 安装包不使用付费代码签名证书。Windows 可能显示“未知发布者”或 SmartScreen 提示；macOS 可能要求在“系统设置 → 隐私与安全性”中允许打开。受组织策略或 Smart App Control 限制的设备可能无法运行。请只从 BeefTV 官网或官方 GitHub Releases 下载。
 
-- Windows：运行 `BeefTV-vX.Y.Z-windows-amd64-setup.exe`，安装到当前用户目录，无需管理员权限。开始菜单有 BeefTV 和卸载入口，可以选择创建桌面快捷方式。WebView2 是运行依赖，缺失时应用会提示下载安装。
+- Windows：运行 `BeefTV-vX.Y.Z-windows-amd64-setup.exe`。安装位置可选，默认 `%LOCALAPPDATA%\Programs\BeefTV`，覆盖安装会沿用上次的位置；无论选哪个文件夹，都会装入其下的 `BeefTV` 子目录。安装包以当前用户权限运行，无需管理员权限，因此不能写入 `Program Files` 等位置。开始菜单有 BeefTV 和卸载入口，可以选择创建桌面快捷方式。WebView2 是运行依赖，缺失时应用会提示下载安装。
 - macOS：打开对应芯片的 `.dmg`，将 `BeefTV.app` 拖到“Applications”，退出磁盘映像后从“应用程序”启动。已有版本时先退出 BeefTV，再替换应用。
 - Ubuntu 24.04 x64：下载 `.deb` 后运行 `sudo apt install ./BeefTV-vX.Y.Z-linux-amd64.deb`，从应用菜单启动。下载新版 DEB 并再次安装即可升级；DEB 不使用应用内自动更新。
 

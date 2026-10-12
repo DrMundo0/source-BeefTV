@@ -185,6 +185,56 @@ def probe_self_test():
         print('PASS: native NSIS rejects a proven directory lock and preserves different previous bytes')
 
 
+def windows_custom_install_dir(installer, root):
+    import winreg
+    key = r'Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV'
+    custom = root / 'Custom'
+    installed = custom / 'BeefTV'
+
+    def install_location():
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key) as handle:
+            return winreg.QueryValueEx(handle, 'InstallLocation')[0]
+
+    def run(*args):
+        # NSIS /D= must be the last, unquoted parameter even when the path has spaces.
+        return subprocess.run(f'"{installer}" ' + ' '.join(args), timeout=180)
+
+    result = run('/S', '/D=' + str(custom))
+    assert result.returncode == 0, f'chosen-location install failed with {result.returncode}'
+    assert (installed / 'BeefTV.exe').is_file()
+    assert (installed / '.installed-root-files.txt').is_file()
+    assert install_location() == str(installed), install_location()
+
+    # An upgrade without /D must reuse the registered location.
+    result = run('/S')
+    assert result.returncode == 0, f'upgrade without /D failed with {result.returncode}'
+    assert (installed / 'BeefTV.exe').is_file()
+    assert install_location() == str(installed), install_location()
+
+    # A non-empty foreign folder must be refused without touching its files.
+    foreign = root / 'Foreign'
+    foreign.mkdir()
+    (foreign / 'keep.txt').write_bytes(b'keep foreign file')
+    result = run('/S', '/D=' + str(foreign))
+    assert result.returncode != 0, 'installer accepted a non-empty foreign folder'
+    assert (foreign / 'keep.txt').read_bytes() == b'keep foreign file'
+    assert not (foreign / 'BeefTV').exists(), 'refused install still created the application folder'
+    assert install_location() == str(installed), 'refused install changed the registered location'
+
+    subprocess.run([str(installed / 'Uninstall.exe'), '/S'], check=True, timeout=90)
+    deadline = time.monotonic() + 90
+    while installed.exists() and time.monotonic() < deadline:
+        time.sleep(.5)
+    assert not installed.exists(), 'chosen-location uninstall left files behind'
+    try:
+        install_location()
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError('uninstall left the BeefTV registry key')
+    print('PASS: chosen install folder, upgrade reuse, foreign-folder refusal and custom uninstall')
+
+
 def verify_data(data):
     with closing(sqlite3.connect(data / 'open_ai_canvas.db')) as db:
         assert db.execute("SELECT name,revision FROM projects WHERE id='installer-project'").fetchone() == ('Keep my project', 7)
@@ -244,6 +294,7 @@ def smoke(args):
             profile = Path(env['APPDATA']) / 'BeefTV.exe'
             helper = root / 'webview-cache-probe.exe'
             build_cache_probe(helper)
+            windows_custom_install_dir(installer, root)
             def install():
                 subprocess.run([str(installer), '/S'], check=True, timeout=180)
                 import winreg
