@@ -14,6 +14,18 @@ func TestWindowsWorkerUsesUTF8ForChineseProgress(t *testing.T) {
 	}
 }
 
+func TestWorkerCheckpointDownloadUsesResolvedDesktopProxy(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:7890")
+	t.Setenv("https_proxy", "http://127.0.0.1:9999")
+	t.Setenv("NO_PROXY", "")
+	t.Setenv("no_proxy", "")
+	env := WorkerEnvForPlatform("C:/depth/worker", "windows")
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "HTTPS_PROXY=http://127.0.0.1:7890\nhttps_proxy=http://127.0.0.1:7890\nNO_PROXY=") {
+		t.Fatal("worker curl does not share the component downloader's proxy selection")
+	}
+}
+
 func TestChooseDeviceKeepsMacMPSAndSkipsWindowsCUDAWithoutCandidate(t *testing.T) {
 	probed := false
 	mac, err := ChooseDevice(context.Background(), "darwin", "arm64", false, func(context.Context) error { probed = true; return nil })

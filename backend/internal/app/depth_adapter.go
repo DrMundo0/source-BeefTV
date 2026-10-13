@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -71,6 +72,10 @@ func (t depthTasks) Fail(task *model.Task, stage, message string) error {
 	if t.w == nil {
 		return nil
 	}
+	captureTaskFailureDiagnostics(task, errors.New(message), "local_result")
+	task.FailureDiagnostics.Stage = stage
+	task.FailureDiagnostics.RequestID = task.RequestID
+	task.FailureDiagnostics.ExecutionResult = "failed"
 	return t.w.failTimelineTask(task, stage, message)
 }
 

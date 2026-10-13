@@ -6,6 +6,7 @@ import { CachedResourceImage } from "@/components/cached-resource-image";
 import { GenerationFailureNotice } from "@/components/generation/generation-failure-notice";
 import { generationDeliveryProgressView, generationTaskFetchingResult } from "@/lib/generation-delivery-progress";
 import { explainGenerationError } from "@/lib/generation-error";
+import { canvasNodeFailureExplanation, isDepthCaptureResultNode } from "@/lib/canvas/canvas-depth-capture";
 import { formatGenerationElapsed, generationProgressDisplay, generationTaskShowsProgress, isGenerationTaskSubmissionUncertain, trackGenerationProgressChange, type GenerationProgressRecord } from "@/lib/generation-task-display";
 import { canvasRichTextHTML } from "@/lib/canvas/canvas-rich-text";
 import { fitNodeSize } from "@/lib/canvas/canvas-node-size";
@@ -294,7 +295,8 @@ function rememberProgressChange(key: string, progress: number, now: number) {
 
 
 function ErrorContent({ node, theme, onRetry, onReloadResource, onOpenTaskDetails }: Pick<CanvasNodeContentProps, "node" | "theme" | "onRetry" | "onReloadResource" | "onOpenTaskDetails">) {
-    const explanation = explainGenerationError({ code: node.metadata?.generationErrorCode || node.metadata?.taskErrorCode, message: node.metadata?.errorDetails }, { taskId: node.metadata?.taskId, model: node.metadata?.model, createdAt: node.metadata?.taskCreatedAt, stage: node.metadata?.taskStage });
+    const explanation = canvasNodeFailureExplanation(node);
+    const failedDepthTask = isDepthCaptureResultNode(node) && (node.metadata?.taskStatus === "failed" || node.metadata?.taskStatus === "cancelled");
     const errorDisplayTask = {
         provider: node.metadata?.taskProvider,
         status: (node.metadata?.taskStatus || "failed") as GenerationTask["status"],
@@ -322,7 +324,7 @@ function ErrorContent({ node, theme, onRetry, onReloadResource, onOpenTaskDetail
                     explanation={explanation}
                     context={{ taskId: node.metadata?.taskId, model: node.metadata?.model, createdAt: node.metadata?.taskCreatedAt, stage: node.metadata?.taskStage, providerRequestId: node.metadata?.taskProviderRequestId, failureDiagnostics: node.metadata?.taskFailureDiagnostics, errorSummary: node.metadata?.generationErrorSummary, completedAt: node.metadata?.taskCompletedAt, updatedAt: node.metadata?.taskUpdatedAt }}
                     onOpenDetails={node.metadata?.taskId && onOpenTaskDetails ? () => onOpenTaskDetails(node) : undefined}
-                    onRetry={submissionUncertain || explanation.uncertain || explanation.category === "download_failed" ? undefined : onRetry ? () => onRetry(node) : undefined}
+                    onRetry={!failedDepthTask && (submissionUncertain || explanation.uncertain || explanation.category === "download_failed") ? undefined : onRetry ? () => onRetry(node) : undefined}
                     retryLabel={node.metadata?.isBatchRoot ? "重新生成失败项" : "重新生成"}
                 />
             </div>
