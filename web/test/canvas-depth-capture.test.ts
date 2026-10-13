@@ -7,6 +7,8 @@ import { createElement } from "react";
 import type { GenerationTask } from "@/services/api/task-center";
 import { generationTaskStageLabel } from "@/lib/generation-task-display";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
+import { nodeHoverToolbarTools } from "@/lib/canvas/tool-registry/definitions/node-hover-tools";
+import type { ToolContext } from "@/lib/canvas/tool-registry";
 
 const source: CanvasNodeData = { id: "source", type: CanvasNodeType.Video, title: "原视频", position: { x: 0, y: 0 }, width: 320, height: 180, metadata: {} };
 const depth: CanvasNodeData = { id: "depth", type: CanvasNodeType.Video, title: "深度动作捕捉", position: { x: 400, y: 0 }, width: 320, height: 180, metadata: { depthSourceNodeId: source.id, taskId: "depth-task" } };
@@ -40,4 +42,20 @@ test("observation failure keeps a known active depth task loading", () => {
     expect(metadata.taskClientOperationTerminal).toBeUndefined();
     expect(depthCaptureWaitFailureMetadata(new Error("HTTP 503"), "depth-task").status).toBe("loading");
     expect(depthCaptureWaitFailureMetadata(new Error("invalid input")).status).toBe("error");
+});
+
+test("hover retry preserves cloud download guards and recovers completed local output", () => {
+    const retry = nodeHoverToolbarTools.find(tool => tool.id === "retry")!;
+    const makeContext = (node: CanvasNodeData) => ({ node, nodeMetadata: node.metadata }) as ToolContext;
+    const cloud = { ...source, metadata: { status: "error" as const, taskStatus: "failed", generationErrorCode: "download_failed", errorDetails: "download_failed" } };
+    expect(retry.applicable?.(makeContext(cloud))).toBe(false);
+    const failedDepth = { ...depth, metadata: { ...cloud.metadata, ...depth.metadata } };
+    expect(retry.applicable?.(makeContext(failedDepth))).toBe(true);
+    const completedDepth = { ...failedDepth, metadata: { ...failedDepth.metadata, taskStatus: "succeeded" } };
+    expect(retry.applicable?.(makeContext(completedDepth))).toBe(true);
+    expect(typeof retry.displayLabel === "function" ? retry.displayLabel(makeContext(completedDepth)) : retry.displayLabel).toBe("恢复结果");
+    const explanation = canvasNodeFailureExplanation(completedDepth);
+    const html = renderToStaticMarkup(createElement(GenerationFailureNotice, { explanation, onRetry: () => {}, retryLabel: "恢复结果" }));
+    expect(html).toContain("恢复结果");
+    expect(html).not.toContain("重新生成");
 });

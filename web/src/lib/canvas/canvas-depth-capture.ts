@@ -6,6 +6,10 @@ export function isDepthCaptureResultNode(node: CanvasNodeData) {
     return Boolean(node.metadata?.depthSourceNodeId);
 }
 
+export function canRecoverOrRetryDepthCapture(node: CanvasNodeData) {
+    return isDepthCaptureResultNode(node) && ["failed", "cancelled", "succeeded"].includes(node.metadata?.taskStatus || "");
+}
+
 export function findDepthCaptureSourceNode(node: CanvasNodeData, nodes: CanvasNodeData[]) {
     const sourceNodeId = node.metadata?.depthSourceNodeId;
     return sourceNodeId ? nodes.find((candidate) => candidate.id === sourceNodeId) : undefined;
@@ -44,8 +48,10 @@ export function depthCaptureWaitFailureMetadata(error: unknown, observed?: Gener
 
 export function canvasNodeFailureExplanation(node: CanvasNodeData) {
     const explanation = explainGenerationError({ code: node.metadata?.generationErrorCode || node.metadata?.taskErrorCode, message: node.metadata?.errorDetails }, { taskId: node.metadata?.taskId, model: node.metadata?.model, createdAt: node.metadata?.taskCreatedAt, stage: node.metadata?.taskStage });
-    const localTerminal = isDepthCaptureResultNode(node) && (node.metadata?.taskStatus === "failed" || node.metadata?.taskStatus === "cancelled");
-    if (!localTerminal) return explanation;
+    if (!canRecoverOrRetryDepthCapture(node)) return explanation;
+    if (node.metadata?.taskStatus === "succeeded") {
+        return { ...explanation, reason: "深度视频已生成，暂时未能显示在画布上", action: "点击「恢复结果」重新加载原任务", uncertain: false, retryable: true, blockAutomaticRetry: false };
+    }
     return {
         ...explanation,
         ...(["unknown", "download_failed", "submission_uncertain"].includes(explanation.category) ? { reason: "深度处理失败", action: "请查看详情，检查深度组件和网络后重试" } : {}),

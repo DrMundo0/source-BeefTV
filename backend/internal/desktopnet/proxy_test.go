@@ -26,6 +26,10 @@ func TestHTTPSChildProxyPreservesRedirectBypassAndExplicitDirect(t *testing.T) {
 	if !strings.HasPrefix(env, "HTTPS_PROXY=\nhttps_proxy=\n") || !strings.HasSuffix(env, "ALL_PROXY=\nall_proxy=") {
 		t.Fatal("explicit direct configuration fell back to a different proxy")
 	}
+	t.Setenv("NO_PROXY", "*")
+	if !strings.Contains(strings.Join(HTTPSProxyEnvironment(), "\n"), "no_proxy=*\n") {
+		t.Fatal("universal proxy bypass was lost")
+	}
 }
 
 func TestSystemProxySelection(t *testing.T) {

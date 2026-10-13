@@ -37,7 +37,10 @@ func HTTPSProxyEnvironment() []string {
 	}
 	bypass := strings.Split(config.NoProxy, ",")
 	for i, host := range bypass {
-		bypass[i] = strings.TrimPrefix(strings.TrimSpace(host), "*")
+		bypass[i] = strings.TrimSpace(host)
+		if strings.HasPrefix(bypass[i], "*.") {
+			bypass[i] = bypass[i][1:]
+		}
 	}
 	noProxy := strings.Join(bypass, ",")
 	return []string{"HTTPS_PROXY=" + config.HTTPSProxy, "https_proxy=" + config.HTTPSProxy, "NO_PROXY=" + noProxy, "no_proxy=" + noProxy, "ALL_PROXY=", "all_proxy="}
