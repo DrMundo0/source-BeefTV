@@ -9,6 +9,7 @@ import { generationTaskStageLabel } from "@/lib/generation-task-display";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { nodeHoverToolbarTools } from "@/lib/canvas/tool-registry/definitions/node-hover-tools";
 import type { ToolContext } from "@/lib/canvas/tool-registry";
+import { formatGenerationDiagnostics } from "@/lib/generation-error";
 
 const source: CanvasNodeData = { id: "source", type: CanvasNodeType.Video, title: "原视频", position: { x: 0, y: 0 }, width: 320, height: 180, metadata: {} };
 const depth: CanvasNodeData = { id: "depth", type: CanvasNodeType.Video, title: "深度动作捕捉", position: { x: 400, y: 0 }, width: 320, height: 180, metadata: { depthSourceNodeId: source.id, taskId: "depth-task" } };
@@ -58,4 +59,15 @@ test("hover retry preserves cloud download guards and recovers completed local o
     const html = renderToStaticMarkup(createElement(GenerationFailureNotice, { explanation, onRetry: () => {}, retryLabel: "恢复结果" }));
     expect(html).toContain("恢复结果");
     expect(html).not.toContain("重新生成");
+});
+
+test("copied local failure diagnostics retain the exit cause within the safe summary budget", () => {
+    const message = "\r 0 0 0 0 Time Time Current".repeat(150) + "\ncurl: (28) Connection timed out\n模型补下载失败";
+    const summary = "… 0 0 0 0 Time Time Current ".repeat(7) + "\ncurl: (28) Connection timed out\n模型补下载失败";
+    const failed = { ...depth, metadata: { ...depth.metadata, status: "error" as const, taskStatus: "failed", errorDetails: message } };
+    const diagnostics = formatGenerationDiagnostics(canvasNodeFailureExplanation(failed), {taskId: "depth-task", failureDiagnostics: {source: "local_result", summary, stage: "深度处理失败", requestId: "req-depth-local"}});
+    expect(diagnostics).toContain("curl: (28) Connection timed out");
+    expect(diagnostics).toContain("模型补下载失败");
+    expect(diagnostics).toContain("错误来源：本地结果处理");
+    expect(diagnostics).toContain("请求 ID：req-depth-local");
 });

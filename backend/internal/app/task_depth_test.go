@@ -55,7 +55,8 @@ func TestDepthFailurePersistsLocalDiagnosticsAndRequestIdentity(t *testing.T) {
 	if err := db.Create(task).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := (depthTasks{w: svc.taskWorker()}).Fail(task, "深度处理失败", "curl: (28) Connection timed out"); err != nil {
+	message := strings.Repeat("\r 0 0 0 0 Time Time Current", 150) + "\ncurl: (28) Connection timed out\n模型补下载失败"
+	if err := (depthTasks{w: svc.taskWorker()}).Fail(task, "深度处理失败", message); err != nil {
 		t.Fatal(err)
 	}
 	var stored model.Task
@@ -63,7 +64,7 @@ func TestDepthFailurePersistsLocalDiagnosticsAndRequestIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := stored.FailureDiagnostics
-	if stored.Status != model.TaskStatusFailed || d == nil || d.Source != "local_result" || d.RequestID != "req-depth-local" || d.Stage != "深度处理失败" || d.ExecutionResult != "failed" || !strings.Contains(d.Summary, "curl: (28)") {
+	if stored.Status != model.TaskStatusFailed || d == nil || d.Source != "local_result" || d.RequestID != "req-depth-local" || d.Stage != "深度处理失败" || d.ExecutionResult != "failed" || !strings.Contains(d.Summary, "curl: (28)") || !strings.HasSuffix(d.Summary, "模型补下载失败") || len([]rune(d.Summary)) > 240 {
 		t.Fatalf("failed task diagnostics = %+v", d)
 	}
 }
