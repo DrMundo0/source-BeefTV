@@ -25,6 +25,7 @@ export function validateH3FamilyRelease(receipt, sourceDigest) {
     || !evidence(prior.evidence) || prior.providerRequestIds?.length !== 5 || new Set(prior.providerRequestIds).size !== 5
     || !prior.providerRequestIds.every(text)) fail('all five earlier calls required without source relabeling');
   const executedCommit = '2a9b19963bccb370a788014306fd417c6f31e4ed';
+  const executedDigest = 'b9894d787af35a5eb09aa46425a09f2e6451ff22d1a9b3fcf643d482c0261952';
   const required = { 'max-text-768p': ['minimax-h3-max', 3, '768p', 1.464782],
     'base-reference-480p': ['minimax-h3', 5, '480p', 3.356792],
     'base-native-2k-keyframes': ['minimax-h3', 5, '2k', 6.611864] };
@@ -32,7 +33,7 @@ export function validateH3FamilyRelease(receipt, sourceDigest) {
   if (receipt.familyCalls?.length !== 3) fail('exactly three new real calls required');
   for (const [id, [model, seconds, resolution, cost]] of Object.entries(required)) {
     const item = receipt.familyCalls.find(call => call.id === id);
-    if (!item || item.executedCommit !== executedCommit || !hash(item.executedSourceDigest) || !evidence(item.evidence)
+    if (!item || item.executedCommit !== executedCommit || item.executedSourceDigest !== executedDigest || !evidence(item.evidence)
       || item.model !== model || item.seconds !== seconds || item.resolution !== resolution || item.status !== 'succeeded'
       || item.billing !== 'settled' || item.billingMarket !== 'enterprise' || Math.abs(item.costCNY - cost) > 0.000001
       || !Number.isFinite(item.costCNY) || !hash(item.artifactSHA256) || ![item.gatewayTaskId, item.providerRequestId].every(text)

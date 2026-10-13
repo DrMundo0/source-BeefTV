@@ -30,6 +30,10 @@ const nonempty = value => typeof value === 'string' && value.trim() !== '';
 if (receipt.version !== version || receipt.sourceDigest !== sourceDigest) fail('receipt does not match this release source');
 if (version === 'v1.7.20') {
   validateH3FamilyRelease(receipt, sourceDigest);
+  execFileSync('git', ['diff', '--quiet', '2a9b19963bccb370a788014306fd417c6f31e4ed', 'HEAD', '--',
+    'backend/internal/generation', 'backend/internal/beefapi', 'backend/internal/modelcatalog',
+    'backend/internal/providerpreset', 'backend/internal/app/provider_task_recovery.go',
+    'web/src/lib/seedance-portrait.ts', 'web/src/services/api/video-provider-newapi.ts']);
   console.log('v1.7.20 H3 family targeted acceptance; eight shared-budget calls, final candidate replay, full matrix NOT run; four-platform package gates pending.');
   process.exit(0);
 }
