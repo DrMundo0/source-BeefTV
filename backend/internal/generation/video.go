@@ -39,7 +39,7 @@ func RunVideoTaskWithPolicy(ctx context.Context, input Input, pollPolicy VideoPo
 	// BeefAPI exposes its flat /v1/videos contract. Route it before
 	// protocol adapters so stale persisted channel metadata cannot select an
 	// incompatible legacy multipart or flat request shape.
-	if IsBeefAPIVideoConfig(ctx, input.Config) && (IsSeedanceVideoConfig(input.Config) || input.Config.Model == "minimax-h3-max-turbo" || isBeefAPIFlatFrameVideo(input.Config.Model)) {
+	if IsBeefAPIVideoConfig(ctx, input.Config) && (IsSeedanceVideoConfig(input.Config) || IsBeefAPIH3Model(input.Config.Model) || isBeefAPIFlatFrameVideo(input.Config.Model)) {
 		return RunSeedanceVideosTask(ctx, input, pollPolicy)
 	}
 	// 路由顺序是协议边界，不是“哪个请求先试”：官方声明式接口必须由已注册适配器执行，
@@ -321,7 +321,7 @@ func SeedancePollStatusAndURL(state map[string]interface{}) (string, string) {
 // 2.5 uses explicit roles even for one frame; 2.0 retains the legacy image field
 // only when the single image has explicit frame intent.
 func BeefAPIVideoRequestBody(input Input) (map[string]interface{}, error) {
-	if input.Config.Model == "minimax-h3-max-turbo" {
+	if IsBeefAPIH3Model(input.Config.Model) {
 		return beefAPIH3VideoBody(input)
 	}
 	if isBeefAPIFlatFrameVideo(input.Config.Model) {
