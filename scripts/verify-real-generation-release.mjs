@@ -30,10 +30,13 @@ const nonempty = value => typeof value === 'string' && value.trim() !== '';
 if (receipt.version !== version || receipt.sourceDigest !== sourceDigest) fail('receipt does not match this release source');
 if (version === 'v1.7.20') {
   validateH3FamilyRelease(receipt, sourceDigest);
-  execFileSync('git', ['diff', '--quiet', '2a9b19963bccb370a788014306fd417c6f31e4ed', 'HEAD', '--',
+  // Release Actions checks out a shallow squash commit, so the executed branch
+  // commit need not exist locally. Compare its recorded immutable blobs instead.
+  const h3Tree = execFileSync('git', ['ls-tree', '-r', 'HEAD', '--',
     'backend/internal/generation', 'backend/internal/beefapi', 'backend/internal/modelcatalog',
     'backend/internal/providerpreset', 'backend/internal/app/provider_task_recovery.go',
-    'web/src/lib/seedance-portrait.ts', 'web/src/services/api/video-provider-newapi.ts']);
+    'web/src/lib/seedance-portrait.ts', 'web/src/services/api/video-provider-newapi.ts'], { encoding: 'utf8' });
+  if (createHash('sha256').update(h3Tree).digest('hex') !== '43bcd27d778ecb6ca338413b971f8b474011751d2c5cb8fd9e2c246bfefcbbe9') fail('H3 execution differs from its real paid acceptance');
   console.log('v1.7.20 H3 family targeted acceptance; eight shared-budget calls, final candidate replay, full matrix NOT run; four-platform package gates pending.');
   process.exit(0);
 }
