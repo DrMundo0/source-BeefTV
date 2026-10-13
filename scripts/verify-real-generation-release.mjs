@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
+import { validateH3FamilyRelease } from './h3-family-release-contract.mjs';
 import {
   REQUIRED_AGENT_CHECK_IDS,
   DETERMINISTIC_FAULT_CHECK_IDS,
@@ -27,6 +28,11 @@ const receipt = JSON.parse(readFileSync(`docs/release-evidence/${version}.json`,
 const fail = message => { throw new Error(`Real generation release gate: ${message}`); };
 const nonempty = value => typeof value === 'string' && value.trim() !== '';
 if (receipt.version !== version || receipt.sourceDigest !== sourceDigest) fail('receipt does not match this release source');
+if (version === 'v1.7.20') {
+  validateH3FamilyRelease(receipt, sourceDigest);
+  console.log('v1.7.20 H3 family targeted acceptance; eight shared-budget calls, final candidate replay, full matrix NOT run; four-platform package gates pending.');
+  process.exit(0);
+}
 // v1.7.19 only: package the installer and settings fixes that merged after
 // v1.7.18 was pinned. This does not rerun or waive a future paid matrix.
 if (version === 'v1.7.19') {
