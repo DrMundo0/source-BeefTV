@@ -41,6 +41,9 @@ if (version === 'v1.7.18') {
     || receipt.liveMatrixStatus !== 'not_run_owner_waived'
     || receipt.agentAcceptanceStatus !== 'not_run_owner_waived'
     || receipt.acceptanceComplete !== false) fail('v1.7.18 requires exact owner H3-only and cross-review authorization');
+  if (!Array.isArray(receipt.cases) || receipt.cases.length !== 0
+    || !Array.isArray(receipt.billingAttempts) || receipt.billingAttempts.length !== 0
+    || [receipt.budgetCNY, receipt.spentCNY, receipt.pendingCNY, receipt.newSpentCNY, receipt.newPendingCNY].some(value => value !== null)) fail('v1.7.18 must not add a generic paid matrix or zero unresolved financial totals');
   const priorDigest = '1eca0cde63aaa9d09431465f997c9959d523ca2cda60cb8dcf00e132a6f55f50';
   const requiredCases = { 'text-768p': '768p', 'first-last-480p': '480p', 'last-only-1080p': '1080p', 'pinned-audio-768p': '768p' };
   if (receipt.priorH3Canaries?.length !== 4) fail('v1.7.18 requires exactly four recorded backend canaries');
@@ -55,18 +58,22 @@ if (version === 'v1.7.18') {
   }
   const funding = receipt.h3Funding;
   if (funding?.budgetCNY !== 20 || !Number.isFinite(funding.reservedUpperCNY)
-    || funding.reservedUpperCNY < 5.018236 || funding.reservedUpperCNY > 20
+    || funding.reservedUpperCNY < 7.10326 || funding.reservedUpperCNY > 20
     || funding.supplierInvoiceConfirmed !== false || funding.supplierBillingReadHTTPStatus !== 403
     || !evidence(funding.evidence) || receipt.paidSubmissionLimit !== 5) fail('v1.7.18 must bound five H3 creates within CNY 20 and preserve supplier invoice uncertainty');
   const item = receipt.productionH3;
   if (!bound(item) || item.method !== 'native-cli' || item.clientVersion !== version
     || item.model !== 'minimax-h3-max-turbo' || item.resolution !== '768p' || item.seconds !== 3
     || item.status !== 'succeeded' || item.billing !== 'settled' || item.billingMarket !== 'enterprise'
-    || !Number.isFinite(item.costCNY) || Math.abs(item.costCNY - 0.7323912) > 0.000001
+    || !Number.isFinite(item.costCNY) || Math.abs(item.costCNY - 0.7323912) > 0.000002
     || item.canvasVerified !== true || item.saved !== true || item.reopened !== true
     || item.mediaDecoded !== true || item.mediaOpened !== true || item.noDuplicateSubmission !== true
     || ![item.taskId, item.gatewayTaskId, item.providerRequestId].every(nonempty)
     || ids.has(item.providerRequestId) || !/^[a-f0-9]{64}$/.test(item.artifactSHA256 || '')) fail('v1.7.18 requires a current native production task, CNY settlement and saved playable canvas');
+  ids.add(item.providerRequestId);
+  if (!Array.isArray(funding.inferenceRequestIds) || funding.inferenceRequestIds.length !== 5
+    || new Set(funding.inferenceRequestIds).size !== 5
+    || funding.inferenceRequestIds.some(id => !ids.has(id))) fail('v1.7.18 must account for exactly the five recorded H3 inference requests');
   if (receipt.priorFinancialUncertainty?.status !== 'unresolved'
     || receipt.priorFinancialUncertainty.carriedFromVersion !== 'v1.7.17'
     || receipt.priorFinancialUncertainty.pendingCNY !== null

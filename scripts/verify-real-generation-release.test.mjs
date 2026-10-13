@@ -62,12 +62,13 @@ test('v1.7.18 H3-only receipt requires current native settlement, bounded fundin
       ownerException: { scope: 'fal-h3-targeted-20261013', approvedBy: 'Ender', instruction: '本版采用 H3 专项验收（推荐）', evidence },
       releaseAuthorization: { additionalHumanReplyRequired: false, scope: 'v1.7.18 only' },
       liveMatrixStatus: 'not_run_owner_waived', agentAcceptanceStatus: 'not_run_owner_waived', acceptanceComplete: false,
+      cases: [], billingAttempts: [], budgetCNY: null, spentCNY: null, pendingCNY: null, newSpentCNY: null, newPendingCNY: null,
       paidSubmissionLimit: 5,
       priorH3Canaries: Object.entries({ 'text-768p': '768p', 'first-last-480p': '480p', 'last-only-1080p': '1080p', 'pinned-audio-768p': '768p' }).map(([id, resolution]) => ({
         id, resolution, seconds: 3, method: 'production-go-test', model: 'minimax-h3-max-turbo', status: 'succeeded',
         executedSourceDigest: '1eca0cde63aaa9d09431465f997c9959d523ca2cda60cb8dcf00e132a6f55f50', providerRequestId: id, artifactSHA256: 'a'.repeat(64), evidence,
       })),
-      h3Funding: { budgetCNY: 20, reservedUpperCNY: 6.8356512, supplierInvoiceConfirmed: false, supplierBillingReadHTTPStatus: 403, evidence },
+      h3Funding: { budgetCNY: 20, reservedUpperCNY: 7.10326, inferenceRequestIds: ['text-768p','first-last-480p','last-only-1080p','pinned-audio-768p','native-task'], supplierInvoiceConfirmed: false, supplierBillingReadHTTPStatus: 403, evidence },
       productionH3: { sourceDigest, evidence, method: 'native-cli', clientVersion: 'v1.7.18', model: 'minimax-h3-max-turbo', resolution: '768p', seconds: 3,
         status: 'succeeded', billing: 'settled', billingMarket: 'enterprise', costCNY: 0.7323912, canvasVerified: true, saved: true, reopened: true,
         mediaDecoded: true, mediaOpened: true, noDuplicateSubmission: true, taskId: 'local-task', gatewayTaskId: 'gateway-task', providerRequestId: 'native-task', artifactSHA256: 'b'.repeat(64) },
@@ -84,9 +85,13 @@ test('v1.7.18 H3-only receipt requires current native settlement, bounded fundin
     const deny = mutate => { const changed = structuredClone(value); mutate(changed); save(changed); assert.throws(() => run()); };
     for (const mutate of [
       r => r.ownerException.instruction = '继续上线', r => r.releaseAuthorization.additionalHumanReplyRequired = true,
+      r => r.cases.push({ billing: 'settled', costCNY: 100 }), r => r.billingAttempts.push({ costCNY: 100 }),
+      r => r.budgetCNY = 20, r => r.spentCNY = 0, r => r.pendingCNY = 0, r => r.newSpentCNY = 0, r => r.newPendingCNY = 0,
       r => r.sourceDigest = '0'.repeat(64), r => r.priorH3Canaries[0].method = 'native', r => r.priorH3Canaries[0].executedSourceDigest = sourceDigest,
       r => r.priorH3Canaries[0].providerRequestId = r.priorH3Canaries[1].providerRequestId, r => r.priorH3Canaries.pop(),
       r => r.h3Funding.reservedUpperCNY = 20.01, r => r.h3Funding.reservedUpperCNY = 0, r => r.h3Funding.reservedUpperCNY = null,
+      r => r.h3Funding.reservedUpperCNY = 5.018236, r => r.h3Funding.inferenceRequestIds.push('extra-request'),
+      r => r.h3Funding.inferenceRequestIds[4] = r.h3Funding.inferenceRequestIds[0], r => r.h3Funding.inferenceRequestIds[4] = 'unrecorded-request',
       r => r.h3Funding.supplierInvoiceConfirmed = true, r => r.paidSubmissionLimit = 6,
       r => r.productionH3.method = 'mock', r => r.productionH3.billing = 'pending', r => r.productionH3.billingMarket = 'domestic',
       r => r.productionH3.costCNY = 0, r => r.productionH3.costCNY = 0.2441304, r => r.productionH3.reopened = false,
