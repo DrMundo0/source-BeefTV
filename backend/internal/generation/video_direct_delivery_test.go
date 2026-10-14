@@ -19,7 +19,14 @@ import (
 
 func TestBeefAPIVideoDeliveryKeepsTaskAcrossPendingAndExpiredBackup(t *testing.T) {
 	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
-	for _, model := range []string{"seedance-2.0-mini", "sora-2"} {
+	for _, tc := range []struct {
+		model    string
+		interval time.Duration
+	}{
+		{"seedance-2.0-mini", 5 * time.Second},
+		{"sora-2", 30 * time.Second},
+	} {
+		model := tc.model
 		for _, resumed := range []bool{false, true} {
 			t.Run(model+"/resumed="+strconv.FormatBool(resumed), func(t *testing.T) {
 				creates, polls, direct, backup, signed := 0, 0, 0, 0, 0
@@ -120,7 +127,7 @@ func TestBeefAPIVideoDeliveryKeepsTaskAcrossPendingAndExpiredBackup(t *testing.T
 				if err != nil || string(data) != "original video bytes" || creates != wantCreates || polls != 1 || direct != 1 || backup != 6 || signed != 2 {
 					t.Fatalf("bytes=%q creates=%d polls=%d direct=%d backup=%d signed=%d err=%v", data, creates, polls, direct, backup, signed, err)
 				}
-				wantWaits := []time.Duration{5 * time.Second, 7 * time.Second, 7 * time.Second, 7 * time.Second, 7 * time.Second, 5 * time.Second}
+				wantWaits := []time.Duration{tc.interval, 7 * time.Second, 7 * time.Second, 7 * time.Second, 7 * time.Second, tc.interval}
 				if !reflect.DeepEqual(waits, wantWaits) {
 					t.Fatalf("waits = %v, want %v", waits, wantWaits)
 				}
@@ -232,8 +239,33 @@ func TestNonBeefAPIVideoRetainsPollingAndNoBackup(t *testing.T) {
 		t.Fatalf("custom provider requests=%d err=%v", requests, err)
 	}
 	custom := VideoPollPolicy{InitialDelay: time.Second, Interval: 2 * time.Second}
-	if got := videoPollPolicyForConfig(WithEndpoints(context.Background(), Endpoints{BeefAPIVideoBaseURL: server.URL}), config, custom); got.InitialDelay != custom.InitialDelay || got.Interval != custom.Interval {
+	customConfig := config
+	customConfig.Model = "seedance-2.0-mini"
+	if got := videoPollPolicyForConfig(WithEndpoints(context.Background(), Endpoints{BeefAPIVideoBaseURL: server.URL}), customConfig, custom); got.InitialDelay != custom.InitialDelay || got.Interval != custom.Interval {
 		t.Fatalf("overrode explicit policy: %+v", got)
+	}
+}
+
+func TestBeefAPIVideoPollPolicyUsesSelectedModel(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		config   Config
+		interval time.Duration
+	}{
+		{"cached Seedance", Config{BaseURL: "https://enterprise.beefapi.com/v1", Model: "seedance-2.0-mini"}, 5 * time.Second},
+		{"case-normalized Seedance", Config{BaseURL: "https://enterprise.beefapi.com/v1", Model: "DOUBAO-SEEDANCE-2.5"}, 5 * time.Second},
+		{"managed Gemini", Config{BaseURL: "https://enterprise.beefapi.com/v1", Model: "veo-3.1", APIFormat: "gemini", InterfaceType: "gemini-veo", ChannelModelKey: "seedance-2.0-mini"}, 30 * time.Second},
+		{"managed Vertex", Config{BaseURL: "https://enterprise.beefapi.com/v1", Model: "veo-3.1-fast", APIFormat: "gemini", InterfaceType: "gemini-veo", ProviderModelKey: "seedance-2.0-mini"}, 30 * time.Second},
+		{"other BeefAPI video", Config{BaseURL: "https://enterprise.beefapi.com/v1", Model: "sora-2"}, 30 * time.Second},
+		{"empty model", Config{BaseURL: "https://enterprise.beefapi.com/v1"}, 30 * time.Second},
+		{"custom Seedance provider", Config{BaseURL: "https://provider.example/v1", Model: "seedance-2.0-mini"}, 30 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			policy := videoPollPolicyForConfig(context.Background(), tc.config, DefaultVideoPollPolicy())
+			if policy.InitialDelay != tc.interval || policy.Interval != tc.interval {
+				t.Fatalf("selected model %q poll=%v/%v, want %v", tc.config.Model, policy.InitialDelay, policy.Interval, tc.interval)
+			}
+		})
 	}
 }
 
