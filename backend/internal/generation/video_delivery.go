@@ -36,6 +36,14 @@ func applyBeefAPIVideoDeliveryHeader(ctx context.Context, config Config, req *ht
 
 type videoDeliveryRequestContext struct{}
 
+// DownloadVideoResult retrieves an existing task's media, including renewable
+// backup links. It never submits generation and shares the worker's retry loop.
+func DownloadVideoResult(ctx context.Context, config Config, rawURL, taskID string) ([]byte, string, error) {
+	policy := videoPollPolicyForConfig(ctx, config, DefaultVideoPollPolicy())
+	data, mimeType, err := RunVideoDownload(ctx, taskID, policy, videoResultDownloader(config, rawURL, taskID))
+	return data, NormalizedMediaMIMEType(mimeType, data), err
+}
+
 // videoBackupLinkExpiredError distinguishes a rejected external signed URL
 // from a rejected credential at the authenticated gateway.
 type videoBackupLinkExpiredError struct{ cause error }

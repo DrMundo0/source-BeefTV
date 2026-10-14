@@ -269,12 +269,14 @@ func RunSeedanceVideosTask(ctx context.Context, input Input, pollPolicy VideoPol
 				if err != nil {
 					return VideoPollOutcome{}, fmt.Errorf("视频结果下载失败：%w", err)
 				}
+				mimeType = NormalizedMediaMIMEType(mimeType, data)
 				return VideoPollOutcome{Done: true, Result: map[string]interface{}{"mode": "video", "video": map[string]interface{}{"dataUrl": DataURL(mimeType, data), "mimeType": mimeType}}}, nil
 			}
 			data, mimeType, err := RunVideoDownload(ctx, id, pollPolicy, videoResultDownloader(input.Config, APIURL(input.Config.BaseURL, "/videos/"+id+"/content"), id))
 			if err != nil {
 				return VideoPollOutcome{}, fmt.Errorf("视频任务成功但未返回视频 URL，备用内容下载失败：%w", err)
 			}
+			mimeType = NormalizedMediaMIMEType(mimeType, data)
 			return VideoPollOutcome{Done: true, Result: map[string]interface{}{"mode": "video", "video": map[string]interface{}{"dataUrl": DataURL(mimeType, data), "mimeType": mimeType}}}, nil
 		}
 		if status == "failed" || status == "cancelled" || status == "expired" {

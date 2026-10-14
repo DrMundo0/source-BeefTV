@@ -1,6 +1,7 @@
 package generation
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -375,5 +376,64 @@ func TestVideoIdleTimerStartsAfterChannelAdmission(t *testing.T) {
 	data, _, err := getVideoBinaryWithIdleTimeout(ctx, Config{}, server.URL, 100*time.Millisecond)
 	if err != nil || string(data) != "complete video" {
 		t.Fatalf("local queue triggered media timeout: bytes=%q err=%v", data, err)
+	}
+}
+
+func TestSeedanceOctetStreamMP4IsVideoForDirectAndBackup(t *testing.T) {
+	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+	payload, err := os.ReadFile("../app/testdata/reference-fragmented-30fps.mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, withURL := range []bool{false, true} {
+		for _, useBackup := range []bool{false, true} {
+			t.Run("url="+strconv.FormatBool(withURL)+"/backup="+strconv.FormatBool(useBackup), func(t *testing.T) {
+				creates, downloads, backups := 0, 0, 0
+				var server *httptest.Server
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method != http.MethodGet {
+						creates++
+						t.Error("result retrieval submitted generation")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					if r.URL.Path == "/v1/videos/original" {
+						state := map[string]any{"status": "completed"}
+						if withURL {
+							state["video_url"] = server.URL + "/video.mp4"
+						}
+						_ = json.NewEncoder(w).Encode(state)
+						return
+					}
+					downloads++
+					if r.URL.Query().Get("delivery") == "backup" {
+						backups++
+					} else if useBackup {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
+					w.Header().Set("Content-Type", "application/octet-stream")
+					_, _ = w.Write(payload)
+				}))
+				defer server.Close()
+				ctx := WithEndpoints(context.Background(), Endpoints{BeefAPIVideoBaseURL: server.URL})
+				ctx = WithCallMeta(ctx, CallMeta{ProviderRequestID: "original"})
+				policy := DefaultVideoPollPolicy()
+				policy.Sleep = func(context.Context, time.Duration) error { return nil }
+				result, err := RunSeedanceVideosTask(ctx, Input{Mode: "video", Config: Config{BaseURL: server.URL, Model: "seedance-2.0-mini"}}, policy)
+				if err != nil {
+					t.Fatal(err)
+				}
+				video := result["video"].(map[string]any)
+				mimeType, data, err := DecodeProviderDataURL(stringField(video, "dataUrl"))
+				wantBackups := 0
+				if useBackup {
+					wantBackups = 1
+				}
+				if err != nil || mimeType != "video/mp4" || video["mimeType"] != "video/mp4" || !bytes.Equal(data, payload) || creates != 0 || backups != wantBackups || downloads != 1+wantBackups {
+					t.Fatalf("mime=%s/%v bytes=%d creates=%d downloads=%d backups=%d err=%v", mimeType, video["mimeType"], len(data), creates, downloads, backups, err)
+				}
+			})
+		}
 	}
 }
