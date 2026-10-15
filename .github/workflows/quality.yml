@@ -146,6 +146,13 @@ jobs:
         run: |
           bunx playwright install --with-deps chromium
           bun run test
+      - name: Preserve environment check screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: environment-check-screenshots-${{ github.sha }}
+          path: output/environment-check/*.png
+          if-no-files-found: warn
 
   database-platforms:
     if: github.event_name == 'workflow_dispatch'
