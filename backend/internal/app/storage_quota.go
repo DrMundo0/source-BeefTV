@@ -134,7 +134,12 @@ func taskStorageError(cause error) error {
 }
 
 // 任务完成会同时扩张任务历史和画布操作数据，必须在同一临界区核算并原子写入。
-func (s *Service) saveTaskCompletionWithinStorageQuota(task *model.Task, resultJSON []byte, opsJSON []byte, hasCanvasOps bool) error {
+func (s *Service) saveTaskCompletionWithinStorageQuota(task *model.Task, resultJSON []byte, opsJSON []byte, hasCanvasOps bool) (returnErr error) {
+	defer func() {
+		if full := kernel.DiskFullError(returnErr); full != nil {
+			returnErr = full
+		}
+	}()
 	policy, err := s.RuntimePolicy()
 	if err != nil {
 		return err
