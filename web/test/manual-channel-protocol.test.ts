@@ -11,7 +11,7 @@ describe("manual channel protocol defaults", () => {
             const channel = createModelChannel({ id: "external", baseUrl: "https://third-party.example/v1", models: ["seedance-2.5"], modelProfiles: profiles });
             expect(resolveModelRequestConfig({ ...defaultConfig, channels: [channel] }, "external::seedance-2.5").interfaceType).toBeUndefined();
         }
-        const selected = createModelChannel({ id: "external", interfaceType: "video-generations-json", models: ["seedance-2.5"] });
+        const selected = createModelChannel({ id: "external", interfaceType: "video-generations-json", models: ["seedance-2.5"], modelProfiles: ensureModelProfilesWithUiDefaults(["seedance-2.5"], undefined) });
         expect(resolveModelRequestConfig({ ...defaultConfig, channels: [selected] }, "external::seedance-2.5").interfaceType).toBe("video-generations-json");
     });
     test.each(["gemini-generate-content", "google-gemini-generate-content"])("managed Gemini protocol %s preserves credentials and selects native transport", (protocol) => {

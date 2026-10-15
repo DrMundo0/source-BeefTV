@@ -40,6 +40,19 @@ beforeAll(async () => {
 }, 60000);
 afterAll(async () => { server?.stop(true); await browser?.close(); }, 30000);
 
+test("the list and editor show an explicitly selected channel protocol for an unconfigured model profile", async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    try {
+        await page.goto(server.url.toString() + "?inherited=1");
+        await page.getByRole("button", { name: "高级模型设置与测试", exact: true }).click();
+        await page.getByText("POST /v1/video/generations", { exact: true }).waitFor();
+        await page.getByRole("button", { name: "配置使用", exact: true }).click();
+        expect(await page.locator('input[type="radio"][value="video-generations-json"]').isChecked()).toBe(true);
+        expect(await page.getByRole("button", { name: "生成测试", exact: true }).isEnabled()).toBe(true);
+        expect(generationRequests).toBe(0);
+    } finally { await page.close(); }
+}, 60000);
+
 for (const [width, dark] of [[1280, false], [390, true]] as const) {
     test(`external video requires a chosen protocol and saves it (${width}, dark=${dark})`, async () => {
         const page = await browser.newPage({ viewport: { width, height: 900 } });

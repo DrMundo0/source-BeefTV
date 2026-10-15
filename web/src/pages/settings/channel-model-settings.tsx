@@ -74,7 +74,7 @@ export function ChannelModelSettings({ channel, onChange, draft = false }: { cha
 
     const activeModelProfile = activeModel ? channel.modelProfiles?.find((item) => item.model === activeModel) : undefined;
     const inferredProtocol = activeModel ? (inferProtocolCapabilityFromModel(activeModel) === "video" ? channel.interfaceType || "" : defaultProtocolForModel(activeModel, availableProtocols)) : "";
-    const activeProtocol = activeModelProfile ? activeModelProfile.protocol || "" : inferredProtocol;
+    const activeProtocol = activeModelProfile ? activeModelProfile.protocol || channel.interfaceType || "" : inferredProtocol;
     const activeCapability = activeModelProfile?.capability || modelProtocolCapability(activeProtocol, availableProtocols) || (activeModel ? inferProtocolCapabilityFromModel(activeModel) : "text");
 
     return (
@@ -90,7 +90,7 @@ export function ChannelModelSettings({ channel, onChange, draft = false }: { cha
                 {channel.models.map((rawModel) => {
                     const model = modelOptionName(rawModel);
                     const profile = channel.modelProfiles?.find((item) => item.model === model);
-                    const protocol = profile ? profile.protocol || "" : (inferProtocolCapabilityFromModel(model) === "video" ? channel.interfaceType || "" : defaultProtocolForModel(model, availableProtocols));
+                    const protocol = profile ? profile.protocol || channel.interfaceType || "" : (inferProtocolCapabilityFromModel(model) === "video" ? channel.interfaceType || "" : defaultProtocolForModel(model, availableProtocols));
                     const capability = profile?.capability || modelProtocolCapability(protocol, availableProtocols) || inferProtocolCapabilityFromModel(model);
                     const displayName = seedancePortraitLabel(model) || profile?.displayName?.trim() || model;
                     return (
