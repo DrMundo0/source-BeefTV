@@ -1,6 +1,7 @@
 package diagnostics
 
 import (
+	"infinite-canvas/backend/internal/environment"
 	"infinite-canvas/backend/internal/model"
 	"time"
 )
@@ -35,11 +36,12 @@ type ClientEvent struct {
 }
 
 type Runtime struct {
-	AppVersion  string `json:"appVersion,omitempty"`
-	BuildCommit string `json:"buildCommit,omitempty"`
-	Browser     string `json:"browser,omitempty"`
-	OS          string `json:"os,omitempty"`
-	Timezone    string `json:"timezone,omitempty"`
+	Capabilities *ClientCapabilities `json:"capabilities,omitempty"`
+	AppVersion   string              `json:"appVersion,omitempty"`
+	BuildCommit  string              `json:"buildCommit,omitempty"`
+	Browser      string              `json:"browser,omitempty"`
+	OS           string              `json:"os,omitempty"`
+	Timezone     string              `json:"timezone,omitempty"`
 }
 
 type ExportRequest struct {
@@ -74,6 +76,7 @@ type timeWindow struct {
 }
 
 type collection struct {
+	Environment  environment.Report
 	UpdateLog    *updateLogSummary
 	Window       timeWindow
 	Description  string
@@ -123,11 +126,25 @@ type defaultModelSelection struct {
 }
 
 type runtimeRecord struct {
-	AppVersion  string `json:"appVersion,omitempty"`
-	BuildCommit string `json:"buildCommit,omitempty"`
-	Browser     string `json:"browser,omitempty"`
-	OS          string `json:"os,omitempty"`
-	Timezone    string `json:"timezone,omitempty"`
+	Capabilities *ClientCapabilities `json:"capabilities,omitempty"`
+	AppVersion   string              `json:"appVersion,omitempty"`
+	BuildCommit  string              `json:"buildCommit,omitempty"`
+	Browser      string              `json:"browser,omitempty"`
+	OS           string              `json:"os,omitempty"`
+	Timezone     string              `json:"timezone,omitempty"`
+}
+
+// Fixed boolean fields prevent client-supplied environment reports from
+// smuggling URLs, paths, credentials or arbitrary text into a bundle.
+type ClientCapabilities struct {
+	StorageWritable *bool `json:"storageWritable,omitempty"`
+	SecureRandom    bool  `json:"secureRandom"`
+	RandomUUID      bool  `json:"randomUUID"`
+	StructuredClone bool  `json:"structuredClone"`
+	IndexedDB       bool  `json:"indexedDB"`
+	WebGL           bool  `json:"webGL"`
+	H264            bool  `json:"h264"`
+	HEVC            bool  `json:"hevc"`
 }
 
 type clientEventRecord struct {

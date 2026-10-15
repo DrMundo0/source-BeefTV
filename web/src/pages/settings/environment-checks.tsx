@@ -1,0 +1,41 @@
+import { Button } from "antd";
+import { useEffect, useState } from "react";
+import { browserChecks, checkEnvironment, type EnvironmentCheck } from "@/services/diagnostics/environment-check";
+import { probeBrowserStorage } from "@/services/diagnostics/browser-environment";
+
+const labels: Record<EnvironmentCheck["status"], string> = { pass: "正常", warning: "需留意", error: "需处理", repaired: "已修复", skipped: "可选", unknown: "未确认" };
+
+export function EnvironmentChecks() {
+    const [checks, setChecks] = useState<EnvironmentCheck[]>([]);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    async function run() {
+        setBusy(true);
+        setError("");
+        await probeBrowserStorage();
+        const client = browserChecks();
+        try {
+            const report = await checkEnvironment(true);
+            setChecks([...report.checks, ...client]);
+        } catch {
+            setChecks(client);
+            setError("本地服务检查未完成，以下仅为浏览器检查结果。请确认后端运行后重试。");
+        } finally { setBusy(false); }
+    }
+    useEffect(() => { void run(); }, []);
+    return <section aria-label="环境自检" className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-sm font-medium">环境自检</h3>
+            <Button loading={busy} onClick={() => void run()}>重新检查</Button>
+        </div>
+        <p className="text-xs leading-5 text-foreground/55">自动重建缺失的临时目录，不改动项目。检查结果会随诊断包导出。</p>
+        {busy ? <p role="status" className="text-xs text-foreground/55">正在检查运行环境…</p> : null}
+        {error ? <p role="alert" className="text-xs leading-5 text-destructive">{error}</p> : null}
+        <ul className="divide-y divide-border" aria-busy={busy}>
+            {checks.map((check) => <li key={check.id} className="py-2">
+                <div className="flex justify-between gap-3 text-xs"><span className="font-medium">{check.title}</span><span className={check.status === "error" ? "shrink-0 text-destructive" : "shrink-0 text-foreground/65"}>{labels[check.status]}</span></div>
+                {check.status !== "pass" ? <p className="mt-1 text-xs leading-5 text-foreground/65">{check.detail}</p> : null}
+            </li>)}
+        </ul>
+    </section>;
+}
