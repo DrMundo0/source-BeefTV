@@ -168,7 +168,7 @@ export function ensureModelProfilesWithUiDefaults(
         const current = byModel.get(model);
         if (current?.protocol && current.capability) return { ...current, capability: current.capability, protocol: current.protocol };
         const capability = current?.capability || modelProtocolCapability(current?.protocol, availableProtocols) || inferProtocolCapabilityFromModel(model);
-        const protocol = current?.protocol || (usesOpenAICompatibleProtocolDefault(apiFormat) ? defaultProtocolForCapability(capability, availableProtocols) : undefined);
+        const protocol = current?.protocol || (capability !== "video" && usesOpenAICompatibleProtocolDefault(apiFormat) ? defaultProtocolForCapability(capability, availableProtocols) : undefined);
         return { ...current, model, capability, protocol };
     });
 }

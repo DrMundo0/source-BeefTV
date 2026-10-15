@@ -340,6 +340,9 @@ func ProtocolRequestFromInput(input Input) protocol.GenerationRequest {
 			}
 		}
 	}
+	if input.Mode == "video" && usesSeedanceTaskOptions(input.Config) {
+		request = protocol.NormalizeSeedanceTaskOptions(request)
+	}
 	return request
 }
 
@@ -392,7 +395,7 @@ func ProtocolVideoImageReferences(input Input) []protocol.MediaReference {
 	for index, value := range input.ReferenceImages {
 		item := ProtocolMediaReference(value, "image", index)
 		item.Role = VideoImageRoleOrDefault(input, value, fallbackRole)
-		if modelcatalog.IsSeedance25Model(input.Config.Model) && item.Role == "" {
+		if modelcatalog.IsSeedance25Model(input.Config.Model) && item.Role == "" && usesSeedanceTaskOptions(input.Config) {
 			item.Role = SeedanceTaskImageRole(input, value)
 		}
 		if item.URL != "" || item.DataURL != "" {

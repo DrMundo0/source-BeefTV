@@ -76,10 +76,10 @@ func TestExternalVideoJSONCreatePollAndDownload(t *testing.T) {
 	}
 }
 
-func TestVideoJSONKeyframesKeepConfiguredRatio(t *testing.T) {
+func TestVideoJSONUnassignedImagesKeepConfiguredRatio(t *testing.T) {
 	input := Input{Mode: "video", Config: Config{InterfaceType: "video-generations-json", Model: "seedance-2.5", Size: "16:9", VideoSeconds: "5"}, ReferenceImages: []Media{{DataURL: "data:image/png;base64,aGVsbG8="}, {DataURL: "data:image/png;base64,d29ybGQ="}}}
 	request := ProtocolRequestFromInput(input)
-	if request.AspectRatio != "16:9" || request.Images[0].Role != "first_frame" || request.Images[1].Role != "last_frame" {
+	if request.AspectRatio != "16:9" || request.Images[0].Role != "" || request.Images[1].Role != "" {
 		t.Fatalf("request=%+v", request)
 	}
 	registry := LoadOfficialFallbackRegistry()
@@ -90,5 +90,21 @@ func TestVideoJSONKeyframesKeepConfiguredRatio(t *testing.T) {
 	spec, err := adapter.BuildCreate(context.Background(), protocol.RequestContext{Request: request})
 	if err != nil || spec.Body.(map[string]any)["ratio"] != "16:9" {
 		t.Fatalf("spec=%+v err=%v", spec, err)
+	}
+	for _, raw := range spec.Body.(map[string]any)["images"].([]any) {
+		if raw.(map[string]any)["role"] != "reference_image" {
+			t.Fatal("unassigned images became keyframes")
+		}
+	}
+}
+
+func TestVideoJSONMissingPluginDoesNotSubmit(t *testing.T) {
+	registry, _ := protocol.NewRegistry()
+	ctx := WithProtocolRegistry(context.Background(), registry)
+	for _, name := range []string{"seedance-2.5", "other-video"} {
+		_, err := RunVideoTask(ctx, Input{Mode: "video", Config: Config{BaseURL: "https://example.invalid", InterfaceType: "video-generations-json", Model: name}})
+		if err == nil || !strings.Contains(err.Error(), "插件未安装") {
+			t.Fatalf("model=%s err=%v", name, err)
+		}
 	}
 }
