@@ -78,6 +78,17 @@ test("external video protocols require an explicit contract and keep user select
     expect(serviceModelProfile({ ...channel, baseUrl: "https://api.openai.com/v1" }, { id: "sora-2" }, installed).protocol).toBe("newapi");
 });
 
+test("saving a model inherits an enabled channel protocol of the same capability without mutating its draft", () => {
+    const channel = createModelChannel({ baseUrl: "https://video.example.com/v1", interfaceType: "video-generations-json", modelProfiles: [{ model: "seedance-2.5", capability: "video" }] });
+    const installed = [...protocols, { value: "video-generations-json", capability: "video", enabled: true } as ModelProtocolDefinition];
+    expect(serviceModelProfile(channel, { id: "seedance-2.5" }, installed).protocol).toBe("video-generations-json");
+    expect(channel.modelProfiles?.[0]?.protocol).toBeUndefined();
+    expect(serviceModelProfile(channel, { id: "seedance-2.5" }, protocols).protocol).toBeUndefined();
+    expect(serviceModelProfile(channel, { id: "seedance-2.5" }, installed.map((p) => ({ ...p, enabled: false }))).protocol).toBeUndefined();
+    expect(serviceModelProfile({ ...channel, interfaceType: "chat-completion" }, { id: "seedance-2.5" }, installed).protocol).toBeUndefined();
+    expect(serviceModelProfile(channel, { id: "sd-native-full-2.5" }, installed).protocol).toBe("video-generations-json");
+});
+
 test("refresh keeps selected/manual models and user capability limits", () => {
     const config = defaultModelCapabilityConfig("newapi", "video-manual")!;
     const channel = createModelChannel({ id: "custom", models: ["video-manual"], modelProfiles: [{ model: "video-manual", capability: "video", protocol: "newapi", capabilityConfig: config }] });

@@ -38,10 +38,11 @@ export function serviceModelProfile(channel: ModelChannel, item: ChannelModelCat
     };
     const endpoints: Record<string, string> = { "responses": "openai-response", "openai-responses": "openai-response", "chat.completions": "chat-completion", "chat-completions": "chat-completion", "images.generations": "openai-image", "image-generation": "openai-image", "audio.speech": "openai-audio", "openai-video": "newapi", "openai-videos": "newapi", "video-generations-json": "video-generations-json", "volcengine-ark-video": "volcengine-ark-video" };
     const endpoint = item.supportedEndpointTypes?.map((value) => endpoints[value.trim().toLowerCase()]).find((id) => protocols.some((p) => p.value === id && p.capability === capability && p.enabled !== false));
-    let proposed = endpoint || candidates[preset][capability];
+    const inherited = protocols.find((p) => p.value === channel.interfaceType && p.capability === capability && p.enabled !== false)?.value;
+    let proposed = inherited || endpoint || candidates[preset][capability];
     // Model names identify a family, not a provider's wire protocol. Ask the
     // user to select its contract unless the catalog explicitly declares it.
-    if (fullvideoFull && capability === "video") proposed = item.supportedEndpointTypes?.includes("full-video") ? "full-video" : undefined;
+    if (fullvideoFull && capability === "video" && !inherited) proposed = item.supportedEndpointTypes?.includes("full-video") ? "full-video" : undefined;
     const protocol = protocols.find((p) => p.value === proposed && p.capability === capability && p.enabled !== false)?.value;
     return { ...existing, model: item.id, displayName: existing?.displayName || item.displayName, capability, protocol, capabilityConfig: existing?.capability === capability && existing.capabilityConfig ? existing.capabilityConfig : (capability === "image" || capability === "video") && protocol ? defaultModelCapabilityConfig(protocol, item.id) : undefined };
 }

@@ -40,7 +40,7 @@ beforeAll(async () => {
 }, 60000);
 afterAll(async () => { server?.stop(true); await browser?.close(); }, 30000);
 
-test("the list and editor show an explicitly selected channel protocol for an unconfigured model profile", async () => {
+test("an unconfigured model displays, tests and saves its explicitly selected channel protocol", async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     try {
         await page.goto(server.url.toString() + "?inherited=1");
@@ -49,6 +49,10 @@ test("the list and editor show an explicitly selected channel protocol for an un
         await page.getByRole("button", { name: "配置使用", exact: true }).click();
         expect(await page.locator('input[type="radio"][value="video-generations-json"]').isChecked()).toBe(true);
         expect(await page.getByRole("button", { name: "生成测试", exact: true }).isEnabled()).toBe(true);
+        expect(await page.getByTestId("saved-profile").textContent()).toBe("unsaved");
+        await page.getByRole("button", { name: /^完\s*成$/ }).click();
+        await page.getByRole("button", { name: "保存并使用", exact: true }).click();
+        await page.waitForFunction(() => document.querySelector('[data-testid="saved-profile"]')?.textContent === "video-generations-json");
         expect(generationRequests).toBe(0);
     } finally { await page.close(); }
 }, 60000);
