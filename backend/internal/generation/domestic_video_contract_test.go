@@ -32,3 +32,15 @@ func TestDomesticGatewayVideoContractDoesNotGrantHostedCredentials(t *testing.T)
 		t.Fatalf("edit controls were lost: %#v", body)
 	}
 }
+
+func TestBeefAPITextVideoPreservesWatermarkSwitch(t *testing.T) {
+	for _, enabled := range []string{"true", "false"} {
+		body, err := BeefAPIVideoRequestBody(Input{Config: Config{Model: "seedance-2.5", VideoSeconds: "4", VQuality: "480", Size: "16:9", VideoWatermark: enabled}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if body["watermark"] != (enabled == "true") {
+			t.Fatalf("watermark=%s was lost: %#v", enabled, body)
+		}
+	}
+}
