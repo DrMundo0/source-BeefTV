@@ -29,7 +29,7 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Verify migration with real Windows file locks
         working-directory: backend
-        run: go test ./internal/desktopstorage -count=1 -v
+        run: go test ./internal/environment ./internal/desktopstorage -count=1 -v
       - uses: msys2/setup-msys2@v2
         id: storage-msys2
         with:

@@ -1,5 +1,5 @@
 import { Button } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { browserChecks, checkEnvironment, type EnvironmentCheck } from "@/services/diagnostics/environment-check";
 import { probeBrowserStorage } from "@/services/diagnostics/browser-environment";
 
@@ -9,20 +9,27 @@ export function EnvironmentChecks() {
     const [checks, setChecks] = useState<EnvironmentCheck[]>([]);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
+    const active = useRef<AbortController | null>(null);
     async function run() {
+        active.current?.abort();
+        const controller = new AbortController();
+        active.current = controller;
         setBusy(true);
         setError("");
-        await probeBrowserStorage();
+        await probeBrowserStorage(controller.signal);
+        if (controller.signal.aborted) return;
         const client = browserChecks();
         try {
-            const report = await checkEnvironment(true);
+            const report = await checkEnvironment(true, controller.signal);
+            if (controller.signal.aborted) return;
             setChecks([...report.checks, ...client]);
         } catch {
+            if (controller.signal.aborted) return;
             setChecks(client);
             setError("本地服务检查未完成，以下仅为浏览器检查结果。请确认后端运行后重试。");
-        } finally { setBusy(false); }
+        } finally { if (!controller.signal.aborted) setBusy(false); }
     }
-    useEffect(() => { void run(); }, []);
+    useEffect(() => { void run(); return () => active.current?.abort(); }, []);
     return <section aria-label="环境自检" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-medium">环境自检</h3>

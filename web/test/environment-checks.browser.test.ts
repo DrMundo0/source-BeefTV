@@ -72,7 +72,7 @@ test("denied browser storage and unavailable backend stay distinct", async () =>
     try {
         await page.addInitScript(() => { indexedDB.open = () => { throw new DOMException("blocked", "SecurityError"); }; });
         await page.route("**/api/diagnostics/environment", route => route.fulfill({ status: 503, body: "unavailable" }));
-        await page.goto(server.url);
+        await page.goto(server.url.toString());
         await page.getByText("本地服务检查未完成，以下仅为浏览器检查结果。请确认后端运行后重试。", { exact: true }).waitFor();
         await page.getByText("本地缓存无法写入，请检查隐私设置、存储空间或更新运行时。", { exact: true }).waitFor();
         const startup = await page.evaluate(() => (window as any).runStartupEnvironmentCheck());
