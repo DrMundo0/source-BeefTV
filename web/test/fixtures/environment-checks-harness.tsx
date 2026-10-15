@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { ConfigProvider, theme } from "antd";
 import { EnvironmentChecks } from "../../src/pages/settings/environment-checks";
 import { createClientId } from "../../src/lib/client-id";
-import { runStartupEnvironmentCheck } from "../../src/services/diagnostics/environment-check";
+import { runStartupEnvironmentCheck } from "../../src/services/diagnostics/environment-startup";
 
 const dark = new URL(location.href).searchParams.has("dark");
 document.documentElement.classList.toggle("dark", dark);

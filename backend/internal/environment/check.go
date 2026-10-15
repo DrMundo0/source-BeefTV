@@ -38,6 +38,16 @@ func Inspect(ctx context.Context, dir string, repair bool) Report {
 	add := func(id, title, status, detail string, cases ...string) {
 		r.Checks = append(r.Checks, Check{id, title, status, detail, cases})
 	}
+	stop := func() bool {
+		if ctx.Err() == nil {
+			return false
+		}
+		add("check-cancelled", "环境检查", "unknown", "检查已取消，尚未完成的项目保持未确认。")
+		return true
+	}
+	if stop() {
+		return r
+	}
 	if dir == "" {
 		add("workspace", "本地存储", "skipped", "当前服务未提供本机工作区检查。", "ENV-0007")
 		return r
@@ -48,13 +58,19 @@ func Inspect(ctx context.Context, dir string, repair bool) Report {
 		return r
 	}
 	defer root.Close()
-	if ctx.Err() != nil {
+	if stop() {
 		return r
 	}
-	if err := probeWrite(root); err != nil {
+	if err := probeWrite(ctx, root); err != nil {
+		if stop() {
+			return r
+		}
 		add("storage-write", "存储写入", "error", "当前数据目录无法完成文件写入和同步。请检查磁盘空间、权限或只读状态。", "ENV-0009")
 	} else {
 		add("storage-write", "存储写入", "pass", "已完成临时文件写入、同步和清理。", "ENV-0009")
+	}
+	if stop() {
+		return r
 	}
 	free, err := freeBytes(dir)
 	switch {
@@ -66,8 +82,14 @@ func Inspect(ctx context.Context, dir string, repair bool) Report {
 		add("disk-space", "磁盘剩余空间", "pass", "当前可用空间超过 1 GB；大型素材和组件仍需要额外空间。", "ENV-0009")
 	}
 	for _, name := range []string{"tmp", "downloads"} {
-		status, detail := scratchDirectory(root, name, repair)
+		if stop() {
+			return r
+		}
+		status, detail := scratchDirectory(ctx, root, name, repair)
 		add("directory-"+name, map[string]string{"tmp": "临时文件目录", "downloads": "组件下载目录"}[name], status, detail, "ENV-0006", "ENV-0046")
+	}
+	if stop() {
+		return r
 	}
 	path, err := mediatools.ResolveFFmpeg()
 	info, statErr := os.Stat(path)
@@ -75,6 +97,9 @@ func Inspect(ctx context.Context, dir string, repair bool) Report {
 		add("media-tool", "视频处理工具", "warning", "未找到可执行的视频处理工具。部分视频预览、转码和导出将不可用，请从官方安装包重新安装。", "ENV-0014", "ENV-0015", "ENV-0016")
 	} else {
 		add("media-tool", "视频处理工具", "pass", "已找到工具文件；具体素材的编解码能力仍在使用时检查。", "ENV-0014", "ENV-0015")
+	}
+	if stop() {
+		return r
 	}
 	model, err := root.Stat("models/video-depth-anything-small/v1/checkpoints/video_depth_anything_vits.pth")
 	switch {
@@ -85,6 +110,9 @@ func Inspect(ctx context.Context, dir string, repair bool) Report {
 	default:
 		add("depth-model", "可选深度模型", "pass", "模型文件大小正常，运行前仍需组件安装器校验哈希。", "ENV-0011")
 	}
+	if stop() {
+		return r
+	}
 	proxy := desktopnet.ConfigurationStatus()
 	if proxy.AutoConfigOnly {
 		add("proxy", "下载代理", "warning", "系统仅配置了自动代理脚本，当前下载器不能解析。请配置可用的静态系统代理或明确的代理环境变量。", "ENV-0010", "ENV-0011")
@@ -94,24 +122,33 @@ func Inspect(ctx context.Context, dir string, repair bool) Report {
 	return r
 }
 
-func probeWrite(root *os.Root) error {
+func probeWrite(ctx context.Context, root *os.Root) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	name := ".beeftv-environment-" + rand.Text()
 	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
 	_, writeErr := f.Write([]byte("environment-check"))
-	syncErr := f.Sync()
+	syncErr := ctx.Err()
+	if syncErr == nil {
+		syncErr = f.Sync()
+	}
 	closeErr := f.Close()
 	removeErr := root.Remove(name)
 	return errors.Join(writeErr, syncErr, closeErr, removeErr)
 }
 
-func scratchDirectory(root *os.Root, name string, repair bool) (string, string) {
+func scratchDirectory(ctx context.Context, root *os.Root, name string, repair bool) (string, string) {
 	info, err := root.Lstat(name)
 	if errors.Is(err, os.ErrNotExist) {
 		if !repair {
 			return "warning", "目录缺失，可由应用安全重建。"
+		}
+		if ctx.Err() != nil {
+			return "unknown", "检查已取消，目录未重建。"
 		}
 		if err = root.Mkdir(name, 0o750); err != nil && !errors.Is(err, os.ErrExist) {
 			return "error", "目录重建失败，请检查写入权限。"

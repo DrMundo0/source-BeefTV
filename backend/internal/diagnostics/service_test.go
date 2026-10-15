@@ -58,12 +58,15 @@ func TestExportIncludesIndependentEnvironmentEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	files := unzipFixture(t, bundle.Data)
+	files := readTestZIP(t, bundle.Data)
 	if !strings.Contains(files["context/environment.json"], `"catalog"`) || !strings.Contains(files["context/environment.json"], `"storage-write"`) {
 		t.Fatal("missing native evidence")
 	}
 	if !strings.Contains(files["context/runtime.json"], `"storageWritable": false`) {
 		t.Fatal("missing client capability")
+	}
+	if strings.Contains(files["context/runtime.json"], `"h264"`) {
+		t.Fatal("uncollected capability was inferred false")
 	}
 	for _, contents := range files {
 		if strings.Contains(contents, dir) || strings.Contains(contents, "never-export-me") {

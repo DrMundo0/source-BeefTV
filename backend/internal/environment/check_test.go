@@ -91,6 +91,30 @@ func TestMissingRootDoesNotCreateEmptyWorkspace(t *testing.T) {
 	}
 }
 
+func TestCancelledInspectionAndWritersDoNotMutateWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r := Inspect(ctx, dir, true)
+	if checkByID(t, r, "check-cancelled").Status != "unknown" {
+		t.Fatal(r)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := probeWrite(ctx, root); err != context.Canceled {
+		t.Fatal(err)
+	}
+	if status, _ := scratchDirectory(ctx, root, "tmp", true); status != "unknown" {
+		t.Fatal(status)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatal("cancelled writers changed workspace")
+	}
+}
+
 func TestIncompleteOptionalModelIsReportedWithoutDeletingIt(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "models/video-depth-anything-small/v1/checkpoints/video_depth_anything_vits.pth")

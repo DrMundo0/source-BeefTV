@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { chromium, type Browser } from "playwright";
 import postcss from "postcss";
 import tailwindcss from "@tailwindcss/postcss";
@@ -32,7 +32,7 @@ beforeAll(async () => {
         }
         return new Response('<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/style.css"><div id="root"></div><script type="module" src="/app.js"></script>', { headers: { "Content-Type": "text/html" } });
     } });
-    const executablePath = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"].find((p): p is string => Boolean(p && existsSync(p)));
+    const executablePath = process.env.CHROME_PATH;
     browser = await chromium.launch({ executablePath, headless: true, args: ["--disable-gpu"] });
     mkdirSync(import.meta.dir + "/../../output/environment-check", { recursive: true });
 }, 60000);
@@ -41,11 +41,14 @@ afterAll(async () => { await browser?.close(); server?.stop(true); });
 
 for (const width of [390, 1440]) for (const dark of [false, true]) test(`environment diagnosis ${width} dark=${dark}`, async () => {
     const page = await browser.newPage({ viewport: { width, height: 900 } });
+    page.setDefaultTimeout(7000);
+    page.setDefaultNavigationTimeout(7000);
     const errors: string[] = [];
-    page.on("pageerror", error => errors.push(error.message));
+    page.on("pageerror", error => { errors.push(error.message); console.error("environment fixture page error:", error.message); });
     try {
         await page.addInitScript(() => { Object.defineProperty(crypto, "randomUUID", { value: undefined, configurable: true }); });
-        await page.goto(server.url + (dark ? "?dark" : ""));
+        await page.goto(server.url + (dark ? "?dark" : ""), { waitUntil: "domcontentloaded" });
+        await page.getByRole("heading", { name: "环境自检", exact: true }).waitFor();
         await page.getByText("已修复", { exact: true }).waitFor();
         await page.getByText("已重建缺失目录并复检；未改动已有文件。", { exact: true }).waitFor();
         expect(await page.evaluate(() => (window as any).createTestBusinessID().length)).toBe(21);
@@ -58,6 +61,9 @@ for (const width of [390, 1440]) for (const dark of [false, true]) test(`environ
         expect((await page.evaluate(() => indexedDB.databases())).filter(db => db.name?.startsWith("beeftv-environment-probe-")).length).toBe(0);
         await page.screenshot({ path: import.meta.dir + `/../../output/environment-check/${width}-${dark}.png` });
         expect(errors).toEqual([]);
+    } catch (error) {
+        console.error("environment fixture state:", await page.locator("body").innerText().catch(() => "page unavailable"));
+        throw error;
     } finally { await page.close(); }
 }, 30000);
 

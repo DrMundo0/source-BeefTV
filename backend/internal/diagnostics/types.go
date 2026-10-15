@@ -138,13 +138,14 @@ type runtimeRecord struct {
 // smuggling URLs, paths, credentials or arbitrary text into a bundle.
 type ClientCapabilities struct {
 	StorageWritable *bool `json:"storageWritable,omitempty"`
-	SecureRandom    bool  `json:"secureRandom"`
-	RandomUUID      bool  `json:"randomUUID"`
-	StructuredClone bool  `json:"structuredClone"`
-	IndexedDB       bool  `json:"indexedDB"`
-	WebGL           bool  `json:"webGL"`
-	H264            bool  `json:"h264"`
-	HEVC            bool  `json:"hevc"`
+	StorageTimedOut *bool `json:"storageTimedOut,omitempty"`
+	SecureRandom    *bool `json:"secureRandom,omitempty"`
+	RandomUUID      *bool `json:"randomUUID,omitempty"`
+	StructuredClone *bool `json:"structuredClone,omitempty"`
+	IndexedDB       *bool `json:"indexedDB,omitempty"`
+	WebGL           *bool `json:"webGL,omitempty"`
+	H264            *bool `json:"h264,omitempty"`
+	HEVC            *bool `json:"hevc,omitempty"`
 }
 
 type clientEventRecord struct {
