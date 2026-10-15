@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { CanvasVideoPromptTools } from "../../src/components/canvas/canvas-video-prompt-tools";
 import { buildVideoGenerationMetadata } from "../../src/lib/canvas/canvas-project-generation";
-import { h3MediaPayload } from "../../src/lib/h3-video";
+import { h3MediaPayload } from "@/lib/h3-video";
 import { defaultConfig } from "../../src/stores/use-config-store";
 import { useCanvasThemeStore } from "../../src/stores/canvas/use-canvas-theme-store";
 import { CanvasNodeType, type CanvasNodeMetadata } from "../../src/types/canvas";
