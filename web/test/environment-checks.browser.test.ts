@@ -54,9 +54,10 @@ for (const width of [390, 1440]) for (const dark of [false, true]) test(`environ
         expect(await page.evaluate(() => (window as any).createTestBusinessID().length)).toBe(21);
         expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
         const before = requests;
+        const response = page.waitForResponse(item => item.url().endsWith("/api/diagnostics/environment") && item.request().method() === "POST");
         await page.getByRole("button", { name: "重新检查", exact: true }).click();
-        await page.getByRole("button", { name: "重新检查", exact: true }).waitFor({ state: "visible" });
-        await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
+        await response;
+        await page.waitForFunction(() => document.querySelector('[aria-label="重新检查"]')?.getAttribute("aria-busy") === "false");
         expect(requests).toBeGreaterThan(before);
         expect((await page.evaluate(() => indexedDB.databases())).filter(db => db.name?.startsWith("beeftv-environment-probe-")).length).toBe(0);
         await page.screenshot({ path: import.meta.dir + `/../../output/environment-check/${width}-${dark}.png` });
