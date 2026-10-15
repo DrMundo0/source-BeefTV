@@ -109,6 +109,7 @@ export async function healCanvasProjectMediaAssets(
     }
     project = latest;
     const originalNodes = new Map(project.nodes.map((node) => [node.id, node]));
+    const originalPageNodes = options.nodesRef ? new Map(options.nodesRef.current.map((node) => [node.id, node])) : originalNodes;
     const originalClips = new Map(project.timeline?.clips.map((clip) => [clip.id, clip]) ?? []);
 
     const ensure = options.ensureNodeAsset ?? (await import("@/services/project-asset-sync")).ensureCanvasNodeAsset;
@@ -247,13 +248,19 @@ export async function healCanvasProjectMediaAssets(
     // Only apply the binding that was ensured. Media, graph and timeline edits
     // made while awaiting asset registration belong to the current document.
     const healedById = new Map(healedNodes.map((node) => [node.id, node]));
-    const stampNodes = (nodes: CanvasNodeData[]) => nodes.map((node) => {
-        const original = originalNodes.get(node.id);
-        const healed = healedById.get(node.id);
-        if (!original || !healed || node.type !== original.type || canvasNodeResourceId(node) !== canvasNodeResourceId(original) || node.metadata?.assetId !== original.metadata?.assetId) return node;
-        const assetId = healed.metadata?.assetId;
-        return node.metadata?.assetId === assetId ? node : { ...node, metadata: { ...node.metadata, assetId } };
-    });
+    const stampNodes = (nodes: CanvasNodeData[], originals = originalNodes) =>
+        nodes.map((node) => {
+            const original = originals.get(node.id);
+            const healed = healedById.get(node.id);
+            if (!original || !healed || node.type !== original.type || node.type !== healed.type ||
+                canvasNodeResourceId(node) !== canvasNodeResourceId(original) || canvasNodeResourceId(node) !== canvasNodeResourceId(healed) ||
+                node.metadata?.assetId !== original.metadata?.assetId) return node;
+            // A page can lag the synchronous store binding, or already have its
+            // own explicit selection that has not reached the store yet.
+            if (original.metadata?.assetId && original.metadata.assetId !== originalNodes.get(node.id)?.metadata?.assetId) return node;
+            const assetId = healed.metadata?.assetId;
+            return node.metadata?.assetId === assetId ? node : { ...node, metadata: { ...node.metadata, assetId } };
+        });
     const mergedNodes = stampNodes(current.nodes);
     const healedClips = new Map(healedTimeline?.clips.map((clip) => [clip.id, clip]) ?? []);
     const mergedTimeline = timelineChanged && current.timeline ? {
@@ -268,8 +275,8 @@ export async function healCanvasProjectMediaAssets(
         }),
     } : current.timeline;
     useCanvasStore.getState().updateProject(project.id, { nodes: mergedNodes, ...(mergedTimeline ? { timeline: mergedTimeline } : {}) });
-    if (options.nodesRef) options.nodesRef.current = stampNodes(options.nodesRef.current);
-    options.setNodes?.(stampNodes);
+    if (options.nodesRef) options.nodesRef.current = stampNodes(options.nodesRef.current, originalPageNodes);
+    options.setNodes?.((nodes) => stampNodes(nodes, originalPageNodes));
 
     return {
         healed: nodesChanged || timelineChanged,

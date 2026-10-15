@@ -92,6 +92,25 @@ test("heal starts from the latest store even if the failed save supplied an olde
     expect(useCanvasStore.getState().openProject(old.id)?.nodes.map((node) => node.id)).toEqual(["current"]);
 });
 
+test("healing projects store bindings into a lagging page without overwriting its own edits or explicit binding", async () => {
+    const node = media("reference");
+    const selected = { ...media("selected"), metadata: { ...media("selected").metadata, assetId: "asset-store" } };
+    const initial = project([{ ...node, metadata: { ...node.metadata, assetId: "asset-reference" } }, selected]);
+    useCanvasStore.setState({ projects: [initial] });
+    const nodesRef = { current: [node, { ...selected, metadata: { ...selected.metadata, assetId: "asset-page-choice" } }] };
+    const result = await healCanvasProjectMediaAssets(initial, {
+        expectedScope: captureUserScope(), nodesRef,
+        setNodes: (value) => { nodesRef.current = typeof value === "function" ? value(nodesRef.current) : value; },
+        ensureNodeAsset: async ({ node }) => {
+            nodesRef.current = nodesRef.current.map((item) => item.id === "reference" ? { ...item, title: "page edit" } : item);
+            return ensured(node.id);
+        },
+    });
+    expect(result.current).toBe(true);
+    expect(nodesRef.current[0]).toMatchObject({ title: "page edit", metadata: { assetId: "asset-reference" } });
+    expect(nodesRef.current[1].metadata?.assetId).toBe("asset-page-choice");
+});
+
 test("deleting a canvas or its entire timeline during registration does not restore it", async () => {
     for (const deleteCanvas of [false, true]) {
         const initial = project([media("reference")], timeline([clip("clip")]));
