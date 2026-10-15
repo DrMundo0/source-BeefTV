@@ -155,13 +155,16 @@ func reportResumableRetrying(opts ResumableOptions, attemptNumber int) {
 func downloadResumableAttempt(ctx context.Context, parsed *url.URL, opts ResumableOptions, headerTimeout, idleTimeout time.Duration, attemptNumber int) (ResumableResult, bool, error) {
 	sidecar := loadResumableSidecar(opts.PartialPath)
 	offset := int64(0)
-	if sidecar != nil && resumableSourceMatches(sidecar, parsed) {
+	// Combining byte ranges requires a strong validator. Last-Modified alone
+	// is not enough: this sidecar has no Date/clock evidence of its strength.
+	if sidecar != nil && strongResumableETag(sidecar.ETag) && resumableSourceMatches(sidecar, parsed) {
 		if info, err := os.Stat(opts.PartialPath); err == nil && info.Size() > 0 {
 			offset = info.Size()
 		}
 	}
 	if offset == 0 {
-		removeResumablePartial(opts.PartialPath)
+		// Keep the old cache until a full response can replace it. A failed
+		// request (including an expired signed URL) must not discard its bytes.
 		sidecar = nil
 	}
 	sidecarTotal := int64(-1)
@@ -184,11 +187,7 @@ func downloadResumableAttempt(ctx context.Context, parsed *url.URL, opts Resumab
 	ApplyDefaultOutboundHeaders(request)
 	if offset > 0 && sidecar != nil {
 		request.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
-		if strings.TrimSpace(sidecar.ETag) != "" {
-			request.Header.Set("If-Range", sidecar.ETag)
-		} else if strings.TrimSpace(sidecar.LastModified) != "" {
-			request.Header.Set("If-Range", sidecar.LastModified)
-		}
+		request.Header.Set("If-Range", sidecar.ETag)
 	}
 	response, err := OutboundHTTPClient(0).Do(request)
 	headerTimer.Stop()
