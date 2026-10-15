@@ -29,6 +29,7 @@ const BUILTIN_PROTOCOL_CAPABILITIES: Record<ModelProtocol, ProtocolCapability> =
     newapi: "video",
     "newapi-channel-1": "video",
     "newapi-channel-2": "video",
+    "video-generations-json": "video",
     "xai-video": "video",
     "volcengine-ark-video": "video",
     "volcengine-ark-agent-plan-video": "video",
