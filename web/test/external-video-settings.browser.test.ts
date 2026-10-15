@@ -66,7 +66,7 @@ for (const [width, dark] of [[1280, false], [390, true]] as const) {
             expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
             expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
             const output = process.env.BEEFTV_TEST_SCREENSHOT_DIR;
-            if (output) { mkdirSync(output, { recursive: true }); await page.screenshot({ path: `${output}/external-video-${width}.png`, fullPage: true }); }
+            if (output) { mkdirSync(output, { recursive: true }); await page.screenshot({ path: `${output}/external-video-${width}.png`, fullPage: true, animations: "disabled" }); }
             await page.getByRole("button", { name: /^完\s*成$/ }).click();
             await page.getByRole("button", { name: "保存并使用", exact: true }).click();
             await page.waitForFunction(() => document.querySelector('[data-testid="saved-profile"]')?.textContent === "video-generations-json");
