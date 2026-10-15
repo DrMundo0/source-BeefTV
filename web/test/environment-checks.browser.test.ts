@@ -83,6 +83,7 @@ for (const missing of ["structuredClone", "indexedDB", "getRandomValues"]) test(
     try {
         await page.addInitScript((key) => {
             Object.defineProperty(key === "getRandomValues" ? crypto : globalThis, key, { value: undefined, configurable: true });
+            Object.defineProperty(Element.prototype, "replaceChildren", { value: undefined, configurable: true });
         }, missing);
         await page.goto(server.url + "preflight");
         await page.getByRole("heading", { name: "运行环境需要更新" }).waitFor();

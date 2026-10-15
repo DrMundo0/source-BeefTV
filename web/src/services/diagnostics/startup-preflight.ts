@@ -35,6 +35,7 @@ function showFailure(stage: "capability" | "workspace", capabilities: RequiredCa
     const evidence = document.createElement("pre");
     evidence.style.cssText = "white-space:pre-wrap;font-size:12px";
     evidence.textContent = JSON.stringify({ stage, capabilities: { secureRandom: capabilities.secureRandom, structuredClone: capabilities.structuredClone, indexedDB: capabilities.indexedDB } }, null, 2);
-    section.append(heading, detail, button, evidence);
-    root.replaceChildren(section);
+    for (const element of [heading, detail, button, evidence]) section.appendChild(element);
+    while (root.firstChild) root.removeChild(root.firstChild);
+    root.appendChild(section);
 }
