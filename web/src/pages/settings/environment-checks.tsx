@@ -33,9 +33,9 @@ export function EnvironmentChecks() {
     return <section aria-label="环境自检" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-medium">环境自检</h3>
-            <Button aria-label="重新检查" loading={busy} onClick={() => void run()}>重新检查</Button>
+            <Button aria-label="重新检查" aria-busy={busy} disabled={busy} onClick={() => void run()}>{busy ? "检查中" : "重新检查"}</Button>
         </div>
-        <p className="text-xs leading-5 text-foreground/55">自动重建缺失的临时目录，不改动项目。检查结果会随诊断包导出。</p>
+        <p className="text-xs leading-5 text-foreground/55">仅补建缺失的临时目录。结果随诊断包导出。</p>
         {busy ? <p role="status" className="text-xs text-foreground/55">正在检查运行环境…</p> : null}
         {error ? <p role="alert" className="text-xs leading-5 text-destructive">{error}</p> : null}
         <ul className="divide-y divide-border" aria-busy={busy}>
