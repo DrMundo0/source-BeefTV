@@ -10,11 +10,13 @@ export function browserCapabilities(): BrowserCapabilities {
     // Presence is only an interface check, never proof of working acceleration.
     const webGL = typeof globalThis.WebGLRenderingContext !== "undefined";
     const video = typeof document === "undefined" ? undefined : document.createElement("video");
+    let indexedDBAvailable = false;
+    try { indexedDBAvailable = typeof globalThis.indexedDB !== "undefined"; } catch { /* Access can be denied for opaque origins. */ }
     return {
         secureRandom: typeof globalThis.crypto?.getRandomValues === "function",
         randomUUID: typeof globalThis.crypto?.randomUUID === "function",
         structuredClone: typeof globalThis.structuredClone === "function",
-        indexedDB: typeof globalThis.indexedDB !== "undefined",
+        indexedDB: indexedDBAvailable,
         storageWritable,
         storageTimedOut,
         webGL,
@@ -38,7 +40,8 @@ export function browserChecks(capabilities = browserCapabilities()): Environment
 // Late success after the deadline still closes and removes the probe database.
 export async function probeBrowserStorage(signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) return;
-    if (typeof indexedDB === "undefined") { storageWritable = false; return; }
+    try { if (typeof indexedDB === "undefined") { storageWritable = false; return; } }
+    catch { storageWritable = false; return; }
     await new Promise<void>((resolve) => {
         const name = `beeftv-environment-probe-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         let settled = false;
