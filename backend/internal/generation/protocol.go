@@ -340,9 +340,6 @@ func ProtocolRequestFromInput(input Input) protocol.GenerationRequest {
 			}
 		}
 	}
-	if input.Mode == "video" && IsSeedanceVideoConfig(input.Config) {
-		request = protocol.NormalizeSeedanceTaskOptions(request)
-	}
 	return request
 }
 

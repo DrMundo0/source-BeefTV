@@ -23,8 +23,8 @@ beforeAll(async () => {
         + readFileSync(import.meta.dir + "/../src/styles/workspace-product.css", "utf8")
         + await build.outputs.find((output) => output.path.endsWith(".css"))!.text();
     const providers = [
-        { id: "newapi", name: "OpenAI Videos / Sora", create: "POST /v1/videos", contentType: "multipart/form-data" },
-        { id: "video-generations-json", name: "视频生成 JSON · ratio / duration", create: "POST /v1/video/generations", contentType: "application/json" },
+        { id: "newapi", name: "OpenAI Videos / Sora", create: "POST /v1/videos", poll: "GET /v1/videos/{task_id}", contentType: "multipart/form-data" },
+        { id: "video-generations-json", name: "视频生成 JSON · ratio / duration", create: "POST /v1/video/generations", poll: "GET /v1/video/generations/{task_id}", contentType: "application/json" },
     ].map((provider) => ({ ...provider, version: "1.0.0", vendor: "BeefTV", categories: ["video"], scopes: ["user.custom-channel"], enabled: true }));
     server = Bun.serve({ port: 0, fetch(request) {
         const url = new URL(request.url);
@@ -59,6 +59,7 @@ for (const [width, dark] of [[1280, false], [390, true]] as const) {
             expect(await page.locator('.choice-browser input[type="radio"]:checked').count()).toBe(0);
             await page.locator('input[type="radio"][value="video-generations-json"]').check();
             await page.getByText("application/json", { exact: true }).waitFor();
+            await page.getByText("异步轮询", { exact: true }).waitFor();
             expect(await page.getByRole("button", { name: "生成测试", exact: true }).isEnabled()).toBe(true);
             const dialog = page.getByRole("dialog").last();
             const box = (await dialog.boundingBox())!;

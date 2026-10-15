@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"infinite-canvas/backend/internal/protocol"
 )
 
 func TestExternalVideoJSONCreatePollAndDownload(t *testing.T) {
@@ -71,5 +73,22 @@ func TestExternalVideoJSONCreatePollAndDownload(t *testing.T) {
 				t.Fatalf("result=%+v decode=%v polls=%d downloads=%d", result, decodeErr, polls, downloads)
 			}
 		})
+	}
+}
+
+func TestVideoJSONKeyframesKeepConfiguredRatio(t *testing.T) {
+	input := Input{Mode: "video", Config: Config{InterfaceType: "video-generations-json", Model: "seedance-2.5", Size: "16:9", VideoSeconds: "5"}, ReferenceImages: []Media{{DataURL: "data:image/png;base64,aGVsbG8="}, {DataURL: "data:image/png;base64,d29ybGQ="}}}
+	request := ProtocolRequestFromInput(input)
+	if request.AspectRatio != "16:9" || request.Images[0].Role != "first_frame" || request.Images[1].Role != "last_frame" {
+		t.Fatalf("request=%+v", request)
+	}
+	registry := LoadOfficialFallbackRegistry()
+	adapter, ok := registry.Resolve("video-generations-json")
+	if !ok {
+		t.Fatal("missing shipped JSON adapter")
+	}
+	spec, err := adapter.BuildCreate(context.Background(), protocol.RequestContext{Request: request})
+	if err != nil || spec.Body.(map[string]any)["ratio"] != "16:9" {
+		t.Fatalf("spec=%+v err=%v", spec, err)
 	}
 }
