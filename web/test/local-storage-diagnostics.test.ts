@@ -26,4 +26,6 @@ test("local disk exhaustion is actionable and hides private paths", () => {
         expect(explainGenerationError(explained.message).category).toBe("local_disk_full");
     }
     expect(explainGenerationError({ status: 500, data: { error: { message: "no space left on device" } } }).category).not.toBe("local_disk_full");
+    expect(explainGenerationError({ status: 500, data: { error: { message: "database or disk is full" } } }).category).not.toBe("local_disk_full");
+    expect(explainGenerationError({ status: 500, data: { error: { code: "local_disk_full", message: "write local resource: no space left on device" } } }).category).not.toBe("local_disk_full");
 });

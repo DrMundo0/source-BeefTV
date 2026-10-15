@@ -21,8 +21,12 @@ func TestLocalDiskFullSurvivesDeliveryClassification(t *testing.T) {
 			t.Fatal("lost persisted classification")
 		}
 	}
-	f := generation.ClassifyHTTP(500, "", `{"error":{"message":"no space left on device"}}`)
-	if f.Category == generation.CategoryLocalDiskFull {
-		t.Fatal("upstream disk mistaken for local disk")
+	for _, raw := range []string{`{"error":{"message":"no space left on device"}}`, `{"error":{"message":"database or disk is full"}}`, `{"error":{"code":"local_disk_full","message":"write local resource: no space left on device"}}`} {
+		if generation.ClassifyHTTP(500, "", raw).Category == generation.CategoryLocalDiskFull {
+			t.Fatal("upstream disk mistaken for local disk")
+		}
+	}
+	if generation.ClassifyAppError(500, 500, "local_disk_full", "本地磁盘空间不足，无法保存数据").Category != generation.CategoryLocalDiskFull {
+		t.Fatal("local API reason lost")
 	}
 }

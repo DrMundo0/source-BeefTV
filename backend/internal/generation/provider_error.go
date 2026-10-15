@@ -377,6 +377,10 @@ func (e PayloadError) Error() string {
 
 func ClassifyHTTP(status int, statusText string, body string) Failure {
 	failure := ClassifyText(body)
+	// This boundary handles provider responses, not local filesystem errors.
+	if failure.Category == CategoryLocalDiskFull || failure.Category == CategoryLocalCredential {
+		failure = Failure{Category: CategoryUnknown}
+	}
 	failure.HTTPStatus = status
 	// Reservation failures also use HTTP 503; only explicit funding rejection identifies caller quota.
 	if status == 402 && failure.ProviderCode == "video_reservation_failed" && strings.HasPrefix(failure.ProviderMessage, "insufficient balance for this video request") {

@@ -497,6 +497,8 @@ function classifyHttp(status: number | undefined, body: unknown): Classified {
         if (fromObject.fromCode || (fromObject.category !== "unknown" && classified.category === "unknown")) classified = fromObject;
     }
     const fields = extractProviderFields(typeof body === "string" ? body : body && typeof body === "object" ? stringifyAllowlisted(body) : "");
+    // Local API reasons are handled before this provider-response fallback.
+    if (classified.category === "local_disk_full" || classified.category === "local_credential") classified = { category: "unknown", retryable: false };
     if (status === 402 && fields.code === "video_reservation_failed" && fields.message.startsWith("insufficient balance for this video request")) {
         classified = { ...classified, category: "quota_user", fromCode: true, reason: undefined, action: undefined };
     }
