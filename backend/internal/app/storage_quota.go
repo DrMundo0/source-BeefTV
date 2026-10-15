@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"infinite-canvas/backend/internal/kernel"
 	"time"
 
 	"infinite-canvas/backend/internal/model"
@@ -123,6 +124,9 @@ func createTaskWithStorageQuotaRepository(repo *repository.Repository, task *mod
 }
 
 func taskStorageError(cause error) error {
+	if full := kernel.DiskFullError(cause); full != nil {
+		return full
+	}
 	if mapped := localtask.AdmissionValidationError(cause); mapped != nil {
 		return mapped
 	}
