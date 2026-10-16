@@ -23,7 +23,7 @@ export async function startCustomerScenarioServer(options: { port?: number } = {
     // Hold media on another origin. Holding every HTTP/1 connection to the API
     // would also stall task POSTs before they reach the application, masking the
     // cache-scheduler dependency that this fixture is intended to exercise.
-    const mediaServer = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+    const mediaServer = Bun.serve({ hostname: "127.0.0.1", port: 0, idleTimeout: 255, async fetch(request) {
         const id = new URL(request.url).searchParams.get("case") || "";
         const state = contexts.get(id);
         if (!state) return new Response("unknown scenario", { status: 404 });
@@ -32,7 +32,7 @@ export async function startCustomerScenarioServer(options: { port?: number } = {
             "Content-Type": "image/svg+xml", "Access-Control-Allow-Origin": request.headers.get("origin") || "null", "Access-Control-Allow-Credentials": "true",
         } });
     } });
-    const server = Bun.serve({ hostname: "127.0.0.1", port: options.port || 0, async fetch(request) {
+    const server = Bun.serve({ hostname: "127.0.0.1", port: options.port || 0, idleTimeout: 255, async fetch(request) {
         const url = new URL(request.url);
         const cookie = request.headers.get("cookie") || "";
         const id = url.searchParams.get("case") || cookie.match(/scenario=([^;]+)/)?.[1] || "";
