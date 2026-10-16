@@ -114,12 +114,14 @@ test("customer creation accepted then HTTP response lost refreshes by operation 
     try {
         await start(page);
         await until(() => state.posts.length === 1);
-        await page.waitForFunction(() => (window as any).__customer.settled);
         const operationId = state.posts[0].input.metadata.clientOperationId;
         expect(typeof operationId).toBe("string");
         expect(operationId.length).toBeGreaterThan(8);
         expect(state.project.nodes.find(node => node.id === "target")!.metadata?.taskClientOperationId).toBe(operationId);
         await page.unroute("**/api/tasks");
+        // A same-page lookup may already recover the receipt and continue waiting
+        // for the supplier. Reload during that wait, then require a fresh lookup.
+        state.lookups.length = 0;
         await page.goto(page.url() + "&recover");
         await until(() => state.lookups.length > 0, 7000);
         await page.waitForFunction(() => (window as any).__customer.nodes.find((node: any) => node.id === "target").metadata.taskId === "original-customer-task");
