@@ -83,6 +83,16 @@ func validateDarwinLayout(root string) error {
 	if err := validateAgentHost(filepath.Join(bundle, "Contents", "Resources", "agent-host"), "runtime/bin/node", true); err != nil {
 		return err
 	}
+	media := filepath.Join(bundle, "Contents", "Resources", "agent-host", "media-runtime")
+	if _, err := os.Lstat(media); err == nil {
+		for _, name := range []string{"ffprobe", "LICENSE", "README.txt", "manifest.json"} {
+			if err := requireRegularFile(filepath.Join(media, name), name == "ffprobe"); err != nil {
+				return fmt.Errorf("更新包媒体检查工具不完整: %w", err)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	return walkAllowed(root, func(rel string, entry fs.DirEntry) error {
 		if rel == "." {
 			return nil

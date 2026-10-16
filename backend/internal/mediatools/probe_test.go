@@ -87,6 +87,22 @@ func TestBundledFFprobeRelocation(t *testing.T) {
 	}
 }
 
+func TestBundledDarwinFFprobeRelocationAndCLI(t *testing.T) {
+	contents := filepath.Join(t.TempDir(), "中文 bundle", "Contents")
+	want := filepath.Join(contents, "Resources", "agent-host", "media-runtime", "ffprobe")
+	if err := os.MkdirAll(filepath.Dir(want), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(want, []byte("fixture"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, executable := range []string{filepath.Join(contents, "MacOS", "BeefTV"), filepath.Join(contents, "MacOS", "cli", "beeftv")} {
+		if got := bundledTool(executable, "ffprobe"); got != want {
+			t.Fatalf("got %s want %s", got, want)
+		}
+	}
+}
+
 func TestProbeLocalDoesNotFetchPlaylistURLs(t *testing.T) {
 	if _, err := ResolveFFprobe(); err != nil {
 		t.Skip(err)

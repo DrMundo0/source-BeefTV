@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -74,5 +76,24 @@ func TestMissingMediaFactsFailWithoutLosingBytes(t *testing.T) {
 	persisted, err := repo.ResourceForUser("owner", resource.ID)
 	if err != nil || persisted.DurationMs != 0 || persisted.Status != "ready" {
 		t.Fatalf("failed probe changed facts: %+v %v", persisted, err)
+	}
+}
+
+func TestBundledMediaMetadataWithoutSystemFFprobe(t *testing.T) {
+	if os.Getenv("BEEFTV_TEST_BUNDLED_MEDIA") != "1" {
+		t.Skip("packaged native acceptance")
+	}
+	if path, err := exec.LookPath("ffprobe"); err == nil {
+		t.Fatalf("system FFprobe leaked into acceptance: %s", path)
+	}
+	path, err := mediatools.ResolveFFprobe()
+	if err != nil || filepath.Base(filepath.Dir(path)) != "media-runtime" {
+		t.Fatalf("bundle not used: %s %v", path, err)
+	}
+	svc, _, _ := newTestDomain(t)
+	data := audioFixture()
+	resource, _, err := svc.Store("owner", "audio", "voice.wav", "audio/wav", int64(len(data)), 0, 0, 0, bytes.NewReader(data), nil)
+	if err != nil || resource.DurationMs != 1000 {
+		t.Fatalf("packaged probe ingest: %+v %v", resource, err)
 	}
 }
