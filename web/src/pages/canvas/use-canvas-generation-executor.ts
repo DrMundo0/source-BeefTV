@@ -8,6 +8,7 @@ import { isGenerationCanceled } from "@/lib/canvas/canvas-project-generation";
 import { buildConfirmedGenerationConfig } from "./canvas-assistant-proposal-execution";
 import type { ConfirmedGenerationInputs } from "./canvas-assistant-proposal-snapshot";
 import { canvasGenerationPromptMetadata, canvasGenerationRequestFingerprint, runCanvasGenerationSubmissionOnce } from "@/lib/canvas/canvas-generation-submission";
+import { resolvedCanvasGenerationRequirements } from "@/lib/canvas/canvas-generation-config";
 import { isGenerationTaskCapacityError } from "@/lib/canvas/canvas-generation-batch";
 import { buildPortraitTexturePrompt } from "@/lib/canvas/canvas-portrait-texture";
 import { buildCameraPrompt } from "@/lib/canvas/camera-prompt-library";
@@ -541,17 +542,11 @@ function generationModelRequirements(
     config: ReturnType<typeof useEffectiveConfig>,
     includeCharacterMinimum = false,
 ): ModelRequirements {
-    return {
-        capability: mode,
-        input: {
+    return resolvedCanvasGenerationRequirements(config, sourceNode, mode, {
             textCount: input.textCount,
             imageCount: input.imageCount,
             videoCount: input.videoCount,
             audioCount: input.audioCount,
             characterCount: includeCharacterMinimum ? input.characterReferences.length : 0,
-        },
-        videoOperation: sourceNode?.metadata?.videoEditOperation,
-        videoSeconds: config.videoSeconds,
-        options: config.taskWorkflowProvider === "model" ? modelRequestOptions(config, mode) : undefined,
-    };
+    });
 }

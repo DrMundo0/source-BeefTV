@@ -166,17 +166,21 @@ test("IndexedDB 写入挂起不阻塞下载槽位，且生成前 getCachedResour
     };
 
     try {
-        // Fill all 16 concurrent download slots + queue 4 more background thumbnail requests
+        // Saturate background downloads while preserving HTTP connections for task APIs.
         const bgPromises: Promise<string>[] = [];
         for (let i = 1; i <= 20; i++) {
             const id = `bg-thumb-${i}`;
-            if (i <= 16) gates.set(id, deferred<void>());
+            if (i <= 4) gates.set(id, deferred<void>());
             bgPromises.push(cacheResourceObjectUrl(`resource:${id}`));
         }
         await new Promise((resolve) => setTimeout(resolve, 10));
-        expect(downloadOrder.length).toBe(16);
+        expect(downloadOrder.length).toBe(4);
 
         // User clicks generate: getCachedResourceBlob must jump to the front of downloadQueue
+        // This resource was already queued by the canvas, so a priority consumer
+        // must promote the existing job instead of starting a second download.
+        const queuedReference = cacheResourceObjectUrl("resource:gen-ref-priority");
+        await new Promise((resolve) => setTimeout(resolve, 5));
         const priorityPromise = getCachedResourceBlob("resource:gen-ref-priority");
         await new Promise((resolve) => setTimeout(resolve, 5));
 
@@ -185,12 +189,13 @@ test("IndexedDB 写入挂起不阻塞下载槽位，且生成前 getCachedResour
         gates.get("bg-thumb-1")!.resolve();
         const priorityBlob = await priorityPromise;
         expect(await priorityBlob?.text()).toBe("gen-ref-priority");
-        expect(downloadOrder[16]).toBe("gen-ref-priority");
+        expect(downloadOrder[4]).toBe("gen-ref-priority");
+        await queuedReference;
+        expect(downloadOrder.filter((id) => id === "gen-ref-priority")).toHaveLength(1);
 
-        for (let i = 2; i <= 16; i++) gates.get(`bg-thumb-${i}`)!.resolve();
+        for (let i = 2; i <= 4; i++) gates.get(`bg-thumb-${i}`)!.resolve();
         await Promise.all(bgPromises);
     } finally {
         stalledSetItem.resolve();
     }
 });
-

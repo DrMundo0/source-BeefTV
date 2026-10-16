@@ -177,6 +177,13 @@ func registerUserDataRoutes(r *gin.RouterGroup, svc *app.Service) {
 			return
 		}
 		resource, err := svc.Resource(user.ID, c.Param("id"))
+		if err == nil && c.Query("metadata") == "ensure" {
+			resource, err = svc.EnsureResourceMediaMetadata(c.Request.Context(), user.ID, c.Param("id"))
+			if err != nil {
+				failService(c, err)
+				return
+			}
+		}
 		if err != nil {
 			fail(c, http.StatusNotFound, err)
 			return
