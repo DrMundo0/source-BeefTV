@@ -1,4 +1,4 @@
-import { useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -39,13 +39,13 @@ function Harness() {
     const nodesRef = useRef(nodes);
     nodesRef.current = nodes;
     const connectionsRef = useRef(project.connections);
-    const setNodes: Dispatch<SetStateAction<CanvasNodeData[]>> = update => setNodesState(current => {
+    const setNodes = useCallback<Dispatch<SetStateAction<CanvasNodeData[]>>>(update => setNodesState(current => {
         const next = typeof update === "function" ? update(current) : update;
         nodesRef.current = next;
         harness.nodes = next;
         useCanvasStore.getState().updateProject(project.id, { nodes: next });
         return next;
-    });
+    }), []);
     const generation = useCanvasGeneration({ projectId: project.id, domainProjectId: "synthetic-domain", projectLoaded: params.has("recover"), nodes, nodesRef, setNodes });
     const generate = useCanvasGenerationExecutor({ projectId: project.id, domainProjectId: "synthetic-domain", addedSkills: [], assets: [], nodesRef, connectionsRef, setNodes, setConnections: noop, setSelectedNodeIds: noop, setSelectedConnectionId: noop, setDialogNodeId: noop,
         setRunningNodeId: generation.setRunningNodeId, startGenerationRequest: generation.startGenerationRequest, finishGenerationRequest: generation.finishGenerationRequest, bindGenerationTask: generation.bindGenerationTask, applyGenerationTaskResult: generation.applyGenerationTaskResult });

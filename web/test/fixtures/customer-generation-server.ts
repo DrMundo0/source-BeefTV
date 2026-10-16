@@ -51,7 +51,9 @@ export async function startCustomerScenarioServer(options: { port?: number } = {
         if (url.pathname === "/api/tasks" && request.method === "POST") {
             const body = await request.json();
             state.posts.push(body);
-            state.task ||= { id: "original-customer-task", ...body, clientOperationId: body.input?.metadata?.clientOperationId, status: "running", stage: "供应商处理中", progress: 10, attempts: 1, createdAt: "2026-10-17T00:00:00Z", updatedAt: "2026-10-17T00:00:00Z", inputJson: JSON.stringify(body.input) };
+            // Match taskForOutput/publicTaskInputJSON: recovery receives mode
+            // and metadata while credentials and binary references are omitted.
+            state.task ||= { id: "original-customer-task", projectId: body.projectId, type: body.type, prompt: body.prompt, clientOperationId: body.input?.metadata?.clientOperationId, status: "running", stage: "供应商处理中", progress: 10, attempts: 1, createdAt: "2026-10-17T00:00:00Z", updatedAt: "2026-10-17T00:00:00Z", inputJson: JSON.stringify({ mode: body.input.mode, metadata: body.input.metadata }) };
             if (state.delayReceipt) await new Promise(resolve => setTimeout(resolve, 6000));
             return json(state.task);
         }
