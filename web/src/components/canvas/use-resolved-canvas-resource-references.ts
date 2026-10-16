@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { loadCanvasDrawingPreview } from "@/lib/canvas/canvas-drawing-storage";
 import { resolveImageUrl } from "@/services/image-storage";
+import { acquireCanvasVideoPreview, canvasDerivedPreviewSourceKey } from "@/services/canvas-video-preview";
 
 type ResolvedPreview = {
     identity: string;
@@ -25,11 +26,19 @@ export function useResolvedCanvasResourceReferences(references: CanvasResourceRe
     useEffect(() => {
         if (!requests.length) return;
         let cancelled = false;
+        const leases: ReturnType<typeof acquireCanvasVideoPreview>[] = [];
         void Promise.all(
             requests.map(async ({ reference, identity }) => ({
                 id: reference.id,
                 identity,
-                url: await resolveReferencePreview(reference, identity, projectId),
+                url: await (async () => {
+                    const stored = await resolveReferencePreview(reference, identity, projectId);
+                    if (stored || !reference.videoPreviewSource) return stored;
+                    const lease = acquireCanvasVideoPreview(reference.videoPreviewSource);
+                    leases.push(lease);
+                    if (cancelled) { lease.release(); return ""; }
+                    return (await lease.promise)?.content || "";
+                })(),
             })),
         ).then((resolved) => {
             if (cancelled) return;
@@ -46,6 +55,7 @@ export function useResolvedCanvasResourceReferences(references: CanvasResourceRe
         });
         return () => {
             cancelled = true;
+            leases.forEach((lease) => lease.release());
         };
     }, [projectId, requests]);
 
@@ -66,11 +76,15 @@ function previewIdentity(reference: CanvasResourceReference, projectId?: string)
         return `drawing:${projectId}:${reference.drawingId}:${reference.drawingRevision || 0}`;
     }
     const storageKey = reference.kind === "video" ? reference.previewStorageKey : reference.storageKey;
+    if (reference.kind === "video" && reference.videoPreviewSource) {
+        return `video:${storageKey || ""}:${canvasDerivedPreviewSourceKey(reference.videoPreviewSource)}`;
+    }
     if (!storageKey || !["image", "video", "character"].includes(reference.kind)) return "";
     return `${reference.kind}:${storageKey}`;
 }
 
 function resolveReferencePreview(reference: CanvasResourceReference, identity: string, projectId?: string) {
+    if (reference.kind === "video" && !reference.previewStorageKey) return Promise.resolve(reference.previewUrl || "");
     const cached = previewPromiseCache.get(identity);
     if (cached) return cached;
     if (reference.drawingId && projectId) {
