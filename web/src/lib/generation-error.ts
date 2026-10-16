@@ -1,5 +1,6 @@
 import { isLocalRuntimeMode } from "@/lib/runtime-mode";
 import { moderationErrorCopy, persistedModerationCopy } from "./moderation-error";
+import { vodImageErrorCopy } from "./vod-image-error";
 import { taskConstraintCopy, persistedTaskConstraintCopy } from "./task-constraint-error";
 
 export const CONTENT_MODERATION_ERROR_CODE = "sensitive_words_detected";
@@ -211,6 +212,9 @@ const PROVIDER_CODE_CATEGORIES: Record<string, GenerationErrorCategory> = {
     sensitive_words_detected: "moderation_input",
     content_filter: "moderation_input",
     content_policy_violation: "moderation_input",
+    contentmoderationfailed: "moderation_input",
+    "invalidparameter.voilationcontent": "moderation_input",
+    "invalidparameter.violationcontent": "moderation_input",
     content_policy: "moderation_input",
     datainspectionfailed: "moderation_input",
     prohibited_content: "moderation_input",
@@ -468,6 +472,10 @@ function classifyUnknown(error: unknown, context: GenerationFailureContext): Cla
         if (record.reason === "stale_revision" || record.code === "canvas_conflict") {
             return { category: "canvas_conflict", fromCode: true, retryable: false };
         }
+        if (typeof record.code === "string" && typeof record.message === "string") {
+            const vodCopy = vodImageErrorCopy(record.code, record.message);
+            if (vodCopy) return vodCopy;
+        }
         if (record.code === "download_failed" || record.code === "result_apply_failed") {
             return { category: record.code, fromCode: true, retryable: false };
         }
@@ -579,6 +587,8 @@ function classifyText(raw: string): Classified {
     const storage = resourceStorageFailureMessage(text);
     if (storage) return { category: "input_inaccessible", reason: storage.replace(/。$/, ""), action: "", retryable: false };
     const fields = extractProviderFields(text);
+    const vodCopy = vodImageErrorCopy(fields.code, /^[{[]/.test(text) ? fields.message : text);
+    if (vodCopy) return { ...vodCopy, requestId: sanitizeDebugId(fields.requestId), taskId: sanitizeDebugId(fields.taskId) };
     // Inspect only the error message, never JSON request echoes or debug fields.
     const databaseMessage = fields.code || fields.type || fields.message || fields.status || /^[{[]/.test(text) ? fields.message : text;
     if (/(write local resource|生成内容写入资源存储失败|database or disk is full|本地磁盘空间不足)/i.test(databaseMessage) && /(no space left on device|not enough space on the disk|disk full|database or disk is full|本地磁盘空间不足)/i.test(databaseMessage)) return { category: "local_disk_full", fromCode: true, retryable: false };
@@ -902,6 +912,11 @@ function categoryFromProviderMessage(raw: string): GenerationErrorCategory | "" 
 
 function containsContentSafety(normalized: string) {
     return (
+        /\brejected (?:by the|as a result of (?:our|the)) safety system\b/.test(normalized) ||
+        normalized.includes("contentmoderationfailed") ||
+        normalized.includes("invalidparameter.voilationcontent") ||
+        normalized.includes("invalidparameter.violationcontent") ||
+        normalized.includes("上游内容安全策略") ||
         normalized.includes("sensitive_words_detected") ||
         normalized.includes("content policy") ||
         normalized.includes("content safety") ||
