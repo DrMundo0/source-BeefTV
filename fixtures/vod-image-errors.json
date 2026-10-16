@@ -155,6 +155,12 @@
       "reason": "提示词或参考素材未通过内容安全审核",
       "action": "请调整提示词或参考素材后重新生成",
       "uncertain": false
+    },
+    "query_rejected": {
+      "category": "submission_uncertain",
+      "reason": "原图片任务查询被服务拒绝",
+      "action": "请联系支持修复查询，不要重复提交",
+      "uncertain": true
     }
   },
   "cases": {

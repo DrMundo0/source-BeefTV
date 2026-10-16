@@ -17,6 +17,7 @@ var vodImageCopies = map[string]Failure{
 	"task_timeout":    {Category: FailureCategory("timeout"), Reason: "图片任务执行超时", Action: "请联系支持查询原任务结果，不要立即重新生成", Uncertain: true},
 	"cancelled":       {Category: FailureCategory("cancelled"), Reason: "图片任务已取消", Action: "如仍需生成，请确认后重新提交", Uncertain: false},
 	"query_failed":    {Category: FailureCategory("submission_uncertain"), Reason: "暂时无法查询图片任务结果", Action: "请稍后查看原任务，不要重复提交", Uncertain: true},
+	"query_rejected":  {Category: FailureCategory("submission_uncertain"), Reason: "原图片任务查询被服务拒绝", Action: "请联系支持修复查询，不要重复提交", Uncertain: true},
 	"query_missing":   {Category: FailureCategory("submission_uncertain"), Reason: "暂时无法找到原图片任务", Action: "请联系支持核对任务记录，不要重复提交", Uncertain: true},
 	"query_auth":      {Category: FailureCategory("submission_uncertain"), Reason: "图片服务暂时无权查询原任务", Action: "请联系支持检查渠道权限并恢复查询，不要重复提交", Uncertain: true},
 	"unknown":         {Category: FailureCategory("submission_uncertain"), Reason: "图片任务结果尚未确认", Action: "请先查看原任务或联系支持核对，不要重复提交", Uncertain: true},
@@ -103,6 +104,11 @@ var vodImageStageCodes = map[string]map[string]string{
 
 // VOD's creation and task codes have different meanings. Outer structured errors
 // stay authoritative; saved messages are recognized only by our complete copy.
+func genericVODCode(code string) bool {
+	code = normalizeCode(code)
+	return genericProviderCode(code) || code == "bad_response" || code == "bad_response_body"
+}
+
 func vodImageErrorCopy(code, text string) (Failure, bool) {
 	if code == "access_denied" && strings.HasPrefix(text, "你的请求触发了上游内容安全策略，类别：内容安全") {
 		copy := vodImageCopies["moderation"]
@@ -117,14 +123,14 @@ func vodImageErrorCopy(code, text string) (Failure, bool) {
 	if _, ok := vodImageCopies[key]; !ok {
 		key = ""
 		for candidate, copy := range vodImageCopies {
-			if strings.HasPrefix(text, copy.Reason+"。"+copy.Action+"。") && (code == "" || code == string(copy.Category) || code == "image_result_unknown" && copy.Uncertain || genericProviderCode(code) || code == "bad_response") {
+			if strings.HasPrefix(text, copy.Reason+"。"+copy.Action+"。") && (genericVODCode(code) || code == string(copy.Category) || code == "image_result_unknown" && copy.Uncertain) {
 				key = candidate
 				break
 			}
 		}
 	}
 	if key == "" {
-		if code != "" && !genericProviderCode(code) && code != "bad_response" && code != "bad_response_body" {
+		if !genericVODCode(code) {
 			return Failure{}, false
 		}
 		stage := "create"

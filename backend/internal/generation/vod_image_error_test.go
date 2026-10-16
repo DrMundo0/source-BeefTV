@@ -50,7 +50,9 @@ func TestVODImageErrorContract(t *testing.T) {
 					text = fmt.Sprintf("VOD image task failed [%s]: opaque", code)
 				}
 				check(t, text, key)
-				check(t, fmt.Sprintf(`{"error":{"code":"bad_response","message":%q}}`, text), key)
+				for _, wrapper := range []string{"", "unknown", "failed", "badrequest", "api_error", "upstream_error", "upstream_rejected", "invalid_request", "invalid_request_error", "invalid_parameter", "invalidparameter", "invalid_argument", "bad_response", "bad_response_body", "400", "401", "403", "500", "502", "503"} {
+					check(t, fmt.Sprintf(`{"error":{"code":%q,"message":%q}}`, wrapper, text), key)
+				}
 			})
 		}
 	}

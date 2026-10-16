@@ -4,6 +4,10 @@ import contract from "../../fixtures/vod-image-errors.json";
 import { explainGenerationError } from "../src/lib/generation-error";
 import { GenerationFailureNotice } from "../src/components/generation/generation-failure-notice";
 import { canvasGenerationFailureMetadata } from "../src/pages/canvas/canvas-generation-failure";
+import { canvasNodeFailureExplanation } from "../src/lib/canvas/canvas-depth-capture";
+import { taskAttentionReason, taskRetryBlocked } from "../src/pages/tasks/task-shared";
+import { CanvasNodeType } from "../src/types/canvas";
+import type { GenerationTask } from "../src/services/api/task-center";
 
 for (const [stage, codes] of Object.entries(contract.cases)) {
     for (const [code, key] of Object.entries(codes)) {
@@ -47,6 +51,14 @@ for (const [key, copy] of Object.entries(contract.copies)) {
             expect(html).not.toContain(">重新生成<");
             const gatewayUnknown = explainGenerationError({ code: "image_result_unknown", message });
             expect(gatewayUnknown.reason).toBe(copy.reason);
+            const metadata = { ...canvasGenerationFailureMetadata(error, { prompt: "draw", mode: "image" }), taskStage: "submission_unknown", taskId: "task-vod-123" };
+            const node = { id: "image-vod-123", type: CanvasNodeType.Image, title: "图片", position: { x: 0, y: 0 }, width: 260, height: 260, metadata };
+            const nodeResult = canvasNodeFailureExplanation(node);
+            expect(nodeResult.reason).toBe(copy.reason);
+            expect(nodeResult.blockAutomaticRetry).toBe(true);
+            const task: GenerationTask = { id: "task-vod-123", type: "canvas_image", status: "failed", stage: "submission_unknown", prompt: "draw", attempts: 1, createdAt: "2026-10-17T00:00:00Z", updatedAt: "2026-10-17T00:00:00Z", errorCode: result.category, error: result.message };
+            expect(taskAttentionReason(task)).toContain(copy.reason);
+            expect(taskRetryBlocked(task)).toBe(true);
         }
         expect(html).not.toContain("opaque");
     });
@@ -63,4 +75,17 @@ test("VOD copy cannot override authoritative errors or request echoes", () => {
     expect(explainGenerationError({ code: "vod_image_toString", message: "opaque" }).category).toBe("unknown");
     expect(explainGenerationError({ code: "access_denied", message: "你的请求触发了上游内容安全策略，类别：内容安全。本次请求已被上游拒绝。" }).moderation).toBe(true);
     expect(explainGenerationError("VOD image task failed [ModelGenerateFailed]: Your request was rejected by the safety system.").moderation).toBe(true);
+});
+
+test("VOD generic wrappers follow the same stage and authority contract as Go", () => {
+    const wrappers = ["", "unknown", "failed", "badrequest", "api_error", "upstream_error", "upstream_rejected", "invalid_request", "invalid_request_error", "invalid_parameter", "invalidparameter", "invalid_argument", "bad_response", "bad_response_body", "400", "401", "403", "500", "502", "503"];
+    for (const [stage, codes] of Object.entries(contract.cases)) for (const [code, key] of Object.entries(codes)) {
+        const text = stage === "task" ? `VOD image task failed [${code}]: opaque` : `VOD ${code}: opaque`;
+        const expected = contract.copies[key as keyof typeof contract.copies];
+        for (const wrapper of wrappers) {
+            const result = explainGenerationError({ error: { code: wrapper, message: text } });
+            expect(result.reason).toBe(expected.reason);
+            expect(result.category).toBe(expected.category);
+        }
+    }
 });

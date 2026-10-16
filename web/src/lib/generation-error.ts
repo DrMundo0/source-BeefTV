@@ -459,7 +459,11 @@ type Classified = {
 };
 
 function classifyUnknown(error: unknown, context: GenerationFailureContext): Classified {
-    if (context.stage === "submission_unknown") return { category: "submission_uncertain", uncertain: true, retryable: false };
+    if (context.stage === "submission_unknown") {
+        const classified = classifyUnknown(error, { ...context, stage: undefined });
+        if (classified.fromCode && classified.uncertain) return classified;
+        return { category: "submission_uncertain", uncertain: true, retryable: false };
+    }
     if (!error) return { category: "unknown", retryable: false };
     if (typeof error === "object" && error) {
     const record = error as Record<string, unknown>;

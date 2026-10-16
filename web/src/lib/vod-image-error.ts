@@ -16,6 +16,7 @@ const copies: Record<string, VODCopy> = {
     task_timeout: { category: "timeout", reason: "图片任务执行超时", action: "请联系支持查询原任务结果，不要立即重新生成", uncertain: true },
     cancelled: { category: "cancelled", reason: "图片任务已取消", action: "如仍需生成，请确认后重新提交", uncertain: false },
     query_failed: { category: "submission_uncertain", reason: "暂时无法查询图片任务结果", action: "请稍后查看原任务，不要重复提交", uncertain: true },
+    query_rejected: { category: "submission_uncertain", reason: "原图片任务查询被服务拒绝", action: "请联系支持修复查询，不要重复提交", uncertain: true },
     query_missing: { category: "submission_uncertain", reason: "暂时无法找到原图片任务", action: "请联系支持核对任务记录，不要重复提交", uncertain: true },
     query_auth: { category: "submission_uncertain", reason: "图片服务暂时无权查询原任务", action: "请联系支持检查渠道权限并恢复查询，不要重复提交", uncertain: true },
     unknown: { category: "submission_uncertain", reason: "图片任务结果尚未确认", action: "请先查看原任务或联系支持核对，不要重复提交", uncertain: true },
@@ -100,20 +101,25 @@ const codes: Record<string, Record<string, string>> = {
 };
 
 // The stage owns ambiguous VOD codes. Read only the error text supplied by the caller.
+function genericVODCode(code: string) {
+    const normalized = code.toLowerCase().trim().replace(/-/g, "_").replace(/\s+/g, "_");
+    return ["", "unknown", "failed", "badrequest", "api_error", "upstream_error", "upstream_rejected", "invalid_request", "invalid_request_error", "invalid_parameter", "invalidparameter", "invalid_argument", "bad_response", "bad_response_body"].includes(normalized) || /^\d{3}$/.test(normalized);
+}
+
 export function vodImageErrorCopy(code: string, text: string): (VODCopy & { providerCode?: string; fromCode: boolean; retryable: boolean }) | undefined {
     if (code === "access_denied" && text.startsWith("你的请求触发了上游内容安全策略，类别：内容安全")) return { ...copies.moderation, fromCode: true, retryable: false };
     let key = code.startsWith("vod_image_") ? code.slice(10) : "";
     let providerCode = code;
     if (!Object.hasOwn(copies, key)) {
         for (const [candidate, copy] of Object.entries(copies)) {
-            if (text.startsWith(copy.reason + "。" + copy.action + "。") && (!code || code === copy.category || (code === "image_result_unknown" && copy.uncertain) || ["bad_response", "api_error", "upstream_error", "invalid_request_error", "invalid_argument", "invalid_parameter"].includes(code))) { key = candidate; break; }
+            if (text.startsWith(copy.reason + "。" + copy.action + "。") && (genericVODCode(code) || code === copy.category || (code === "image_result_unknown" && copy.uncertain))) { key = candidate; break; }
         }
     }
     if (!Object.hasOwn(copies, key)) {
         const match = text.trim().match(/^VOD (?:(image task failed) \[([A-Za-z][A-Za-z0-9_.]*|)\]|([A-Za-z][A-Za-z0-9_.]*)):/);
         if (!match) return;
         // An authoritative outer error must never be overridden by nested text.
-        if (code && !["bad_response", "bad_response_body", "api_error", "upstream_error", "invalid_request_error", "invalid_argument", "invalid_parameter", "400", "500", "502"].includes(code)) return;
+        if (!genericVODCode(code)) return;
         const stage = match[1] ? "task" : "create";
         providerCode = match[2] || match[3] || "";
         key = Object.hasOwn(codes[stage], providerCode) ? codes[stage][providerCode] : (stage === "task" ? "task_failed" : "create_unknown");
