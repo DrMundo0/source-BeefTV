@@ -2,9 +2,13 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
+	"time"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -31,6 +35,14 @@ func (a *DesktopApp) acceptSkillLink(raw string) {
 	a.pendingSkillLink = route
 	ctx := a.wailsCtx
 	a.mu.Unlock()
+	// A GUI launched through the OS may have no stderr. Keep a local receipt
+	// without the URL, skill identity or credentials; it records preview only.
+	if file, err := os.OpenFile(filepath.Join(a.dataDir, "skill-links.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+		_, _ = fmt.Fprintln(file, time.Now().UTC().Format(time.RFC3339), "收到技能预览请求")
+		_ = file.Close()
+	} else {
+		log.Print("无法记录技能预览请求")
+	}
 	if ctx != nil {
 		wailsruntime.WindowUnminimise(ctx)
 		wailsruntime.WindowShow(ctx)

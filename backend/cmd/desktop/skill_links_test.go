@@ -1,6 +1,32 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestSkillLinkReceiptContainsNoLinkAndDoesNotOpenRuntime(t *testing.T) {
+	app := newDesktopApp(t.TempDir())
+	app.acceptSkillLink("beeftv://skills/install?id=private-skill&version=release_1")
+	app.acceptSkillLink("beeftv://skills/install?id=invalid")
+	receipt, err := os.ReadFile(filepath.Join(app.dataDir, "skill-links.log"))
+	if err != nil || strings.Count(string(receipt), "收到技能预览请求") != 1 {
+		t.Fatalf("valid link receipt was not recorded once: %v", err)
+	}
+	for _, secret := range []string{"beeftv:", "private-skill", "release_1"} {
+		if strings.Contains(string(receipt), secret) {
+			t.Fatal("link receipt exposed link details")
+		}
+	}
+	if app.RuntimeConfig().BaseURL != "" {
+		t.Fatal("receiving a preview link opened the backend")
+	}
+	if route := app.ConsumeSkillInstallLink(); route != "/skills?install=private-skill&version=release_1" || app.ConsumeSkillInstallLink() != "" {
+		t.Fatal("preview was not consumed exactly once")
+	}
+}
 
 func TestSkillInstallLinksOnlyNavigateToExactVersion(t *testing.T) {
 	route, err := skillInstallRoute("beeftv://skills/install?id=test-skill&version=release_1")

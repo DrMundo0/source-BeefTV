@@ -4,17 +4,22 @@ import argparse
 import errno
 from contextlib import closing, ExitStack
 import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import io
 import json
 import os
 from pathlib import Path
+import plistlib
 import shutil
 import secrets
 import socket
 import sqlite3
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.request
+import zipfile
 
 
 def digest(path):
@@ -188,6 +193,23 @@ def probe_self_test():
         print('PASS: native NSIS rejects a proven directory lock and preserves different previous bytes')
 
 
+def windows_skill_protocol_command():
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Classes\beeftv\shell\open\command') as handle:
+            return winreg.QueryValueEx(handle, '')[0]
+    except FileNotFoundError:
+        return None
+
+
+def verify_windows_skill_protocol(installed):
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Classes\beeftv') as handle:
+        assert winreg.QueryValueEx(handle, 'URL Protocol')[0] == ''
+    expected = f'"{installed / "BeefTV.exe"}" "%1"'
+    assert windows_skill_protocol_command() == expected, 'skill URL protocol does not target the exact installed executable'
+
+
 def windows_custom_install_dir(installer, root):
     import winreg
     key = r'Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV'
@@ -200,7 +222,10 @@ def windows_custom_install_dir(installer, root):
 
     def run(*args):
         # NSIS /D= must be the last, unquoted parameter even when the path has spaces.
-        return subprocess.run(f'"{installer}" ' + ' '.join(args), timeout=180)
+        result = subprocess.run(f'"{installer}" ' + ' '.join(args), timeout=180)
+        if result.returncode == 0:
+            verify_windows_skill_protocol(Path(install_location()))
+        return result
 
     result = run('/S', '/D=' + str(custom))
     assert result.returncode == 0, f'chosen-location install failed with {result.returncode}'
@@ -231,6 +256,7 @@ def windows_custom_install_dir(installer, root):
     while (apps / 'BeefTV').exists() and time.monotonic() < deadline:
         time.sleep(.5)
     assert not (apps / 'BeefTV').exists(), 'uninstall under a shared folder left files behind'
+    assert windows_skill_protocol_command() is None, 'uninstall retained its own skill URL protocol'
     assert (apps / 'other.txt').read_bytes() == b'other app'
     result = run('/S', '/D=' + str(custom))
     assert result.returncode == 0, f'reinstall into the chosen folder failed with {result.returncode}'
@@ -262,6 +288,10 @@ def windows_custom_install_dir(installer, root):
     assert (foreign / 'keep.txt').read_bytes() == b'keep foreign file'
     assert install_location() == str(installed), 'refused install changed the registered location'
 
+    # An old uninstaller must leave a scheme now owned by a different location.
+    replacement = f'"{root / "Newer" / "BeefTV.exe"}" "%1"'
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Classes\beeftv\shell\open\command', 0, winreg.KEY_SET_VALUE) as handle:
+        winreg.SetValueEx(handle, '', 0, winreg.REG_SZ, replacement)
     subprocess.run([str(installed / 'Uninstall.exe'), '/S'], check=True, timeout=90)
     deadline = time.monotonic() + 90
     while installed.exists() and time.monotonic() < deadline:
@@ -273,7 +303,10 @@ def windows_custom_install_dir(installer, root):
         pass
     else:
         raise AssertionError('uninstall left the BeefTV registry key')
-    print('PASS: chosen install folder, upgrade reuse, portable upgrade, foreign-folder refusal and custom uninstall')
+    assert windows_skill_protocol_command() == replacement, 'uninstall removed another installation\'s skill URL protocol'
+    for suffix in [r'\shell\open\command', r'\shell\open', r'\shell', r'\DefaultIcon', '']:
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, r'Software\Classes\beeftv' + suffix)
+    print('PASS: chosen folder, upgrade/portable migration, refused foreign folder and ownership-checked skill URL registration')
 
 
 def verify_data(data):
@@ -282,6 +315,140 @@ def verify_data(data):
         assert db.execute("SELECT value_json FROM system_settings WHERE key='installer-setting'").fetchone() == ('{"preserve":true}',)
     for name in ['assets/original.png', 'drafts/unsaved.json']:
         assert (data / name).read_bytes() == b'preserve installer data'
+
+
+def native_app_pids(exe):
+    if os.name == 'nt':
+        path = str(exe).replace("'", "''")
+        output = subprocess.check_output(['powershell', '-NoProfile', '-Command',
+            f"Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -eq '{path}' }} | ForEach-Object {{ $_.ProcessId }}"], text=True, timeout=30)
+        return sorted(int(line) for line in output.splitlines() if line.strip())
+    output = subprocess.check_output(['ps', '-ww', '-axo', 'pid=,command='], text=True)
+    rows = [line.strip().split(None, 1) for line in output.splitlines()]
+    return sorted(int(pid) for pid, command in rows if command == str(exe) or command.startswith(str(exe) + ' '))
+
+
+def stop_native_app(exe):
+    for pid in native_app_pids(exe):
+        if os.name == 'nt':
+            subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            try:
+                os.kill(pid, 15)
+            except ProcessLookupError:
+                pass
+    deadline = time.monotonic() + 30
+    while native_app_pids(exe):
+        if time.monotonic() > deadline:
+            raise RuntimeError('native protocol test left the candidate running')
+        time.sleep(.5)
+
+
+def smoke_skill_protocol(platform, installed, exe, env, data, root):
+    if not platform.startswith(('darwin-', 'windows-')):
+        return
+    if os.environ.get('GITHUB_ACTIONS') != 'true':
+        raise RuntimeError('native protocol smoke requires a disposable CI runner')
+    # The fixture is installable: an accidental auto-install must change the DB
+    # or request archive bytes, rather than being masked by a missing release.
+    body = b'---\nname: Installer preview\ndescription: Native protocol preview\n---\nPreview only.\n'
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr('SKILL.md', body)
+    archive_bytes = buffer.getvalue()
+    reads = {'v1': 0, 'v2': 0, 'archive': 0}
+    release = {'skillId': 'installer-preview', 'name': 'Installer preview', 'description': 'Native protocol preview',
+        'license': 'CC0-1.0', 'author': 'BeefTV Contributors', 'sourceUrl': '', 'requirements': [], 'showcase': [],
+        'contentHash': hashlib.sha256(b'SKILL.md\0' + body + b'\0').hexdigest(),
+        'archiveSha256': hashlib.sha256(archive_bytes).hexdigest(), 'archiveBytes': len(archive_bytes),
+        'files': [{'path': 'SKILL.md', 'sha256': hashlib.sha256(body).hexdigest(), 'size': len(body), 'mimeType': 'text/markdown'}]}
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+        def do_GET(self):
+            if self.path == '/archive':
+                reads['archive'] += 1
+                payload = archive_bytes
+            else:
+                version = self.path.removeprefix('/skills/installer-preview/releases/')
+                if version in ('v1', 'v2'):
+                    reads[version] += 1
+                    result = dict(release, releaseId=version, versionLabel=version)
+                elif self.path.startswith('/catalog'):
+                    result = {'items': [], 'total': 0, 'page': 1, 'pageSize': 24}
+                else:
+                    self.send_error(404)
+                    return
+                payload = json.dumps({'success': True, 'data': result}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json' if self.path != '/archive' else 'application/zip')
+            self.end_headers()
+            self.wfile.write(payload)
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    release['downloadUrl'] = f'http://127.0.0.1:{server.server_port}/archive'
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    link_env = dict(env, BEEFTV_SKILLHUB_URL=f'http://127.0.0.1:{server.server_port}', CANVAS_DESKTOP_DATA_DIR=str(data))
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        link_env['CANVAS_DESKTOP_BACKEND_ADDR'] = f'127.0.0.1:{listener.getsockname()[1]}'
+    link_env['CANVAS_DESKTOP_LAUNCH_TOKEN'] = secrets.token_hex(24)
+    receipt = data / 'skill-links.log'
+    count_receipts = lambda: receipt.read_text().count('收到技能预览请求') if receipt.exists() else 0
+    def count_skills():
+        with closing(sqlite3.connect(data / 'open_ai_canvas.db')) as db:
+            return db.execute('SELECT COUNT(*) FROM skills').fetchone()[0]
+    original_count, original_receipts = count_skills(), count_receipts()
+    same_process = False
+    passed = False
+    if platform.startswith('darwin-'):
+        info = plistlib.loads((installed / 'Contents/Info.plist').read_bytes())
+        assert any('beeftv' in entry.get('CFBundleURLSchemes', []) for entry in info.get('CFBundleURLTypes', [])), 'candidate did not declare the skill URL scheme'
+        subprocess.run(['/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', '-f', str(installed)], check=True)
+    else:
+        verify_windows_skill_protocol(installed)
+    try:
+        assert not native_app_pids(exe), 'protocol cold start requires a stopped candidate'
+        first_pid = None
+        for version in ('v1', 'v2'):
+            received = count_receipts() + 1
+            uri = f'beeftv://skills/install?id=installer-preview&version={version}'
+            if os.name == 'nt':
+                command = ['powershell', '-NoProfile', '-Command', f"Start-Process -FilePath '{uri}'"]
+            else:
+                command = ['open', '--stdout', str(root / 'protocol-stdout.log'), '--stderr', str(root / 'protocol-stderr.log')]
+                for name in ('HOME', 'CANVAS_DESKTOP_DATA_DIR', 'CANVAS_DESKTOP_BACKEND_ADDR', 'CANVAS_DESKTOP_LAUNCH_TOKEN', 'BEEFTV_SKILLHUB_URL'):
+                    command += ['--env', f'{name}={link_env[name]}']
+                command += ['-u', uri, '--args', '--data-dir=' + str(data)]
+            try:
+                result = subprocess.run(command, env=link_env, capture_output=True, timeout=30)
+            except (OSError, subprocess.SubprocessError):
+                raise RuntimeError('OS protocol launcher failed; command details are omitted') from None
+            if result.returncode != 0:
+                raise RuntimeError('OS protocol launcher rejected the preview request; command details are omitted')
+            deadline = time.monotonic() + 90
+            while count_receipts() < received or reads[version] == 0:
+                if time.monotonic() > deadline:
+                    raise RuntimeError('OS protocol did not reach the candidate and its release preview')
+                time.sleep(.5)
+            pids = native_app_pids(exe)
+            assert len(pids) == 1, 'OS protocol created multiple candidate instances'
+            first_pid = first_pid or pids[0]
+            assert pids == [first_pid], 'warm protocol launch replaced the running candidate'
+            assert reads['archive'] == 0 and count_skills() == original_count, 'preview automatically installed a skill'
+        same_process, passed = True, True
+        print('PASS: cold/warm OS skill events, fixed-release preview requests, unchanged native PID and no automatic installation; modal rendering not inspected')
+    finally:
+        with ExitStack() as cleanup:
+            cleanup.callback(server.server_close)
+            cleanup.callback(server.shutdown)
+            cleanup.callback(stop_native_app, exe)
+            evidence = {'platform': platform, 'passed': passed, 'osEventsReceived': count_receipts() - original_receipts,
+                'fixedReleasePreviewsRequested': sum(reads[version] > 0 for version in ('v1', 'v2')),
+                'archiveDownloads': reads['archive'], 'installedSkillCountBefore': original_count, 'installedSkillCountAfter': count_skills(),
+                'sameNativeProcess': same_process, 'visualConfirmationVerified': False}
+            evidence_path = Path(__file__).resolve().parents[1] / 'dist' / f'BeefTV-installer-skill-links-{platform}.json'
+            evidence_path.parent.mkdir(exist_ok=True)
+            evidence_path.write_text(json.dumps(evidence, indent=2) + '\n')
 
 
 def concurrent_windows_install(installer, installed):
@@ -395,6 +562,7 @@ def smoke(args):
                 import winreg
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV') as key:
                     assert winreg.QueryValueEx(key, 'InstallLocation')[0] == str(installed)
+                verify_windows_skill_protocol(installed)
                 menu = Path(os.environ['APPDATA']) / 'Microsoft/Windows/Start Menu/Programs/BeefTV'
                 assert (menu / 'BeefTV.lnk').is_file()
                 assert (menu / 'Uninstall.lnk').is_file()
@@ -407,6 +575,7 @@ def smoke(args):
                 while installed.exists() and time.monotonic() < deadline:
                     time.sleep(.5)
                 assert not installed.exists(), 'uninstall left shipped files or runtime directories'
+                assert windows_skill_protocol_command() is None, 'uninstall left its own skill URL registration'
         elif args.platform.startswith('darwin-'):
             data = home / 'Library/Application Support/BeefTV'
             installed = root / 'Applications/BeefTV.app'
@@ -487,6 +656,7 @@ def smoke(args):
         if args.platform == 'windows-amd64':
             probe_cache(helper, profile, 'read', env, root, cleanup)
         verify_data(data)
+        smoke_skill_protocol(args.platform, installed, installed / relative_exe, env, data, root)
         uninstall()
         verify_data(data)
         print('PASS: portable migration, native installed startup, full payload, overwrite, uninstall and reinstall preserve project rows, settings, files and draft sentinels; no paid generation')

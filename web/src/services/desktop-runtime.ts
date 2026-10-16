@@ -101,7 +101,7 @@ export async function bootstrapDesktopRuntime() {
             // Wails can expose the WebView before generated bindings settle.
         }
     }
-    if (!config && window.location?.protocol === "wails:") {
+    if (!config && (window.location?.protocol === "wails:" || window.location?.origin === "http://wails.localhost")) {
         const response = await fetch("/__desktop/runtime-config", { cache: "no-store" });
         if (!response.ok) throw new Error(`Desktop runtime bootstrap failed: ${response.status}`);
         const candidate = await response.json();

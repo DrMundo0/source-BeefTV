@@ -1,6 +1,9 @@
 import errno
 import importlib.util
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import urllib.error
 import unittest
 from unittest.mock import MagicMock, patch
@@ -32,6 +35,18 @@ class WebViewCloseTests(unittest.TestCase):
 
 
 class WindowsInstallerContractTests(unittest.TestCase):
+    def test_skill_protocol_registration_is_per_user_and_uninstall_checks_the_owner(self):
+        text = (Path(__file__).parent / 'installers/windows.nsi').read_text(encoding='utf-8-sig')
+        command = "'$\\\"$INSTDIR\\BeefTV.exe$\\\" $\\\"%1$\\\"'"
+        self.assertIn('WriteRegStr HKCU "Software\\Classes\\beeftv" "URL Protocol" ""', text)
+        self.assertIn('WriteRegStr HKCU "Software\\Classes\\beeftv\\shell\\open\\command" "" ' + command, text)
+        uninstall = text.split('Section "Uninstall"', 1)[1]
+        owner_check = '${If} $0 == ' + command
+        self.assertIn('ReadRegStr $0 HKCU "Software\\Classes\\beeftv\\shell\\open\\command" ""', uninstall)
+        guarded = uninstall.split(owner_check, 1)[1].split('${EndIf}', 1)[0]
+        self.assertIn('DeleteRegKey HKCU "Software\\Classes\\beeftv"', guarded)
+        self.assertEqual(text.count('DeleteRegKey HKCU "Software\\Classes\\beeftv"'), 1)
+
     def test_windows_nsi_uses_utf8_bom_and_streamlined_direct_install(self):
         nsi_path = Path(__file__).resolve().parent / 'installers/windows.nsi'
         raw = nsi_path.read_bytes()
@@ -69,6 +84,19 @@ class WindowsInstallerContractTests(unittest.TestCase):
             self.assertIn('(UTF8)', result.stdout)
             self.assertNotIn('warning', result.stdout.lower())
             self.assertEqual(len(list(out_dir.glob('BeefTV-*-windows-amd64-setup.exe'))), 1)
+
+
+class NativeProtocolProcessTests(unittest.TestCase):
+    @unittest.skipIf(os.name == 'nt', 'Windows observer runs against the installed candidate in native CI')
+    def test_observer_reads_the_exact_executable_pid(self):
+        exe = Path(shutil.which('sleep')).resolve()
+        process = subprocess.Popen([str(exe), '5'])
+        try:
+            self.assertIn(process.pid, smoke.native_app_pids(exe))
+            self.assertEqual(smoke.native_app_pids(exe.with_name('not-the-candidate')), [])
+        finally:
+            process.terminate()
+            process.wait(timeout=10)
 
 
 if __name__ == '__main__':

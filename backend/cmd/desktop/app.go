@@ -251,7 +251,7 @@ func (a *DesktopApp) startup(ctx context.Context) {
 			a.acceptSkillLink(arg)
 		}
 	}
-	if err := a.start(ctx); err != nil {
+	if err := prepareDesktopApp(ctx, a); err != nil {
 		log.Printf("启动本地后端失败: %v", err)
 		wailsruntime.LogErrorf(ctx, "启动本地后端失败: %v", err)
 		wailsruntime.Quit(ctx)

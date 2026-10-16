@@ -39,14 +39,8 @@ func main() {
 	if err := configureDesktopTemp(dataDir); err != nil {
 		log.Fatal(err)
 	}
-	startupErrorPath := filepath.Join(dataDir, "startup-error.log")
-	if err := prepareDesktopApp(app); err != nil {
-		_ = os.MkdirAll(dataDir, 0o755)
-		_ = os.WriteFile(startupErrorPath, []byte(err.Error()+"\n"), 0o600)
-		log.Fatalf("启动本地后端失败: %v", err)
-	}
-	_ = os.Remove(startupErrorPath)
-
+	// Wails must make its single-instance decision before opening the database
+	// or starting workers. OnStartup and the asset handler prepare the runtime.
 	err = wails.Run(desktopAppOptions(app))
 	if err != nil {
 		log.Fatal(err)
@@ -91,8 +85,15 @@ func desktopAppOptions(app *DesktopApp) *options.App {
 	}
 }
 
-func prepareDesktopApp(app *DesktopApp) error {
-	return app.start(context.Background())
+func prepareDesktopApp(ctx context.Context, app *DesktopApp) error {
+	startupErrorPath := filepath.Join(app.dataDir, "startup-error.log")
+	if err := app.start(ctx); err != nil {
+		_ = os.MkdirAll(app.dataDir, 0o755)
+		_ = os.WriteFile(startupErrorPath, []byte(err.Error()+"\n"), 0o600)
+		return err
+	}
+	_ = os.Remove(startupErrorPath)
+	return nil
 }
 
 func defaultDataDir() (string, error) {
