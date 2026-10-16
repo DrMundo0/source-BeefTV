@@ -11,6 +11,7 @@ let running: string | null = null;
 let hydrate: (context: any) => Promise<any> = async (context) => context;
 let compatible = true;
 const react = await import("react");
+mock.module("@/lib/canvas/canvas-generation-config", () => ({ resolvedCanvasGenerationRequirements: (config: any, node: any, capability: string, input: any) => ({ capability, input, videoSeconds: config.videoSeconds, videoOperation: node?.metadata?.videoEditOperation }) }));
 mock.module("react", () => ({ ...react, default: react.default, useCallback: (fn: any) => fn, useRef: (value: any) => ({ current: value }) }));
 mock.module("antd", () => ({ App: { useApp: () => ({ modal: { confirm: (input: any) => { confirmations.push(input); return { destroy: () => input.afterClose() }; } }, message: {
     error: (x: string) => errors.push(x), info() {}, warning() {},

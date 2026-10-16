@@ -154,12 +154,7 @@ export async function getCachedResourceBlob(storageKey: string) {
         touchCacheMetaSafely(target);
         return cached;
     }
-    const pending = inFlight.get(`${target.key}:${expected.epoch}`);
-    if (pending) {
-        await pending;
-    } else {
-        await cacheResourceObjectUrl(storageKey, false, true);
-    }
+    await cacheResourceObjectUrl(storageKey, false, true);
     assertUserScope(expected);
     const result = sessionBlobs.get(target.key) || await readPersistedBlob(target);
     assertUserScope(expected);

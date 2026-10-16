@@ -6,6 +6,7 @@ import { strict as assert } from "node:assert";
 const confirmations: { onOk: () => void }[] = [];
 const dispatched: any[] = [];
 const react = await import("react");
+mock.module("@/lib/canvas/canvas-generation-config", () => ({ resolvedCanvasGenerationRequirements: (config: any, node: any, capability: string, input: any) => ({ capability, input, videoSeconds: config.videoSeconds, videoOperation: node?.metadata?.videoEditOperation }) }));
 mock.module("react", () => ({ ...react, default: react.default, useCallback: (fn: any) => fn, useRef: (value: any) => ({ current: value }) }));
 mock.module("antd", () => ({ App: { useApp: () => ({ modal: { confirm: (input: any) => { confirmations.push(input); return { destroy() {} }; } }, message: { loading: () => {}, destroy: () => {}, error: (x: string) => { throw Error(x); }, info: () => {}, warning: () => {} } }) } }));
 mock.module("@/services/diagnostics/client-diagnostics", () => ({ recordDiagnosticEvent: () => {} }));
