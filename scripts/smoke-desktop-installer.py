@@ -352,6 +352,45 @@ def protocol_launcher_diagnostic(result, private_values):
     return f'exit {result.returncode}: {detail or "no diagnostic returned"}'
 
 
+def skill_link_receipt_count(path):
+    return path.read_text(encoding='utf-8').count('收到技能预览请求') if path.exists() else 0
+
+
+def default_application_for_url(uri):
+    import ctypes
+    cf = ctypes.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
+    ls = ctypes.CDLL('/System/Library/Frameworks/CoreServices.framework/CoreServices')
+    cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+    cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+    cf.CFURLCreateWithString.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+    cf.CFURLCreateWithString.restype = ctypes.c_void_p
+    cf.CFURLGetFileSystemRepresentation.argtypes = [ctypes.c_void_p, ctypes.c_ubyte, ctypes.POINTER(ctypes.c_char), ctypes.c_long]
+    cf.CFURLGetFileSystemRepresentation.restype = ctypes.c_ubyte
+    cf.CFErrorGetCode.argtypes = [ctypes.c_void_p]
+    cf.CFErrorGetCode.restype = ctypes.c_long
+    cf.CFRelease.argtypes = [ctypes.c_void_p]
+    cf.CFRelease.restype = None
+    ls.LSCopyDefaultApplicationURLForURL.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_void_p)]
+    ls.LSCopyDefaultApplicationURLForURL.restype = ctypes.c_void_p
+    value = cf.CFStringCreateWithCString(None, uri.encode('utf-8'), 0x08000100)
+    url = cf.CFURLCreateWithString(None, value, None)
+    error = ctypes.c_void_p()
+    result = ls.LSCopyDefaultApplicationURLForURL(url, 0xffffffff, ctypes.byref(error))
+    try:
+        path = None
+        if result:
+            buffer = ctypes.create_string_buffer(32768)
+            if not cf.CFURLGetFileSystemRepresentation(result, 1, buffer, len(buffer)):
+                raise RuntimeError('cannot decode selected handler path')
+            path = os.fsdecode(buffer.value)
+        return {'handlerFound': bool(result), 'applicationPath': path,
+                'errorCode': cf.CFErrorGetCode(error) if error else None}
+    finally:
+        for ref in (result, error, url, value):
+            if ref:
+                cf.CFRelease(ref)
+
+
 def smoke_skill_protocol(platform, installed, exe, env, data, root):
     if not platform.startswith(('darwin-', 'windows-')):
         return
@@ -401,17 +440,20 @@ def smoke_skill_protocol(platform, installed, exe, env, data, root):
         link_env['CANVAS_DESKTOP_BACKEND_ADDR'] = f'127.0.0.1:{listener.getsockname()[1]}'
     link_env['CANVAS_DESKTOP_LAUNCH_TOKEN'] = secrets.token_hex(24)
     receipt = data / 'skill-links.log'
-    count_receipts = lambda: receipt.read_text().count('收到技能预览请求') if receipt.exists() else 0
+    count_receipts = lambda: skill_link_receipt_count(receipt)
     def count_skills():
         with closing(sqlite3.connect(data / 'open_ai_canvas.db')) as db:
             return db.execute('SELECT COUNT(*) FROM skills').fetchone()[0]
     original_count, original_receipts = count_skills(), count_receipts()
     same_process = False
     passed = False
+    launcher_env = dict(env, HOME=os.environ.get('HOME', env['HOME']))
+    private_values = [root, installed, link_env['HOME'], launcher_env['HOME']]
+    private_values += [value for key, value in link_env.items() if key.startswith(('CANVAS_', 'BEEFTV_'))]
     if platform.startswith('darwin-'):
         info = plistlib.loads((installed / 'Contents/Info.plist').read_bytes())
         assert any('beeftv' in entry.get('CFBundleURLSchemes', []) for entry in info.get('CFBundleURLTypes', [])), 'candidate did not declare the skill URL scheme'
-        subprocess.run(['/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', '-f', str(installed)], env=link_env, check=True)
+        subprocess.run(['/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', '-f', str(installed)], env=launcher_env, check=True)
     else:
         verify_windows_skill_protocol(installed)
     try:
@@ -420,6 +462,11 @@ def smoke_skill_protocol(platform, installed, exe, env, data, root):
         for version in ('v1', 'v2'):
             received = count_receipts() + 1
             uri = f'beeftv://skills/install?id=installer-preview&version={version}'
+            if platform.startswith('darwin-'):
+                resolution = default_application_for_url(uri)
+                if not resolution['applicationPath'] or Path(resolution['applicationPath']).resolve() != installed.resolve():
+                    result = subprocess.CompletedProcess([], resolution['errorCode'] or 1, stderr=json.dumps(resolution))
+                    raise RuntimeError('macOS default protocol handler is not the installed candidate; ' + protocol_launcher_diagnostic(result, private_values))
             if os.name == 'nt':
                 command = ['powershell', '-NoProfile', '-Command', f"Start-Process -FilePath '{uri}'"]
             else:
@@ -428,13 +475,11 @@ def smoke_skill_protocol(platform, installed, exe, env, data, root):
                     command += ['--env', f'{name}={link_env[name]}']
                 command += ['-u', uri, '--args', '--data-dir=' + str(data)]
             try:
-                result = subprocess.run(command, env=link_env, capture_output=True, timeout=30)
+                result = subprocess.run(command, env=link_env if os.name == 'nt' else launcher_env, capture_output=True, timeout=30)
             except (OSError, subprocess.SubprocessError):
                 raise RuntimeError('OS protocol launcher failed; command details are omitted') from None
             if result.returncode != 0:
-                private_values = [uri, root, installed, link_env['HOME']]
-                private_values += [value for key, value in link_env.items() if key.startswith(('CANVAS_', 'BEEFTV_'))]
-                detail = protocol_launcher_diagnostic(result, private_values)
+                detail = protocol_launcher_diagnostic(result, [uri, *private_values])
                 raise RuntimeError('OS protocol launcher rejected the preview request; ' + detail)
             deadline = time.monotonic() + 90
             while count_receipts() < received or reads[version] == 0:
@@ -589,21 +634,36 @@ def smoke(args):
                 assert windows_skill_protocol_command() is None, 'uninstall left its own skill URL registration'
         elif args.platform.startswith('darwin-'):
             data = home / 'Library/Application Support/BeefTV'
-            installed = root / 'Applications/BeefTV.app'
+            installed = Path('/Applications/BeefTV.app')
+            if installed.exists() or installed.is_symlink():
+                raise RuntimeError('disposable runner already has BeefTV; refusing to replace it')
             relative_exe = Path('Contents/MacOS/BeefTV')
+            candidate_owned = False
+            lsregister = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
+            def cleanup_macos_candidate():
+                if candidate_owned and (installed.exists() or installed.is_symlink()):
+                    stop_native_app(installed / relative_exe)
+                    subprocess.run([lsregister, '-u', str(installed)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    shutil.rmtree(installed)
+            cleanup.callback(cleanup_macos_candidate)
             def install():
+                nonlocal candidate_owned
                 mount = root / 'mounted'
                 subprocess.run(['hdiutil', 'attach', '-readonly', '-nobrowse', '-mountpoint', str(mount), str(installer)], check=True)
                 try:
                     assert (mount / 'Applications').is_symlink()
                     assert os.readlink(mount / 'Applications') == '/Applications'
                     if installed.exists():
+                        assert candidate_owned, 'refusing to overwrite an unowned candidate'
                         shutil.rmtree(installed)
+                    candidate_owned = True
                     subprocess.run(['ditto', str(mount / 'BeefTV.app'), str(installed)], check=True)
                     subprocess.run(['codesign', '--verify', '--deep', '--strict', str(installed)], check=True)
                 finally:
                     subprocess.run(['hdiutil', 'detach', str(mount)], check=True)
             def uninstall():
+                assert candidate_owned, 'refusing to remove an unowned candidate'
+                subprocess.run([lsregister, '-u', str(installed)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 shutil.rmtree(installed)
         else:
             env['XDG_CONFIG_HOME'] = str(home / '.config')
@@ -637,6 +697,8 @@ def smoke(args):
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_bytes(b'keep webview cache')
         install()
+        if args.platform.startswith('darwin-'):
+            subprocess.run([lsregister, '-u', str(portable)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         shutil.rmtree(portable)
         for iteration in range(2):
             for source in payload.rglob('*'):

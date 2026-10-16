@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 import urllib.error
 import unittest
 from unittest.mock import MagicMock, patch
@@ -87,6 +88,18 @@ class WindowsInstallerContractTests(unittest.TestCase):
 
 
 class NativeProtocolProcessTests(unittest.TestCase):
+    def test_receipts_use_utf8_under_a_windows_legacy_default_encoding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / 'skill-links.log'
+            receipt.write_bytes(('2026-10-17 收到技能预览请求\n' * 2).encode('utf-8'))
+            self.assertEqual(receipt.read_text(encoding='cp1252').count('收到技能预览请求'), 0)
+            original_read = Path.read_text
+            def windows_default_read(path, encoding=None, errors=None):
+                return original_read(path, encoding=encoding or 'cp1252', errors=errors)
+            with patch.object(Path, 'read_text', windows_default_read):
+                self.assertEqual(smoke.skill_link_receipt_count(receipt), 2)
+                self.assertEqual(smoke.skill_link_receipt_count(Path(directory) / 'missing.log'), 0)
+
     def test_launcher_error_retains_os_reason_without_private_command_values(self):
         uri = 'beeftv://skills/install?id=private-skill&version=private-version'
         token = 'temporary-private-launch-token'
