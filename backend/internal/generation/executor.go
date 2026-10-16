@@ -102,7 +102,7 @@ func Execute(ctx context.Context, input Input) (map[string]any, error) {
 		}
 		if input.Mode == "video" || len(input.ReferenceVideos) > 0 || len(input.ReferenceAudios) > 0 {
 			if err := HydrateVideoReferenceMetadata(ctx, userID, &input); err != nil {
-				return nil, err
+				return nil, RequestPreparationError{Cause: err}
 			}
 		}
 		if input.Mode == "video" {

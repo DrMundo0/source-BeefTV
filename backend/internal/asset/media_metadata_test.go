@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"infinite-canvas/backend/internal/mediatools"
+	"infinite-canvas/backend/internal/model"
 )
 
 func audioFixture() []byte {
@@ -95,5 +96,42 @@ func TestBundledMediaMetadataWithoutSystemFFprobe(t *testing.T) {
 	resource, _, err := svc.Store("owner", "audio", "voice.wav", "audio/wav", int64(len(data)), 0, 0, 0, bytes.NewReader(data), nil)
 	if err != nil || resource.DurationMs != 1000 {
 		t.Fatalf("packaged probe ingest: %+v %v", resource, err)
+	}
+}
+
+type deleteBeforeMetadataSave struct {
+	Repository
+	remove func()
+}
+
+func (r deleteBeforeMetadataSave) UpdateResourceMediaMetadata(ctx context.Context, resource *model.Resource) error {
+	r.remove()
+	return r.Repository.UpdateResourceMediaMetadata(ctx, resource)
+}
+
+func TestMetadataProbeCannotRecreateDeletedResource(t *testing.T) {
+	if _, err := mediatools.ResolveFFprobe(); err != nil {
+		t.Skip(err)
+	}
+	svc, repo, _ := newTestDomain(t)
+	data := audioFixture()
+	resource, _, err := svc.Store("owner", "audio", "voice.wav", "audio/wav", int64(len(data)), 0, 0, 0, bytes.NewReader(data), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource.DurationMs = 0
+	if err := repo.SaveResource(resource); err != nil {
+		t.Fatal(err)
+	}
+	svc.repo = deleteBeforeMetadataSave{Repository: svc.repo, remove: func() {
+		if err := repo.DeleteResource("owner", resource.ID); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	if _, err := svc.EnsureMediaMetadata(context.Background(), "owner", resource.ID); err == nil {
+		t.Fatal("deleted resource accepted")
+	}
+	if _, err := repo.ResourceForUser("owner", resource.ID); err == nil {
+		t.Fatal("probe recreated deleted resource")
 	}
 }

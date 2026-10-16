@@ -43,6 +43,12 @@ func TestMissingReferenceMetadataStopsBeforeUpstream(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "probe unavailable") || resources.calls != 1 || hits.Load() != 0 {
 		t.Fatalf("err=%v probes=%d upstream=%d", err, resources.calls, hits.Load())
 	}
+	resources.err = context.DeadlineExceeded
+	_, err = Execute(ctx, Input{Mode: "video", Prompt: "animate", Config: Config{BaseURL: server.URL, APIKey: "key", Model: "video", InterfaceType: "newapi-channel-1"}, ReferenceAudios: []Media{{StorageKey: "resource:legacy"}}})
+	failure := ClassifyError(err)
+	if failure.Uncertain || failure.Category != CategoryInputInaccessible || hits.Load() != 0 {
+		t.Fatalf("local preparation timeout reported as upstream uncertainty: %+v hits=%d", failure, hits.Load())
+	}
 }
 
 func TestHydrateOwnedAudioUsesPersistedProbeOverClientDuration(t *testing.T) {

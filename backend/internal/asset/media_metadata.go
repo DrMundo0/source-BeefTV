@@ -23,6 +23,9 @@ func (s *Service) EnsureMediaMetadata(ctx context.Context, userID, id string) (*
 	}
 	unlock := s.lockWrite(userID, nil, id)
 	defer unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	resource, err := s.ownedResource(userID, id)
 	if err != nil {
 		return nil, err
@@ -40,7 +43,7 @@ func (s *Service) EnsureMediaMetadata(ctx context.Context, userID, id string) (*
 		return nil, err
 	}
 	resource.UpdatedAt = time.Now()
-	if err := s.repo.SaveResource(resource); err != nil {
+	if err := s.repo.UpdateResourceMediaMetadata(ctx, resource); err != nil {
 		return nil, fmt.Errorf("保存媒体检查结果失败：%w", err)
 	}
 	return resource, nil
