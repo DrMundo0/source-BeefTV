@@ -4,7 +4,8 @@ $ErrorActionPreference = "Stop"
 if ($env:OS -ne "Windows_NT") { throw "Native Windows acceptance required" }
 $Runtime = (Resolve-Path -LiteralPath $Runtime).Path
 $root = Split-Path -Parent $PSScriptRoot
-$scratch = Join-Path ([IO.Path]::GetTempPath()) ("beeftv-media-中文 fixture-" + [guid]::NewGuid().ToString("N"))
+$unicodeFixture = [string]([char]0x4e2d) + [char]0x6587
+$scratch = Join-Path ([IO.Path]::GetTempPath()) ("beeftv-media-" + $unicodeFixture + " fixture-" + [guid]::NewGuid().ToString("N"))
 $previousPath = $env:PATH
 $previousFFmpeg = $env:CANVAS_FFMPEG_PATH
 $previousFFprobe = $env:CANVAS_FFPROBE_PATH
@@ -25,11 +26,11 @@ try {
     $env:CANVAS_FFMPEG_PATH = $null
     $env:CANVAS_FFPROBE_PATH = $null
     $env:BEEFTV_TEST_BUNDLED_MEDIA = "1"
-    & (Join-Path $scratch "BeefTV.exe") -test.run '^TestBundledWindowsHEVCWithoutSystemFFmpeg$' -test.v
+    & (Join-Path $scratch "BeefTV.exe") '-test.run=^TestBundledWindowsHEVCWithoutSystemFFmpeg$' '-test.v'
     if ($LASTEXITCODE -ne 0) { throw "Bundled Windows video acceptance failed" }
-    & (Join-Path $scratch "cli\beeftv.exe") -test.run '^TestBundledMediaMetadataWithoutSystemFFprobe$' -test.v
+    & (Join-Path $scratch "cli\beeftv.exe") '-test.run=^TestBundledMediaMetadataWithoutSystemFFprobe$' '-test.v'
     if ($LASTEXITCODE -ne 0) { throw "Bundled Windows audio acceptance failed" }
-    & (Join-Path $scratch "MediaProbe.exe") -test.run '^TestProbeLocalDoesNotFetchPlaylistURLs$' -test.v
+    & (Join-Path $scratch "MediaProbe.exe") '-test.run=^TestProbeLocalDoesNotFetchPlaylistURLs$' '-test.v'
     if ($LASTEXITCODE -ne 0) { throw "Bundled Windows probe network isolation failed" }
 } finally {
     $env:PATH = $previousPath
