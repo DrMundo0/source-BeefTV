@@ -48,7 +48,7 @@ export function peekCachedResourceObjectUrl(storageKey: string) {
     return objectUrls.get(`${userScope}:${resourceId}:file`) || "";
 }
 
-export async function cacheResourceObjectUrl(storageKey: string, reload = false) {
+export async function cacheResourceObjectUrl(storageKey: string, reload = false, priority = false) {
     const expected = captureUserScope();
     const target = cacheTarget(storageKey, expected.userScope);
     if (!target) return "";
@@ -57,7 +57,7 @@ export async function cacheResourceObjectUrl(storageKey: string, reload = false)
         // Explicit image decode recovery must bypass both memory and IndexedDB.
         await inFlight.get(requestKey)?.catch(() => undefined);
         assertUserScope(expected);
-        const blob = await withDownloadSlot(() => downloadResourceBlob(storageKey, target, expected));
+        const blob = await withDownloadSlot(() => downloadResourceBlob(storageKey, target, expected), priority);
         assertUserScope(expected);
         if (!blob) return "";
         const oldUrl = objectUrls.get(target.key);
@@ -72,7 +72,7 @@ export async function cacheResourceObjectUrl(storageKey: string, reload = false)
     const pending = inFlight.get(requestKey);
     if (pending) return pending;
 
-    const task = withDownloadSlot(() => downloadAndCacheResource(storageKey, target, expected)).finally(() => inFlight.delete(requestKey));
+    const task = withDownloadSlot(() => downloadAndCacheResource(storageKey, target, expected), priority).finally(() => inFlight.delete(requestKey));
     inFlight.set(requestKey, task);
     return task;
 }
@@ -105,15 +105,17 @@ export function scheduleResourceBlobCache(storageKey: string, delayMs = 4_000) {
     window.setTimeout(run, Math.max(0, delayMs));
 }
 
-function withDownloadSlot<T>(task: () => Promise<T>) {
+function withDownloadSlot<T>(task: () => Promise<T>, priority = false) {
     return new Promise<T>((resolve, reject) => {
-        downloadQueue.push(() => {
+        const job = () => {
             activeDownloads += 1;
             task().then(resolve, reject).finally(() => {
                 activeDownloads -= 1;
                 runDownloadQueue();
             });
-        });
+        };
+        if (priority) downloadQueue.unshift(job);
+        else downloadQueue.push(job);
         runDownloadQueue();
     });
 }
@@ -149,7 +151,7 @@ export async function getCachedResourceBlob(storageKey: string) {
     if (pending) {
         await pending;
     } else {
-        await cacheResourceObjectUrl(storageKey);
+        await cacheResourceObjectUrl(storageKey, false, true);
     }
     assertUserScope(expected);
     const result = sessionBlobs.get(target.key) || await readPersistedBlob(target);
@@ -169,7 +171,7 @@ async function downloadResourceBlob(storageKey: string, target: ResourceCacheMet
     assertUserScope(expected);
     if (!blob) return null;
     sessionBlobs.set(target.key, blob);
-    if (blob.size <= MAX_CACHE_BYTES) await enqueuePersist(target, blob);
+    if (blob.size <= MAX_CACHE_BYTES) void enqueuePersist(target, blob);
     return blob;
 }
 
