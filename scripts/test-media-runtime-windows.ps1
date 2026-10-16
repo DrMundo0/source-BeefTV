@@ -18,6 +18,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Playback acceptance build failed" }
         & go test -c ./internal/asset -o (Join-Path $scratch "cli\beeftv.exe")
         if ($LASTEXITCODE -ne 0) { throw "Asset acceptance build failed" }
+        & go test -c ./internal/mediatools -o (Join-Path $scratch "MediaProbe.exe")
+        if ($LASTEXITCODE -ne 0) { throw "Probe acceptance build failed" }
     } finally { Pop-Location }
     $env:PATH = "$env:SystemRoot\system32;$env:SystemRoot"
     $env:CANVAS_FFMPEG_PATH = $null
@@ -27,6 +29,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Bundled Windows video acceptance failed" }
     & (Join-Path $scratch "cli\beeftv.exe") -test.run '^TestBundledMediaMetadataWithoutSystemFFprobe$' -test.v
     if ($LASTEXITCODE -ne 0) { throw "Bundled Windows audio acceptance failed" }
+    & (Join-Path $scratch "MediaProbe.exe") -test.run '^TestProbeLocalDoesNotFetchPlaylistURLs$' -test.v
+    if ($LASTEXITCODE -ne 0) { throw "Bundled Windows probe network isolation failed" }
 } finally {
     $env:PATH = $previousPath
     $env:CANVAS_FFMPEG_PATH = $previousFFmpeg

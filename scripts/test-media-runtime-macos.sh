@@ -11,9 +11,12 @@ cp -R "$runtime" "$bundle/Resources/agent-host/media-runtime"
 (
   cd "$root/backend"
   go test -c ./internal/asset -o "$bundle/MacOS/BeefTV"
+  go test -c ./internal/mediatools -o "$bundle/MacOS/MediaProbe"
 )
 for executable in "$bundle/MacOS/BeefTV" "$bundle/MacOS/cli/beeftv"; do
   if [[ "$executable" == */cli/beeftv ]]; then cp "$bundle/MacOS/BeefTV" "$executable"; fi
   env -u CANVAS_FFPROBE_PATH PATH=/usr/bin:/bin:/usr/sbin:/sbin BEEFTV_TEST_BUNDLED_MEDIA=1 \
     "$executable" -test.run '^TestBundledMediaMetadataWithoutSystemFFprobe$' -test.v
 done
+env -u CANVAS_FFPROBE_PATH PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+  "$bundle/MacOS/MediaProbe" -test.run '^TestProbeLocalDoesNotFetchPlaylistURLs$' -test.v

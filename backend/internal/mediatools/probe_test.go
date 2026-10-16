@@ -71,6 +71,30 @@ func TestProbeLocalStopsTimedOutProcess(t *testing.T) {
 	}
 }
 
+func TestAlreadyCanceledProbeDoesNotStartProcess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell process marker fixture")
+	}
+	dir := t.TempDir()
+	tool := filepath.Join(dir, "ffprobe")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\nprintf started > \"$0.started\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "media")
+	if err := os.WriteFile(file, []byte("fixture"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(FFprobePathEnv, tool)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ProbeLocal(ctx, file); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancel: %v", err)
+	}
+	if _, err := os.Stat(tool + ".started"); !os.IsNotExist(err) {
+		t.Fatal("canceled probe started its process")
+	}
+}
+
 func TestBundledFFprobeRelocation(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "中文 install")
 	want := filepath.Join(root, "agent-host", "media-runtime", "ffprobe.exe")

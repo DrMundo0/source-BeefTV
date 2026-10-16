@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"infinite-canvas/backend/internal/mediatools"
 	"infinite-canvas/backend/internal/model"
@@ -133,5 +134,25 @@ func TestMetadataProbeCannotRecreateDeletedResource(t *testing.T) {
 	}
 	if _, err := repo.ResourceForUser("owner", resource.ID); err == nil {
 		t.Fatal("probe recreated deleted resource")
+	}
+}
+
+func TestMetadataLockDoesNotBlockAnotherResourceForSameOwner(t *testing.T) {
+	svc, _, _ := newTestDomain(t)
+	resource, _, err := svc.Store("owner", "audio", "voice.wav", "audio/wav", 3, 0, 0, 1000, bytes.NewReader([]byte("wav")), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock := svc.lockWrite("owner", nil, "another-resource")
+	defer unlock()
+	done := make(chan error, 1)
+	go func() { _, err := svc.EnsureMediaMetadata(context.Background(), "owner", resource.ID); done <- err }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("one resource blocked all metadata reads for its owner")
 	}
 }

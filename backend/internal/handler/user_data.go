@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -180,6 +181,14 @@ func registerUserDataRoutes(r *gin.RouterGroup, svc *app.Service) {
 		if err == nil && c.Query("metadata") == "ensure" {
 			resource, err = svc.EnsureResourceMediaMetadata(c.Request.Context(), user.ID, c.Param("id"))
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					writeFailure(c, 499, 499, "request_cancelled", "检查素材已取消")
+					return
+				}
+				if errors.Is(err, context.DeadlineExceeded) {
+					writeFailure(c, http.StatusRequestTimeout, http.StatusRequestTimeout, app.ReasonTimeout, "检查素材超时，请重试")
+					return
+				}
 				failService(c, err)
 				return
 			}
