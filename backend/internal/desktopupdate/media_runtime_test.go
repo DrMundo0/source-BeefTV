@@ -20,7 +20,7 @@ func TestWindowsMediaRuntimeSwapAndRollback(t *testing.T) {
 			if err := os.MkdirAll(media, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			for _, name := range []string{"ffmpeg.exe", "LICENSE", "README.txt", "manifest.json"} {
+			for _, name := range []string{"ffmpeg.exe", "ffprobe.exe", "LICENSE", "README.txt", "manifest.json"} {
 				if err := os.WriteFile(filepath.Join(media, name), []byte(marker), 0o644); err != nil {
 					t.Fatal(err)
 				}
@@ -98,7 +98,7 @@ func TestWindowsNestedMediaRuntimeSwapAndRollback(t *testing.T) {
 	if err := os.MkdirAll(media, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"ffmpeg.exe", "LICENSE", "README.txt", "manifest.json"} {
+	for _, name := range []string{"ffmpeg.exe", "ffprobe.exe", "LICENSE", "README.txt", "manifest.json"} {
 		if err := os.WriteFile(filepath.Join(media, name), []byte("new"), 0o644); err != nil {
 			t.Fatal(err)
 		}

@@ -103,7 +103,7 @@ func validateWindowsLayout(root string) error {
 	// Accept the earlier standalone layout too, but require complete resources.
 	for _, media := range []string{filepath.Join(root, "agent-host", "media-runtime"), filepath.Join(root, "media-runtime")} {
 		if _, err := os.Lstat(media); err == nil {
-			for _, name := range []string{"ffmpeg.exe", "LICENSE", "README.txt", "manifest.json"} {
+			for _, name := range []string{"ffmpeg.exe", "ffprobe.exe", "LICENSE", "README.txt", "manifest.json"} {
 				if err := requireRegularFile(filepath.Join(media, name), false); err != nil {
 					return fmt.Errorf("更新包视频工具不完整: %w", err)
 				}
