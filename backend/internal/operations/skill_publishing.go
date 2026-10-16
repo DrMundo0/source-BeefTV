@@ -62,7 +62,7 @@ func registerSkillPublishingOps(r *Registry) {
 			return nil, Unsupported("skill_unavailable", "当前工作区无法读取投稿")
 		}
 		v, e := p.SkillPublicationStatus(ctx.UserID, a.PlanID)
-		if e == nil && v.CanvasID != "" && v.CanvasID != a.CanvasID {
+		if e == nil && v.CanvasID != a.CanvasID {
 			return nil, PermissionDenied("publication_canvas_mismatch", "这份投稿不属于当前画布")
 		}
 		return v, mapDomainError(e)

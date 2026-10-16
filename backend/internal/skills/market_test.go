@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -90,9 +91,15 @@ func TestPublicationRequiresTwoSpecificUserConfirmations(t *testing.T) {
 	pin := installAgentSkill(t, s, map[string]string{"SKILL.md": "---\nname: Publish test\ndescription: Preview before uploading\n---\nDo the requested task."})
 	calls, uploads, submits := 0, 0, 0
 	revision := int64(1)
+	var archive []byte
+	var draft skillhub.Draft
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
+		draft.SubmissionID, draft.Revision, draft.Status = "submission-one", revision, "draft"
 		data := any(skillhub.Draft{SubmissionID: "submission-one", Revision: revision, Status: "draft"})
+		if uploads > 0 {
+			data = draft
+		}
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/uploads"):
 			uploads++
@@ -100,11 +107,16 @@ func TestPublicationRequiresTwoSpecificUserConfirmations(t *testing.T) {
 				t.Error(e)
 			}
 			revision++
-			data = skillhub.Draft{SubmissionID: "submission-one", Revision: revision, Status: "draft"}
+			draft.Revision = revision
+			data = draft
 		case strings.HasSuffix(r.URL.Path, "/validate"):
-			data = skillhub.Draft{SubmissionID: "submission-one", Revision: revision, Status: "ready_to_submit"}
+			draft.Status = "ready_to_submit"
+			data = draft
 		case strings.HasSuffix(r.URL.Path, "/preview"):
-			data = skillhub.Preview{SubmissionID: "submission-one", Revision: revision, PreviewDigest: "preview-one"}
+			data = skillhub.Preview{SubmissionID: "submission-one", Revision: revision, PreviewDigest: "preview-one", Files: draft.Files, Metadata: draft.Metadata}
+		case strings.HasSuffix(r.URL.Path, "/archive"):
+			w.Write(archive)
+			return
 		case strings.HasSuffix(r.URL.Path, "/submit"):
 			submits++
 			data = skillhub.Draft{SubmissionID: "submission-one", Revision: revision, Status: "submitted"}
@@ -120,6 +132,12 @@ func TestPublicationRequiresTwoSpecificUserConfirmations(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	file, _ := s.planFile("owner", plan.ID)
+	archive, e = os.ReadFile(strings.TrimSuffix(file, ".json") + ".zip")
+	if e != nil {
+		t.Fatal(e)
+	}
+	draft = skillhub.Draft{Metadata: plan.Metadata, Files: plan.Files, ContentHash: plan.ContentHash, ArchiveSHA256: plan.ArchiveSHA256, ArchiveBytes: int64(len(archive))}
 	if calls != 0 {
 		t.Fatal("preparing uploaded content")
 	}

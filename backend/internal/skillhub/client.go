@@ -64,6 +64,9 @@ type Catalog struct {
 	PageSize int       `json:"pageSize"`
 }
 type Draft struct {
+	ContentHash   string   `json:"contentHash"`
+	ArchiveSHA256 string   `json:"archiveSha256"`
+	ArchiveBytes  int64    `json:"archiveBytes"`
 	SubmissionID  string   `json:"submissionId"`
 	Revision      int64    `json:"revision"`
 	Status        string   `json:"status"`
@@ -217,7 +220,10 @@ func (c *Client) JSON(ctx context.Context, method, route, token, key string, inp
 }
 
 func (c *Client) Archive(ctx context.Context, route string) ([]byte, error) {
-	res, err := c.Request(ctx, "GET", route, "", "", "", nil)
+	return c.ArchiveWithToken(ctx, route, "")
+}
+func (c *Client) ArchiveWithToken(ctx context.Context, route, token string) ([]byte, error) {
+	res, err := c.Request(ctx, "GET", route, token, "", "", nil)
 	if err != nil {
 		return nil, err
 	}

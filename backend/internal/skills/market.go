@@ -104,8 +104,13 @@ func (s *Service) InstallMarket(ctx context.Context, user, id, version string) (
 		return nil, e
 	}
 	a.Metadata.Version = r.VersionLabel
+	a.Metadata.MarketRelease = r
 	if old == nil {
-		return s.createSkillFromArchive(user, a, SkillInstallRequest{Name: r.Name, Description: r.Description, IsPrivate: true}, "market", c.BaseURL()+"/skills/"+id, id, "", version, false)
+		sourceURL := r.SourceURL
+		if sourceURL == "" {
+			sourceURL = c.BaseURL() + "/skills/" + id
+		}
+		return s.createSkillFromArchive(user, a, SkillInstallRequest{Name: r.Name, Description: r.Description, IsPrivate: true}, "market", sourceURL, id, "", version, false)
 	}
 	if old.ContentHash == r.ContentHash && old.SourceCommit == r.ReleaseID {
 		return s.SkillDetail(user, old.ID)
@@ -117,7 +122,7 @@ func (s *Service) InstallMarket(ctx context.Context, user, id, version string) (
 	old.Instruction = string(a.Files["SKILL.md"])
 	old.Name = r.Name
 	old.Description = r.Description
-	if e = s.addSkillArchiveVersion(old, a, "market", old.SourceURL, id, "", version, false); e != nil {
+	if e = s.addSkillArchiveVersion(old, a, "market", r.SourceURL, id, "", version, false); e != nil {
 		return nil, e
 	}
 	return s.SkillDetail(user, old.ID)
@@ -152,7 +157,17 @@ func (s *Service) RollbackMarket(user, id, version string) (*SkillItem, error) {
 	if e != nil {
 		return nil, e
 	}
-	if e = s.repo.SwitchSkillVersion(user, id, version, resource.Instruction); e != nil {
+	name, description, sourceURL := sk.Name, sk.Description, sk.SourceURL
+	if sk.SourceType == "market" {
+		release, err := marketReleaseMetadata(v.MarketReleaseJSON)
+		if err != nil {
+			return nil, err
+		}
+		if release != nil {
+			name, description, sourceURL = release.Name, release.Description, release.SourceURL
+		}
+	}
+	if e = s.repo.SwitchSkillVersion(user, id, version, resource.Instruction, name, description, sourceURL); e != nil {
 		return nil, e
 	}
 	return s.SkillDetail(user, id)
@@ -182,6 +197,7 @@ func (s *Service) ForkMarket(user, id string) (*SkillItem, error) {
 	if e != nil {
 		return nil, e
 	}
+	a.Metadata.MarketRelease = bundle.MarketRelease
 	name := source.Name
 	if len([]rune(name)) > 72 {
 		name = string([]rune(name)[:72])

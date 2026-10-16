@@ -20,6 +20,7 @@ import (
 )
 
 type PublishPlan struct {
+	Source        *skillhub.Release `json:"source,omitempty"`
 	Instruction   string            `json:"instruction"`
 	CanvasID      string            `json:"canvasId,omitempty"`
 	ID            string            `json:"planId"`
@@ -80,6 +81,23 @@ func (s *Service) PublishPrepareInCanvas(user, id, canvas string, meta skillhub.
 	if meta.VersionLabel == "" {
 		meta.VersionLabel = bundle.Version
 	}
+	if source := bundle.MarketRelease; source != nil {
+		if meta.License == "" {
+			meta.License = source.License
+		}
+		if meta.SourceURL == "" {
+			meta.SourceURL = source.SourceURL
+			if meta.SourceURL == "" {
+				meta.SourceURL = "https://beeftv.app/skills/" + source.SkillID + "?release=" + source.ReleaseID
+			}
+		}
+		if meta.Requirements == nil {
+			meta.Requirements = source.Requirements
+		}
+		if meta.MinClientVersion == "" {
+			meta.MinClientVersion = source.MinClientVersion
+		}
+	}
 	if strings.TrimSpace(meta.License) == "" {
 		return nil, kernel.BadAuthRequest("请为投稿选择许可证")
 	}
@@ -91,7 +109,7 @@ func (s *Service) PublishPrepareInCanvas(user, id, canvas string, meta skillhub.
 	}
 	sort.Slice(manifest, func(i, j int) bool { return manifest[i].Path < manifest[j].Path })
 	sum := sha256.Sum256(data)
-	p := &PublishPlan{Instruction: string(files["SKILL.md"]), CanvasID: canvas, ID: kernel.NewID(), SkillID: id, VersionID: bundle.VersionID, ContentHash: bundle.ContentHash, ArchiveSHA256: hex.EncodeToString(sum[:]), Metadata: meta, Files: manifest, Status: "awaiting_upload_confirmation", CreatedAt: time.Now()}
+	p := &PublishPlan{Source: bundle.MarketRelease, Instruction: string(files["SKILL.md"]), CanvasID: canvas, ID: kernel.NewID(), SkillID: id, VersionID: bundle.VersionID, ContentHash: bundle.ContentHash, ArchiveSHA256: hex.EncodeToString(sum[:]), Metadata: meta, Files: manifest, Status: "awaiting_upload_confirmation", CreatedAt: time.Now()}
 	file, _ := s.planFile(user, p.ID)
 	if e = os.MkdirAll(filepath.Dir(file), 0700); e != nil {
 		return nil, e
@@ -145,7 +163,7 @@ func (s *Service) PublishUpload(ctx context.Context, user, id, expectedHash stri
 	if p.ArchiveSHA256 != expectedHash {
 		return nil, kernel.NewAppError(409, "待上传文件已变化，请重新确认")
 	}
-	if p.Status == "awaiting_submit_confirmation" || p.Status == "submitted" {
+	if p.Status == "submitted" {
 		return p, nil
 	}
 	c, e := marketClient()
@@ -174,6 +192,9 @@ func (s *Service) PublishUpload(ctx context.Context, user, id, expectedHash stri
 		return nil, e
 	}
 	p.Revision = draft.Revision
+	if p.Preview != nil || p.Status == "needs_preview" || (len(draft.Files) > 0 && draft.ContentHash != "") {
+		return s.refreshPublication(ctx, user, c, token, p)
+	}
 	if draft.Status == "submitted" || draft.Status == "in_review" || draft.Status == "published" {
 		p.Status = draft.Status
 		_ = writeMarketJSON(file, p)
@@ -207,21 +228,7 @@ func (s *Service) PublishUpload(ctx context.Context, user, id, expectedHash stri
 	if e = skillhub.Decode(res, &draft); e != nil {
 		return nil, e
 	}
-	p.Revision = draft.Revision
-	if e = c.JSON(ctx, "POST", "submissions/"+p.SubmissionID+"/validate", token, "", map[string]int64{"revision": p.Revision}, &draft); e != nil {
-		return nil, e
-	}
-	var preview skillhub.Preview
-	if e = c.JSON(ctx, "GET", "submissions/"+p.SubmissionID+"/preview", token, "", nil, &preview); e != nil {
-		return nil, e
-	}
-	p.Preview = &preview
-	p.Revision = preview.Revision
-	p.Status = "awaiting_submit_confirmation"
-	if e = writeMarketJSON(file, p); e != nil {
-		return nil, e
-	}
-	return p, nil
+	return s.refreshPublication(ctx, user, c, token, p)
 }
 func (s *Service) PublishSubmit(ctx context.Context, user, id string, revision int64, digest string) (*PublishPlan, error) {
 	unlock := s.lockMarket(user)
@@ -289,6 +296,19 @@ func (s *Service) PublicationStatus(ctx context.Context, user, id string) (*Publ
 	var d skillhub.Draft
 	if e = c.JSON(ctx, "GET", "submissions/"+p.SubmissionID, token, "", nil, &d); e != nil {
 		return nil, e
+	}
+	if (d.Status == "draft" || d.Status == "ready_to_submit") && p.Preview != nil && d.Revision != p.Preview.Revision {
+		p.Preview = nil
+		p.Instruction = ""
+		p.Metadata = d.Metadata
+		p.Files = d.Files
+		p.Revision = d.Revision
+		p.Status = "needs_preview"
+		f, _ := s.planFile(user, id)
+		if e = writeMarketJSON(f, p); e != nil {
+			return nil, e
+		}
+		return p, nil
 	}
 	if d.Status != "draft" && d.Status != "ready_to_submit" {
 		p.Status = d.Status

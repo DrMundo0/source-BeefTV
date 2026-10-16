@@ -15,7 +15,9 @@ import (
 
 func TestBuiltInAgentPreparesPrivateDraftButCannotUploadOrSubmit(t *testing.T) {
 	env := newAssistantTestEnv(t, nil)
-	if e := database.ConfigurePool(env.service.Database()); e != nil { t.Fatal(e) }
+	if e := database.ConfigurePool(env.service.Database()); e != nil {
+		t.Fatal(e)
+	}
 	owner, e := env.service.LocalWorkspaceOwner()
 	if e != nil {
 		t.Fatal(e)
@@ -82,6 +84,13 @@ func TestBuiltInAgentPreparesPrivateDraftButCannotUploadOrSubmit(t *testing.T) {
 	}
 	if _, e = env.service.SkillsDomain().PublishPlan("other-owner", envelope.Plan.ID); e == nil {
 		t.Fatal("cross-owner plan read")
+	}
+	globalPlan, e := env.service.SkillsDomain().PublishPrepare(owner.ID, draft.SkillID, envelope.Plan.Metadata)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = run("skill.publish.status", "global-plan", map[string]any{"canvasId": env.canvasID, "planId": globalPlan.ID}); e == nil {
+		t.Fatal("model read a skills-page publication unrelated to its canvas")
 	}
 	if writes.Load() != 0 {
 		t.Fatal("model reached cloud write")

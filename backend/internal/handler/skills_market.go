@@ -129,6 +129,10 @@ func registerSkillMarketRoutes(r *gin.RouterGroup, svc *app.Service) {
 		v, e := svc.SkillsDomain().PublishPlan(owner(c), c.Param("id"))
 		marketReply(c, v, e)
 	})
+	m.POST("/publish-plans/:id/refresh", func(c *gin.Context) {
+		v, e := svc.SkillsDomain().RefreshPublication(c.Request.Context(), owner(c), c.Param("id"))
+		marketReply(c, v, e)
+	})
 	m.POST("/publish-plans/:id/upload", func(c *gin.Context) {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4096)
 		var a struct {

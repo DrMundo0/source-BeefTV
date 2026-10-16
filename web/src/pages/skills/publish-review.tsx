@@ -1,6 +1,6 @@
 import { Alert, Button, Divider, Modal } from "antd";
 import { useEffect, useState } from "react";
-import { openPublishingAuthorization, publishingAuthorization, startPublishingAuthorization, submitPublication, uploadPublication, type PublishPlan } from "@/services/api/skill-market";
+import { openPublishingAuthorization, publishingAuthorization, refreshPublication, startPublishingAuthorization, submitPublication, uploadPublication, type PublishPlan } from "@/services/api/skill-market";
 
 export function PublishReview({ plan, onClose, onChanged }: { plan: PublishPlan | null; onClose: () => void; onChanged: (plan: PublishPlan) => void }) {
     const [busy, setBusy] = useState(false);
@@ -21,7 +21,9 @@ export function PublishReview({ plan, onClose, onChanged }: { plan: PublishPlan 
                         setError("");
                     }
                 })
-                .catch((e) => { if (active) setError(e instanceof Error ? e.message : "投稿授权暂时无法确认，请重试"); });
+                .catch((e) => {
+                    if (active) setError(e instanceof Error ? e.message : "投稿授权暂时无法确认，请重试");
+                });
         }, 5000);
         return () => {
             active = false;
@@ -29,8 +31,11 @@ export function PublishReview({ plan, onClose, onChanged }: { plan: PublishPlan 
         };
     }, [authURL]);
     const preview = plan?.preview;
+    const metadata = preview?.metadata || plan?.metadata;
     const sending = plan?.status === "awaiting_submit_confirmation";
     const finished = ["submitted", "in_review", "published"].includes(plan?.status || "");
+    const closed = finished || ["rejected", "withdrawn"].includes(plan?.status || "");
+    const needsPreview = plan?.status === "needs_preview";
     const act = async () => {
         if (!plan) return;
         setBusy(true);
@@ -46,12 +51,28 @@ export function PublishReview({ plan, onClose, onChanged }: { plan: PublishPlan 
     return (
         <Modal
             open={Boolean(plan)}
-            title={finished ? "投稿进度" : sending ? "确认公开内容并送审" : "确认上传这份技能"}
+            title={closed ? "投稿进度" : needsPreview ? "稿件已变化" : sending ? "确认公开内容并送审" : "确认上传这份技能"}
             onCancel={onClose}
             footer={
                 <>
                     <Button onClick={onClose}>稍后处理</Button>
-                    {!finished && (
+                    {plan?.submissionId && !finished && (
+                        <Button
+                            loading={busy}
+                            onClick={() => {
+                                if (!plan) return;
+                                setBusy(true);
+                                setError("");
+                                void refreshPublication(plan)
+                                    .then(onChanged)
+                                    .catch((e) => setError(e instanceof Error ? e.message : "预览暂时无法读取"))
+                                    .finally(() => setBusy(false));
+                            }}
+                        >
+                            重新读取预览
+                        </Button>
+                    )}
+                    {!closed && !needsPreview && (
                         <Button type="primary" loading={busy} onClick={() => void act()}>
                             {sending ? "确认送审" : "确认上传"}
                         </Button>
@@ -60,18 +81,29 @@ export function PublishReview({ plan, onClose, onChanged }: { plan: PublishPlan 
             }
             destroyOnHidden
         >
-            {plan && (
+            {plan && metadata && (
                 <div className="space-y-4">
-                    <p className="text-base font-semibold">{plan.metadata.name}</p>
-                    <p className="text-muted-foreground">{plan.metadata.description}</p>
+                    <p className="text-base font-semibold">{metadata.name}</p>
+                    <p className="text-muted-foreground">{metadata.description}</p>
                     <p>作者 {preview?.author || "将使用授权账号的署名"}</p>
+                    {plan.source && (
+                        <p className="text-sm text-muted-foreground">
+                            改写来源：{plan.source.name} · {plan.source.author} · {plan.source.license}。请保留原作要求的署名和许可证。
+                        </p>
+                    )}
                     <p>
-                        版本 {plan.metadata.versionLabel} · {plan.metadata.license}
+                        版本 {metadata.versionLabel} · {metadata.license}
                     </p>
-                    <Alert type="info" showIcon title={sending ? "以下技能信息、文件和示例将在审核通过后公开。" : "以下文件将上传为私人稿件。上传后还需确认公开内容并送审。"} />
-                    {(preview?.metadata || plan.metadata).sourceUrl && <p className="break-all">来源：{(preview?.metadata || plan.metadata).sourceUrl}</p>}
-                    {(preview?.metadata || plan.metadata).requirements.length > 0 && <p>所需能力：{(preview?.metadata || plan.metadata).requirements.join("、")}</p>}
-                    {(preview?.metadata || plan.metadata).minClientVersion && <p>最低应用版本：{(preview?.metadata || plan.metadata).minClientVersion}</p>}
+                    <Alert type="info" showIcon title={finished ? "这份稿件已送交审核，可在我的创作查看进度。" : sending ? "以下技能信息、文件和示例将在审核通过后公开。" : "以下文件将上传为私人稿件。上传后还需确认公开内容并送审。"} />
+                    {needsPreview && <Alert type="warning" title="稿件已在其他入口修改，请重新读取预览后再确认送审。" />}
+                    {plan.submissionId && (
+                        <a href={`https://beeftv.app/skills/publish?submission=${encodeURIComponent(plan.submissionId)}`} target="_blank" rel="noreferrer">
+                            在官网查看或继续编辑
+                        </a>
+                    )}
+                    {metadata.sourceUrl && <p className="break-all">来源：{metadata.sourceUrl}</p>}
+                    {metadata.requirements.length > 0 && <p>所需能力：{metadata.requirements.join("、")}</p>}
+                    {metadata.minClientVersion && <p>最低应用版本：{metadata.minClientVersion}</p>}
                     {plan.instruction && (
                         <details>
                             <summary className="cursor-pointer">查看技能正文</summary>

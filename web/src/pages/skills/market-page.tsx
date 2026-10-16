@@ -245,7 +245,14 @@ export default function SkillMarketPage() {
                                     </small>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
-                                    <Button onClick={() => setPrepare(s)}>投稿</Button>
+                                    <Button
+                                        onClick={() => {
+                                            setLicense(s.marketRelease?.license || "CC-BY-4.0");
+                                            setPrepare(s);
+                                        }}
+                                    >
+                                        投稿
+                                    </Button>
                                     {s.sourceType === "market" && (
                                         <Button
                                             onClick={() =>
@@ -427,6 +434,7 @@ export default function SkillMarketPage() {
                     value={license}
                     onChange={setLicense}
                     options={[
+                        ...(!["CC-BY-4.0", "CC0-1.0", "MIT"].includes(prepare?.marketRelease?.license ?? "") && prepare?.marketRelease?.license ? [{ value: prepare.marketRelease.license, label: `保留原许可 (${prepare.marketRelease.license})` }] : []),
                         { value: "CC-BY-4.0", label: "署名后可使用与修改 (CC BY 4.0)" },
                         { value: "CC0-1.0", label: "无保留贡献 (CC0)" },
                         { value: "MIT", label: "MIT" },
