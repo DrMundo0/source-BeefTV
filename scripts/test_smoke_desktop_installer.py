@@ -87,6 +87,18 @@ class WindowsInstallerContractTests(unittest.TestCase):
 
 
 class NativeProtocolProcessTests(unittest.TestCase):
+    def test_launcher_error_retains_os_reason_without_private_command_values(self):
+        uri = 'beeftv://skills/install?id=private-skill&version=private-version'
+        token = 'temporary-private-launch-token'
+        root = '/tmp/private-workspace'
+        result = subprocess.CompletedProcess([], 1, stderr=f'kLSApplicationNotFoundErr (-10814): {uri} HOME={root} CANVAS_DESKTOP_LAUNCH_TOKEN={token}\n'.encode())
+        detail = smoke.protocol_launcher_diagnostic(result, [uri, token, root])
+        self.assertIn('exit 1', detail)
+        self.assertIn('kLSApplicationNotFoundErr (-10814)', detail)
+        for private in [uri, token, root, 'private-skill']:
+            self.assertNotIn(private, detail)
+        self.assertNotIn('\n', detail)
+
     @unittest.skipIf(os.name == 'nt', 'Windows observer runs against the installed candidate in native CI')
     def test_observer_reads_the_exact_executable_pid(self):
         exe = Path(shutil.which('sleep')).resolve()

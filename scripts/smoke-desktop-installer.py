@@ -344,6 +344,14 @@ def stop_native_app(exe):
         time.sleep(.5)
 
 
+def protocol_launcher_diagnostic(result, private_values):
+    detail = result.stderr.decode('utf-8', errors='replace') if isinstance(result.stderr, bytes) else (result.stderr or '')
+    for value in sorted({str(value) for value in private_values if value}, key=len, reverse=True):
+        detail = detail.replace(value, '[redacted]')
+    detail = ' '.join(''.join(char if char.isprintable() else ' ' for char in detail).split())[:1000]
+    return f'exit {result.returncode}: {detail or "no diagnostic returned"}'
+
+
 def smoke_skill_protocol(platform, installed, exe, env, data, root):
     if not platform.startswith(('darwin-', 'windows-')):
         return
@@ -403,7 +411,7 @@ def smoke_skill_protocol(platform, installed, exe, env, data, root):
     if platform.startswith('darwin-'):
         info = plistlib.loads((installed / 'Contents/Info.plist').read_bytes())
         assert any('beeftv' in entry.get('CFBundleURLSchemes', []) for entry in info.get('CFBundleURLTypes', [])), 'candidate did not declare the skill URL scheme'
-        subprocess.run(['/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', '-f', str(installed)], check=True)
+        subprocess.run(['/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', '-f', str(installed)], env=link_env, check=True)
     else:
         verify_windows_skill_protocol(installed)
     try:
@@ -424,7 +432,10 @@ def smoke_skill_protocol(platform, installed, exe, env, data, root):
             except (OSError, subprocess.SubprocessError):
                 raise RuntimeError('OS protocol launcher failed; command details are omitted') from None
             if result.returncode != 0:
-                raise RuntimeError('OS protocol launcher rejected the preview request; command details are omitted')
+                private_values = [uri, root, installed, link_env['HOME']]
+                private_values += [value for key, value in link_env.items() if key.startswith(('CANVAS_', 'BEEFTV_'))]
+                detail = protocol_launcher_diagnostic(result, private_values)
+                raise RuntimeError('OS protocol launcher rejected the preview request; ' + detail)
             deadline = time.monotonic() + 90
             while count_receipts() < received or reads[version] == 0:
                 if time.monotonic() > deadline:
