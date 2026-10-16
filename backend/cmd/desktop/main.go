@@ -60,6 +60,7 @@ func desktopAppOptions(app *DesktopApp) *options.App {
 		Height:           960,
 		BackgroundColour: &options.RGBA{R: 13, G: 15, B: 18, A: 255},
 		Mac: &mac.Options{
+			OnUrlOpen: app.acceptSkillLink,
 			// WKWebView disables element fullscreen by default, including the
 			// video player's fullscreen control.
 			Preferences: &mac.Preferences{FullscreenEnabled: mac.Enabled},
@@ -79,7 +80,12 @@ func desktopAppOptions(app *DesktopApp) *options.App {
 			Assets:  assets,
 			Handler: desktopAssetHandler{app: app},
 		},
-		OnStartup:  app.startup,
+		OnStartup: app.startup,
+		SingleInstanceLock: &options.SingleInstanceLock{UniqueId: "beeftv.desktop.skill-links.v1", OnSecondInstanceLaunch: func(data options.SecondInstanceData) {
+			for _, arg := range data.Args {
+				app.acceptSkillLink(arg)
+			}
+		}},
 		OnShutdown: app.shutdown,
 		Bind:       []interface{}{app},
 	}

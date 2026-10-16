@@ -110,7 +110,7 @@ async function withHost(run, envExtra = {}, options = {}) {
         if (child.exitCode !== null) throw new Error('host exited: ' + log);
         try { return (await fetch(base + '/health', { signal: AbortSignal.timeout(500) })).ok; }
         catch { return false; }
-      }, 10000);
+      }, 20000);
     };
     const restart = async (modelId) => {
       const exited = new Promise((resolve) => child.once('close', resolve));

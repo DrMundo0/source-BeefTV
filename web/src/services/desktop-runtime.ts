@@ -27,6 +27,8 @@ export type DesktopUpdateState = {
 };
 
 export type DesktopRuntimeBinding = {
+	OpenSkillPublishingURL?: (url: string) => Promise<void>;
+	ConsumeSkillInstallLink?: () => Promise<string>;
 	ReferenceStorageSettings?: () => Promise<ReferenceStorageConfig>;
 	SaveReferenceStorage?: (config: ReferenceStorageConfig & { secretAccessKey: string }) => Promise<ReferenceStorageConfig>;
 	UploadReferenceMedia?: (ids: string[]) => Promise<Record<string,string>>;

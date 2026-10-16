@@ -286,6 +286,27 @@ func (s *Service) updateSingleMarkdownSkill(skill *model.Skill, req SkillMutatio
 	if err != nil {
 		return err
 	}
+	// Editing a private fork keeps its references and license alongside SKILL.md.
+	if skill.CurrentVersionID != "" {
+		bundle, e := s.SkillPackageBundle(skill.OwnerID, skill.ID)
+		if e != nil {
+			return e
+		}
+		for _, f := range bundle.Files {
+			if f.Path == "SKILL.md" {
+				continue
+			}
+			b, e := base64.StdEncoding.DecodeString(f.ContentBase64)
+			if e != nil {
+				return e
+			}
+			archive.Files[f.Path] = b
+		}
+		archive, err = finalizeSkillArchive(archive.Files, archive.Metadata)
+		if err != nil {
+			return err
+		}
+	}
 	skill.Instruction = req.Instruction
 	return s.addSkillArchiveVersion(skill, archive, "markdown", req.MarkdownURL, "", "", "", false)
 }
@@ -371,7 +392,13 @@ func (s *Service) addSkillArchiveVersion(skill *model.Skill, archive skillPackag
 	skill.AutoUpdate = autoUpdate
 	skill.LastCheckedAt = &now
 	skill.LastSyncedAt = &now
-	if err := s.repo.AddSkillVersion(skill, version, files); err != nil {
+	var saveErr error
+	if sourceType == "market" {
+		saveErr = s.repo.AddMarketSkillVersion(skill, version, files)
+	} else {
+		saveErr = s.repo.AddSkillVersion(skill, version, files)
+	}
+	if err := saveErr; err != nil {
 		_ = os.Remove(filepath.Join(s.dataDir, "skill-packages", filepath.FromSlash(packageKey)))
 		return err
 	}
