@@ -27,7 +27,12 @@ const model = encodeChannelModel(channel.id, selectedModel);
 useConfigStore.getState().replaceConfig({ ...defaultConfig, channels: [channel], model, videoModel: model, videoModels: [model], models: [model], videoSeconds: "5", size: "16:9" });
 await recordConfirmedCanvasCommit(project);
 useCanvasStore.setState({ projects: [project], hydrated: true });
-const harness = (window as any).__customer = { settled: false, error: "", controller: undefined as AbortController | undefined, nodes: project.nodes, blocked: [] as Promise<string>[], generate: noop, edit: noop, cancel: noop };
+const harness = (window as any).__customer = { settled: false, error: "", messages: [] as string[], controller: undefined as AbortController | undefined, nodes: project.nodes, blocked: [] as Promise<string>[], generate: noop, edit: noop, cancel: noop };
+new MutationObserver(changes => {
+    for (const change of changes) for (const node of change.addedNodes) {
+        if (node instanceof HTMLElement && (node.classList.contains("ant-message-notice") || node.querySelector(".ant-message-notice"))) harness.messages.push(node.textContent || "");
+    }
+}).observe(document.body, { childList: true, subtree: true });
 
 function Harness() {
     const [nodes, setNodesState] = useState<CanvasNodeData[]>(project.nodes);
@@ -63,7 +68,7 @@ function Harness() {
     </>;
 }
 if (params.has("block-cache")) {
-    // Exercise the actual shared cache scheduler with all 16 download slots held.
+    // Queue 16 requests and hold the actual shared scheduler's download slots.
     harness.blocked = Array.from({ length: 16 }, (_, index) => cacheResourceObjectUrl(`resource:blocker-${index}`).catch(() => ""));
 }
 createRoot(document.getElementById("root")!).render(<App><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Harness /></QueryClientProvider></App>);

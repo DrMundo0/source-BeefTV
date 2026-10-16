@@ -13,7 +13,7 @@ beforeAll(async () => {
     const executablePath = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"].find((path): path is string => Boolean(path && existsSync(path)));
     browser = await chromium.launch({ executablePath, headless: true });
 }, 60000);
-afterAll(async () => { for (const state of runtime.contexts.values()) state.release(); await browser?.close(); server?.stop(true); });
+afterAll(async () => { for (const state of runtime.contexts.values()) state.release(); await browser?.close(); runtime?.stop(); });
 
 async function open(scenario: CustomerGenerationScenario, options = "") {
     const { id, state } = runtime.create(scenario);
@@ -37,14 +37,32 @@ for (const scenario of ["five-images", "video-image", "character"] as const) tes
     const { page, state, errors, close } = await open(scenario, "block-cache");
     try {
         await page.waitForFunction(() => (window as any).__customer.blocked.length === 16);
+        await until(() => state.downloads.length >= 4);
         await start(page);
-        await until(() => state.posts.length === 1);
+        await until(() => state.posts.length === 1).catch(async error => {
+            const detail = await page.evaluate(() => ({ stage: document.querySelector("output")?.textContent, messages: (window as any).__customer.messages, settled: (window as any).__customer.settled, error: (window as any).__customer.error }));
+            throw new Error(JSON.stringify(detail), { cause: error });
+        });
         const input = state.posts[0].input;
         expect(input.referenceImages.length).toBe(scenario === "five-images" ? 5 : 1);
         expect(input.referenceVideos.length).toBe(scenario === "video-image" ? 1 : 0);
         expect(input.referenceImages.every((image: any) => image.storageKey?.startsWith("resource:") && image.dataUrl === "")).toBe(true);
         expect(state.downloads.filter(name => !name.startsWith("blocker-"))).toEqual([]);
         expect(await page.evaluate(() => (window as any).__customer.nodes.find((node: any) => node.id === "target").metadata.storageKey)).toBe("resource:previous-result");
+        expect(errors).toEqual([]);
+    } finally { await close(); }
+}, 15000);
+
+test("same-origin HTTP/1 held media downloads leave capacity for the task API", async () => {
+    const { page, state, errors, close } = await open("five-images", "block-cache&same-origin-hang");
+    try {
+        // Six is Chrome's HTTP/1 connection limit. Four active media downloads
+        // must leave room for saving the target and creating its task.
+        await until(() => state.downloads.length >= 4);
+        await start(page);
+        await until(() => state.posts.length === 1);
+        expect(state.downloads.length).toBeLessThanOrEqual(4);
+        expect(state.downloads.every(name => name.startsWith("blocker-"))).toBe(true);
         expect(errors).toEqual([]);
     } finally { await close(); }
 }, 15000);
@@ -106,14 +124,17 @@ test("customer edits during preparation stay on canvas while submitted prompt re
 
 test("customer creation accepted then HTTP response lost refreshes by operation lookup without a second POST", async () => {
     const { page, state, errors, close } = await open("five-images");
+    let lostReceipt = false;
     await page.route("**/api/tasks", async route => {
         if (route.request().method() !== "POST") return route.continue();
         await route.fetch(); // Server admits the real request before the client loses its receipt.
         await route.abort("connectionreset");
+        lostReceipt = true;
     });
     try {
         await start(page);
         await until(() => state.posts.length === 1);
+        await until(() => lostReceipt);
         const operationId = state.posts[0].input.metadata.clientOperationId;
         expect(typeof operationId).toBe("string");
         expect(operationId.length).toBeGreaterThan(8);

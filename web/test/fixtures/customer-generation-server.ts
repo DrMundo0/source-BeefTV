@@ -1,6 +1,6 @@
 import { customerGenerationProject, type CustomerGenerationScenario } from "./customer-generation-scenarios";
 
-const contexts = new Map<string, { project: ReturnType<typeof customerGenerationProject>; posts: any[]; downloads: string[]; lookups: string[]; task?: any; holdCharacter?: boolean; delayReceipt?: boolean; release: () => void; gate: Promise<void> }>();
+const contexts = new Map<string, { project: ReturnType<typeof customerGenerationProject>; posts: any[]; downloads: string[]; lookups: string[]; task?: any; holdCharacter?: boolean; delayReceipt?: boolean; sameOriginHang?: boolean; release: () => void; gate: Promise<void> }>();
 const json = (data: unknown) => Response.json({ code: 0, data, msg: "ok" });
 // Valid 2.5 second PCM file so the browser, rather than a duration stub, probes it.
 function audioWav() {
@@ -20,6 +20,18 @@ export async function startCustomerScenarioServer(options: { port?: number } = {
     } }] });
     if (!build.success) throw new Error(build.logs.join("\n"));
     const script = await build.outputs[0]!.text();
+    // Hold media on another origin. Holding every HTTP/1 connection to the API
+    // would also stall task POSTs before they reach the application, masking the
+    // cache-scheduler dependency that this fixture is intended to exercise.
+    const mediaServer = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+        const id = new URL(request.url).searchParams.get("case") || "";
+        const state = contexts.get(id);
+        if (!state) return new Response("unknown scenario", { status: 404 });
+        await state.gate;
+        return new Response('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>', { headers: {
+            "Content-Type": "image/svg+xml", "Access-Control-Allow-Origin": request.headers.get("origin") || "null", "Access-Control-Allow-Credentials": "true",
+        } });
+    } });
     const server = Bun.serve({ hostname: "127.0.0.1", port: options.port || 0, async fetch(request) {
         const url = new URL(request.url);
         const cookie = request.headers.get("cookie") || "";
@@ -29,7 +41,7 @@ export async function startCustomerScenarioServer(options: { port?: number } = {
         if (!state) return new Response("unknown scenario", { status: 404 });
         if (url.pathname === "/_scenario/state") return json({ project: state.project, posts: state.posts, downloads: state.downloads, lookups: state.lookups });
         if (url.pathname === "/_scenario/release") { state.release(); return json({ released: true }); }
-        if (url.pathname === "/") { state.holdCharacter = url.searchParams.has("hold-character"); state.delayReceipt = url.searchParams.has("lose-receipt"); }
+        if (url.pathname === "/") { state.holdCharacter = url.searchParams.has("hold-character"); state.delayReceipt = url.searchParams.has("lose-receipt"); state.sameOriginHang = url.searchParams.has("same-origin-hang"); }
         if (url.pathname === "/api/ops/canvas.document.commit") {
             const body = await request.json();
             state.project = { ...body.params.document, revision: state.project.revision + 1 };
@@ -52,16 +64,19 @@ export async function startCustomerScenarioServer(options: { port?: number } = {
             const name = resource[1]!;
             if (resource[2]) {
                 state.downloads.push(name);
-                if (name.startsWith("blocker-")) await state.gate;
+                if (name.startsWith("blocker-")) {
+                    if (state.sameOriginHang) await state.gate;
+                    else return new Response(null, { status: 302, headers: { Location: `${mediaServer.url}?case=${id}` } });
+                }
                 if (name === "audio-1") return new Response(audioWav(), { headers: { "Content-Type": "audio/wav" } });
                 return new Response('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="blue"/></svg>', { headers: { "Content-Type": "image/svg+xml" } });
             }
-            return json({ resource: { id: name, status: "ready", userId: "synthetic-customer", kind: name === "audio-1" ? "audio" : "image", mimeType: name === "audio-1" ? "audio/wav" : "image/svg+xml", durationMs: name === "audio-1" ? 0 : 2500, width: 320, height: 180, size: 128, objectKey: name } });
+            return json({ resource: { id: name, status: "ready", userId: "synthetic-customer", kind: name === "audio-1" ? "audio" : "image", mimeType: name === "audio-1" ? "audio/wav" : "image/svg+xml", durationMs: name === "audio-1" ? 0 : 2500, width: 1280, height: 720, size: 128, objectKey: name } });
         }
         if (url.pathname.startsWith("/api/")) return json([]);
         return new Response('<meta charset="utf-8"><div id="root"></div><script>window.__customerProject=' + JSON.stringify(state.project).replaceAll("<", "\\u003c") + '</script><script type="module" src="/harness.js"></script>', { headers: { "Content-Type": "text/html; charset=utf-8", "Set-Cookie": `scenario=${id}; Path=/; SameSite=Lax` } });
     } });
-    return { server, contexts, create(scenario: CustomerGenerationScenario) {
+    return { server, contexts, stop() { for (const state of contexts.values()) state.release(); server.stop(true); mediaServer.stop(true); }, create(scenario: CustomerGenerationScenario) {
         const id = crypto.randomUUID();
         let release!: () => void;
         const state = { project: customerGenerationProject(scenario), posts: [] as any[], downloads: [] as string[], lookups: [] as string[], gate: new Promise<void>(resolve => { release = resolve; }), release: () => release() };

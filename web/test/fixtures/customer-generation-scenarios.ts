@@ -9,7 +9,7 @@ export function customerGenerationProject(scenario: CustomerGenerationScenario) 
     const refs: CanvasNodeData[] = [];
     const add = (id: string, type: CanvasNodeType, metadata: CanvasNodeData["metadata"] = {}) => refs.push({
         id, type, title: id, position: { x: refs.length * 340, y: 0 }, width: 320, height: 180,
-        metadata: { content: `/api/resources/${id}/file`, storageKey: `resource:${id}`, status: "success", naturalWidth: 320, naturalHeight: 180, ...metadata },
+        metadata: { content: `/api/resources/${id}/file`, storageKey: `resource:${id}`, status: "success", naturalWidth: 1280, naturalHeight: 720, ...metadata },
     });
     let prompt = "让 @图片1 在画面中缓慢移动";
     if (scenario === "five-images") {
