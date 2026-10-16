@@ -35,7 +35,7 @@ export async function startCustomerScenarioServer(options: { port?: number } = {
     const server = Bun.serve({ hostname: "127.0.0.1", port: options.port || 0, async fetch(request) {
         const url = new URL(request.url);
         const cookie = request.headers.get("cookie") || "";
-        const id = cookie.match(/scenario=([^;]+)/)?.[1] || url.searchParams.get("case") || "";
+        const id = url.searchParams.get("case") || cookie.match(/scenario=([^;]+)/)?.[1] || "";
         const state = contexts.get(id);
         if (url.pathname === "/harness.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
         if (!state) return new Response("unknown scenario", { status: 404 });
