@@ -30,7 +30,9 @@ test("restart-paused depth tasks ask for explicit continuation", () => {
     const explanation = canvasNodeFailureExplanation(paused);
     expect(explanation.reason).toBe("深度捕捉已暂停");
     expect(explanation.action).toContain("重试继续");
-    expect(explanation.blockAutomaticRetry).toBe(true);
+    expect(explanation.blockAutomaticRetry).toBe(false);
+    const html = renderToStaticMarkup(createElement(GenerationFailureNotice, { explanation, onRetry: () => {} }));
+    expect(html).toContain("重新生成");
 });
 
 test("confirmed local depth failure offers retry without relaxing paid unknown-result guards", () => {
