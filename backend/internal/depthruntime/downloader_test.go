@@ -61,6 +61,65 @@ func (b *stalledMirrorBody) Read(p []byte) (int, error) {
 }
 func (*stalledMirrorBody) Close() error { return nil }
 
+func TestResumePublishesCompleteTemporaryFileAfterVerificationCancellation(t *testing.T) {
+	payload := []byte("complete download paused before verification")
+	hash := sha256.Sum256(payload)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Header.Get("Range") != "" {
+			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+	artifact := Artifact{URLs: []string{server.URL}, Size: int64(len(payload)), SHA256: hex.EncodeToString(hash[:])}
+	target := filepath.Join(t.TempDir(), "runtime.zip")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := Download(ctx, artifact, target, func(progress Progress) {
+		if progress.Downloaded == artifact.Size {
+			cancel()
+		}
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("pause = %v", err)
+	}
+	if err := Download(context.Background(), artifact, target, nil); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 {
+		t.Fatalf("complete cache caused %d requests", requests)
+	}
+	if err := verifyFile(target, artifact); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCompleteCorruptTemporaryFileRestartsWithoutEOFRange(t *testing.T) {
+	payload := []byte("correct")
+	hash := sha256.Sum256(payload)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Range") != "" {
+			t.Errorf("corrupt cache resumed with %s", r.Header.Get("Range"))
+		}
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+	target := filepath.Join(t.TempDir(), "model")
+	if err := os.WriteFile(target+".download", []byte("corrupt"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	artifact := Artifact{URLs: []string{server.URL}, Size: int64(len(payload)), SHA256: hex.EncodeToString(hash[:])}
+	if err := Download(context.Background(), artifact, target, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyFile(target, artifact); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStalledDownloadSwitchesMirrorOnceAndResumesVerifiedBytes(t *testing.T) {
 	original := downloadClient
 	t.Cleanup(func() { downloadClient = original })

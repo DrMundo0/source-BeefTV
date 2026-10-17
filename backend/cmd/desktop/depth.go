@@ -3,45 +3,53 @@ package main
 import (
 	"context"
 	"errors"
-	"infinite-canvas/backend/internal/depthcapture"
 	"time"
+
+	"infinite-canvas/backend/internal/depthcapture"
 )
 
-func (a *DesktopApp) DepthComponentStatus(refresh bool) (depthcapture.ComponentState, error) {
+// Three metadata sources can each consume six seconds before failing over.
+const depthComponentCallTimeout = 25 * time.Second
+
+func (a *DesktopApp) depthComponents() (*depthcapture.Service, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	runtime := a.runtime()
 	if runtime == nil || a.migrating || a.closing {
-		return depthcapture.ComponentState{}, errors.New("工作区正在关闭或迁移，请稍后再检查组件")
+		return nil, errors.New("工作区正在关闭或迁移，请稍后重试")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	return runtime.DepthComponents(), nil
+}
+
+func (a *DesktopApp) DepthComponentStatus(refresh bool) (depthcapture.ComponentState, error) {
+	components, err := a.depthComponents()
+	if err != nil {
+		return depthcapture.ComponentState{}, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), depthComponentCallTimeout)
 	defer cancel()
-	return runtime.DepthComponents().ComponentStatus(ctx, refresh)
+	return components.ComponentStatus(ctx, refresh)
 }
 
 func (a *DesktopApp) DownloadDepthComponents() (depthcapture.ComponentState, error) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	runtime := a.runtime()
-	if runtime == nil || a.migrating || a.closing {
-		return depthcapture.ComponentState{}, errors.New("工作区正在关闭或迁移，请稍后再下载")
+	components, err := a.depthComponents()
+	if err != nil {
+		return depthcapture.ComponentState{}, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), depthComponentCallTimeout)
 	defer cancel()
-	return runtime.DepthComponents().StartComponentDownload(ctx)
+	return components.StartComponentDownload(ctx)
 }
 
 func (a *DesktopApp) PauseDepthComponentDownload() (depthcapture.ComponentState, error) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	runtime := a.runtime()
-	if runtime == nil || a.migrating || a.closing {
-		return depthcapture.ComponentState{}, errors.New("工作区正在关闭或迁移，请稍后再暂停下载")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
-	if err := runtime.DepthComponents().PauseComponentDownload(ctx); err != nil {
+	components, err := a.depthComponents()
+	if err != nil {
 		return depthcapture.ComponentState{}, err
 	}
-	return runtime.DepthComponents().ComponentStatus(ctx)
+	ctx, cancel := context.WithTimeout(context.Background(), depthComponentCallTimeout)
+	defer cancel()
+	if err := components.PauseComponentDownload(ctx); err != nil {
+		return depthcapture.ComponentState{}, err
+	}
+	return components.ComponentStatus(ctx)
 }

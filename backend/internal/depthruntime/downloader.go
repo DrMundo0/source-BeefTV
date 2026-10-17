@@ -52,6 +52,21 @@ func Download(ctx context.Context, artifact Artifact, target string, report func
 		return downloadParts(ctx, artifact, target, report)
 	}
 	temporary := target + ".download"
+	// Cancellation can leave all bytes present before the final hash finishes.
+	// Verify that cache before sending a Range request that would start past EOF.
+	if info, err := os.Stat(temporary); err == nil && info.Size() == artifact.Size {
+		if err := verifyFileContext(ctx, temporary, artifact); err == nil {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return publishVerifiedDownload(temporary, target)
+		} else if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := os.Rename(temporary, target+".corrupt"); err != nil {
+			return fmt.Errorf("保存损坏的组件缓存失败: %w", err)
+		}
+	}
 	var lastErr error
 	for _, source := range artifact.URLs {
 		for attempt := 0; attempt < 3; attempt++ {
