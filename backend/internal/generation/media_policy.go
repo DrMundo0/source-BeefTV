@@ -49,9 +49,6 @@ func mediaPolicyForKind(ctx context.Context, input Input, kind string, policy Me
 		return policy // Provider-owned upload flows must retain their local bytes.
 	}
 	transport := ""
-	if kind == "video" && isBytePlusVideoInput(input) {
-		policy.RequireURL, policy.PreferURL = true, true
-	}
 	if adapter, ok := ProtocolAdapterForContext(ctx, input.Config.InterfaceType); ok {
 		transport = adapter.Metadata().MediaTransport[kind]
 	}
@@ -66,6 +63,9 @@ func mediaPolicyForKind(ctx context.Context, input Input, kind string, policy Me
 	case "url", "link":
 		policy.RequireURL, policy.PreferURL, policy.PreferHTTPS = true, true, false
 		policy.ManualURL = transport == "link"
+	}
+	if kind == "video" && isBytePlusVideoInput(input) {
+		policy.RequireURL, policy.PreferURL, policy.PreferHTTPS = true, true, false
 	}
 	return policy
 }

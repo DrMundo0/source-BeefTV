@@ -93,11 +93,14 @@ func validateBytePlusVideoTransport(ctx context.Context, input Input) error {
 	if !isBytePlusVideoInput(input) {
 		return nil
 	}
+	if input.Config.ChannelID == "" && input.Config.ReferenceMediaTransport["video"] == "inline" && len(input.ReferenceVideos) > 0 {
+		return &kernel.AppError{Status: 400, Code: 400, Reason: "invalid_reference_transport", Message: "BytePlus 参考视频不支持直接传素材，请将视频传输方式改为自动、对象存储或在线链接"}
+	}
 	runtime, _ := RuntimeFromContext(ctx)
 	var blocked []string
 	var required []map[string]any
 	for index, media := range input.ReferenceVideos {
-		if strings.HasPrefix(media.StorageKey, "resource:") && input.Config.ReferenceMediaTransport["video"] != "link" && runtime.ReferenceStorage != nil {
+		if strings.HasPrefix(media.StorageKey, "resource:") && !mediaPolicyForKind(ctx, input, "video", MediaHydrationPolicyFor(ctx, input)).ManualURL && runtime.ReferenceStorage != nil {
 			enabled, err := runtime.ReferenceStorage.Enabled()
 			if err != nil {
 				return kernel.WrapAppError(500, "参考素材对象存储配置无法读取，请检查存储设置", err)

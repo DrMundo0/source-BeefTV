@@ -217,3 +217,32 @@ func TestReferenceStorageRunsOnlyDuringExecutionAndHonorsManualLinks(t *testing.
 		}
 	}
 }
+
+func TestBytePlusExplicitInlineVideoNeverPassesWithStorageEnabled(t *testing.T) {
+	storage := &referenceStorageFixture{}
+	ctx := WithRuntime(context.Background(), Runtime{ReferenceStorage: storage})
+	input := Input{Mode: "video", Config: Config{InterfaceType: "volcengine-ark-video", BaseURL: "https://ark.ap-southeast.bytepluses.com/api/v3", ReferenceMediaTransport: map[string]string{"video": "inline"}}, ReferenceVideos: []Media{{StorageKey: "resource:one"}}}
+	var appErr *kernel.AppError
+	if err := ValidateMediaTransport(ctx, input); !errors.As(err, &appErr) || appErr.Reason != "invalid_reference_transport" {
+		t.Fatalf("inline BytePlus video admitted: %v", err)
+	}
+	if !mediaPolicyForKind(ctx, input, "video", MediaHydrationPolicyFor(ctx, input)).RequireURL || storage.uploads != 0 {
+		t.Fatal("BytePlus video policy no longer requires a URL")
+	}
+}
+
+func TestWanInlineImageNeverUploadsEvenWhenStorageIsEnabled(t *testing.T) {
+	var events []string
+	storage := &referenceStorageFixture{}
+	ctx := WithProtocolRegistry(WithRuntime(context.Background(), Runtime{ReferenceStorage: storage, Resources: stageResources{events: &events}}), LoadOfficialFallbackRegistry())
+	input := Input{Mode: "video", Config: Config{InterfaceType: "dashscope-wan-video", ReferenceMediaTransport: map[string]string{"image": "inline"}}, ReferenceImages: []Media{{StorageKey: "resource:one"}}}
+	if err := ValidateMediaTransport(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	if err := HydrateMedia(ctx, "owner", &input, MediaHydrationPolicyFor(ctx, input)); err != nil {
+		t.Fatal(err)
+	}
+	if storage.uploads != 0 || !strings.HasPrefix(input.ReferenceImages[0].DataURL, "data:image/png;base64,") {
+		t.Fatal("inline image was uploaded instead")
+	}
+}
