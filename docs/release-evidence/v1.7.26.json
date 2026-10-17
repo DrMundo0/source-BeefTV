@@ -50,9 +50,11 @@
     "evidence": [
       "docs/release-evidence/v1.7.26-review.md"
     ],
-    "result": "pending",
+    "result": "approved",
     "independent": true,
-    "reviewer": "Grok 20261017-164603-continue-626a7726 approved runtime/release contract; final release-note delta pending"
+    "reviewer": "Grok 20261017-164603-continue-626a7726 and 20261017-165239-continue-6c09805a",
+    "reviewedHead": "40572f346676ffe6e3713bc2c7063fe525705f3b",
+    "productAndBuildSourceUnchanged": true
   },
   "upgrade": {
     "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
@@ -98,10 +100,14 @@
     "ci": {
       "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
       "evidence": [
-        "docs/release-evidence/v1.7.26-review.md"
+        "docs/release-evidence/v1.7.26-review.md",
+        "https://github.com/glanderness/BeefTV/actions/runs/39018982692",
+        "https://github.com/glanderness/BeefTV/actions/runs/39018982667",
+        "https://github.com/glanderness/BeefTV/actions/runs/39018982677"
       ],
       "method": "github-actions",
-      "status": "pending"
+      "status": "passed",
+      "testedHead": "40572f346676ffe6e3713bc2c7063fe525705f3b"
     },
     "localReleaseGate": {
       "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
