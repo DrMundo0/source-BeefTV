@@ -63,8 +63,8 @@ func Download(ctx context.Context, artifact Artifact, target string, report func
 		} else if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err := os.Rename(temporary, target+".corrupt"); err != nil {
-			return fmt.Errorf("保存损坏的组件缓存失败: %w", err)
+		if err := os.Remove(temporary); err != nil {
+			return fmt.Errorf("清理损坏的组件缓存失败: %w", err)
 		}
 	}
 	var lastErr error

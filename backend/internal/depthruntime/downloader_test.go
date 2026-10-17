@@ -111,12 +111,19 @@ func TestCompleteCorruptTemporaryFileRestartsWithoutEOFRange(t *testing.T) {
 	if err := os.WriteFile(target+".download", []byte("corrupt"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	// A previous quarantine must not block recovery of this invalid cache.
+	if err := os.Mkdir(target+".corrupt", 0700); err != nil {
+		t.Fatal(err)
+	}
 	artifact := Artifact{URLs: []string{server.URL}, Size: int64(len(payload)), SHA256: hex.EncodeToString(hash[:])}
 	if err := Download(context.Background(), artifact, target, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := verifyFile(target, artifact); err != nil {
 		t.Fatal(err)
+	}
+	if info, err := os.Stat(target + ".corrupt"); err != nil || !info.IsDir() {
+		t.Fatalf("previous quarantine changed: %v", err)
 	}
 }
 
