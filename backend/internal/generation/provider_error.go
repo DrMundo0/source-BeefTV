@@ -305,7 +305,7 @@ func (f Failure) IsModeration() bool {
 }
 
 func (f Failure) BlocksAutomaticRetry() bool {
-	if f.Uncertain {
+	if f.Uncertain || f.ProviderCode == "image_reference_upload_failed" {
 		return true
 	}
 	switch f.Category {
