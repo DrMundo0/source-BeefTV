@@ -1,3 +1,4 @@
+import { createClientId } from "@/lib/client-id";
 import { Button, Dropdown, Tooltip } from "antd";
 import { History, MessageSquarePlus, X, ArrowUpRight } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -18,8 +19,6 @@ import { CanvasAssistantComposer } from "./canvas-assistant-composer";
 import { CanvasAssistantReply, CanvasAssistantTurnView, CanvasAssistantUserMessage } from "./canvas-assistant-turn";
 import { ASSISTANT_MAX_WIDTH, ASSISTANT_MIN_WIDTH, type CanvasAssistantController } from "./use-canvas-assistant";
 import "./canvas-assistant-sidebar.css";
-import { CanvasSkillContext } from "./canvas-skill-context";
-import { PublishingApprovals } from "@/pages/skills/publishing-approvals";
 
 type Props = {
     assistant: CanvasAssistantController;
@@ -104,7 +103,7 @@ export function CanvasAssistantSidebar(props: Props) {
         if (attachmentCount.current + files.length > 8) { setInputError("一次最多添加 8 份参考素材"); return; }
         setInputError("");
         attachmentCount.current += files.length;
-        const entries = files.map(file => ({ id: crypto.randomUUID(), file, busy: true }));
+        const entries = files.map(file => ({ id: createClientId(), file, busy: true }));
         setUploads(items => [...items, ...entries]);
         entries.forEach(item => void upload(item.id, item.file));
     }, [attachments.length, draftIdentity, draftLoaded, loadedDraftIdentity, readOnly, upload, uploads.length]);
@@ -258,8 +257,6 @@ export function CanvasAssistantSidebar(props: Props) {
                 ) : null}
             </div>
 
-            <CanvasSkillContext readOnly={readOnly} canvasId={assistant.canvasId} sessionId={assistant.sessionId || ""} busy={assistant.streaming || assistant.sessionBusy} onChanged={() => void assistant.reloadHistory()} />
-            <PublishingApprovals canvasId={assistant.canvasId} refreshKey={`${assistant.canvasId}:${assistant.turns.length}`} />
             <CanvasAssistantComposer
                 value={inputReady ? draft : ""}
                 onChange={setDraft}
