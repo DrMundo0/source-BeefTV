@@ -451,7 +451,9 @@ func ClassifyError(err error) Failure {
 			failure.Uncertain = false
 			failure.Reason = "参考图片上传失败，本次尚未开始生成"
 			failure.Action = "请稍后重试"
-			return normalizeFailure(failure)
+			failure = normalizeFailure(failure)
+			failure.Retryable = false
+			return failure
 		}
 		return normalizeFailure(Failure{Category: CategoryInputInaccessible, Reason: "本次请求在准备时失败，未发送到模型服务", Action: "请检查参考素材和生成参数后重试"})
 	}

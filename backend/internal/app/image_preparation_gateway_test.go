@@ -25,7 +25,7 @@ func TestImageGatewayPreparationFailureDoesNotBecomeUnknownOrResend(t *testing.T
 		t.Fatalf("calls=%d err=%v", calls, err)
 	}
 	failure := classifyTaskFailure(err)
-	if failure.Uncertain || failure.Category != generation.CategoryProviderUnavailable || failure.Action != "请稍后重试" {
+	if failure.Uncertain || failure.Retryable || !failure.BlocksAutomaticRetry() || failure.Category != generation.CategoryProviderUnavailable || failure.Action != "请稍后重试" {
 		t.Fatalf("preparation failure misclassified: %#v", failure)
 	}
 	attempt, readErr := s.repo.LatestRouteAttempt(task.ID)
