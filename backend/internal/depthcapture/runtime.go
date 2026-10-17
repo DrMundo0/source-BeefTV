@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
-	"fmt"
+	"errors"
 	"strings"
 
 	"infinite-canvas/backend/internal/depthruntime"
@@ -20,52 +20,48 @@ func (s *Service) resolveRuntime(ctx context.Context, task *model.Task, platform
 			return python, toolDir, modelRuntime, nil
 		}
 	}
+	options, optionsErr := s.componentOptions(platform, variant)
+	if optionsErr != nil {
+		return "", "", "", optionsErr
+	}
+	options.Offline = true
+	installation, ensureErr := s.ensure(ctx, options)
+	if ensureErr != nil {
+		if variant == "cpu" && ensureErr == depthruntime.ErrNotInstalled {
+			return "", "", "", errors.New("当前需要 CPU 深度捕捉组件，请在存储设置中确认下载后重试")
+		}
+		return "", "", "", ensureErr
+	}
+	return installation.Python, installation.ToolDir, installation.ModelRuntime, nil
+}
+
+func (s *Service) componentOptions(platform, variant string) (depthruntime.EnsureOptions, error) {
 	manifestURL := strings.TrimSpace(s.getenv(manifestEnv))
 	if manifestURL == "" {
+		manifestURL = defaultManifestURL
 		if platform == "windows-amd64" {
 			manifestURL = defaultWindowsManifestURL
-		} else {
-			manifestURL = defaultManifestURL
 		}
 	}
 	var publicKey ed25519.PublicKey
 	var fallback *depthruntime.Manifest
 	if platform == "windows-amd64" {
-		decoded, decodeErr := base64.StdEncoding.DecodeString(s.windowsKey)
-		if decodeErr != nil || len(decoded) != ed25519.PublicKeySize {
-			return "", "", "", ErrWindowsKey
+		decoded, err := base64.StdEncoding.DecodeString(s.windowsKey)
+		if err != nil || len(decoded) != ed25519.PublicKeySize {
+			return depthruntime.EnsureOptions{}, ErrWindowsKey
 		}
 		publicKey = decoded
 	} else {
 		fallback = defaultFallbackManifest()
 	}
-	installation, ensureErr := s.ensure(ctx, depthruntime.EnsureOptions{
+	return depthruntime.EnsureOptions{
 		ManifestURL:      manifestURL,
 		DataDir:          s.dataDir,
 		Platform:         platform,
 		Variant:          variant,
 		TrustedPublicKey: publicKey,
 		FallbackManifest: fallback,
-		Progress: func(component string, progress depthruntime.Progress) {
-			percent := 0
-			downloadedMB := float64(progress.Downloaded) / (1024 * 1024)
-			totalMB := float64(progress.Total) / (1024 * 1024)
-			if progress.Total > 0 {
-				percent = int(progress.Downloaded * 100 / progress.Total)
-			}
-			stage := fmt.Sprintf("下载深度处理组件 %.1f / %.1f MB（%d%%）", downloadedMB, totalMB, percent)
-			taskProgress := min(12, percent/10+1)
-			if component == "model" {
-				stage = fmt.Sprintf("下载 Small 模型 %.1f / %.1f MB（%d%%）", downloadedMB, totalMB, percent)
-				taskProgress = 12 + min(8, percent*8/100)
-			}
-			_ = s.progress(task, stage, taskProgress)
-		},
-	})
-	if ensureErr != nil {
-		return "", "", "", ensureErr
-	}
-	return installation.Python, installation.ToolDir, installation.ModelRuntime, nil
+	}, nil
 }
 
 func defaultFallbackManifest() *depthruntime.Manifest {
