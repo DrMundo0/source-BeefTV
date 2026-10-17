@@ -29,6 +29,25 @@ beforeAll(async () => {
 
 afterAll(async () => { await browser?.close(); server?.stop(true); }, 30000);
 
+test("没有保存字号时，从放大编辑器首次调整也与节点保持一致", async () => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+        await page.goto(server.url.toString());
+        const panel = page.getByTestId("node-panel");
+        const compact = panel.getByRole("textbox", { name: "图片提示词" });
+        await compact.waitFor();
+        const before = await compact.evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+        await panel.getByRole("button", { name: "放大编辑提示词" }).click();
+        const dialog = page.getByRole("dialog");
+        const expanded = dialog.getByRole("textbox", { name: "图片提示词" });
+        expect(await expanded.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBe(before);
+        await dialog.getByRole("button", { name: "放大提示词字号" }).click();
+        expect(await expanded.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBe(before + 2);
+        expect(await compact.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBe(before + 2);
+    } finally { await context.close(); }
+}, 30000);
+
 for (const dark of [false, true]) {
     for (const width of [1440, 390]) {
         test(`提示词字号跨面板同步并在刷新后保留：${dark ? "深色" : "浅色"} / ${width}`, async () => {

@@ -55,9 +55,11 @@ function Harness() {
             <Button onClick={() => setDrawerOpen(true)}>打开验证侧栏</Button>
             <Button onClick={() => setModalOpen(true)}>打开验证弹窗</Button>
             <AppDrawer title="验证侧栏" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
+                <ModelDefaultGrid config={selected} onChange={(key, model) => setSelected((current) => ({ ...current, [key]: model }))} />
                 <Button onClick={() => setDrawerOpen(false)}>关闭验证侧栏</Button>
             </AppDrawer>
             <AppModal title="验证弹窗" open={modalOpen} onCancel={() => setModalOpen(false)} footer={null}>
+                <ModelDefaultGrid config={selected} onChange={(key, model) => setSelected((current) => ({ ...current, [key]: model }))} />
                 <Button onClick={() => setModalOpen(false)}>关闭验证弹窗</Button>
             </AppModal>
         </main>

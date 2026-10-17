@@ -77,7 +77,7 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
     const theme = canvasThemes[themeName];
     const preferredFontSize = useCreationPreferencesStore((state) => state.preferences.promptFontSize);
     const promptFontSize = preferredFontSize ?? DEFAULT_PROMPT_FONT_SIZE;
-    const expandedFontSize = preferredFontSize ?? 16;
+    const expandedFontSize = promptFontSize;
     const promptOptimizerInstallation = usePluginStore((state) => state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID));
     const promptOptimizerEnabled = usePluginStore((state) => state.pluginStates[PROMPT_OPTIMIZER_PLUGIN_ID]?.effectiveEnabled ?? Boolean(state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID)?.enabled));
     const simpleMode = workspaceMode === "simple";
@@ -263,7 +263,7 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
                 </div>
             )}
             <div className="ml-auto flex shrink-0 items-center justify-end gap-1">
-                {expanded ? <CanvasPromptFontControl defaultFontSize={16} /> : null}
+                {expanded ? <CanvasPromptFontControl /> : null}
             {canOptimizePrompt ? (
                 <Tooltip title="用 AI 润色提示词">
                     <button

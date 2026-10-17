@@ -75,6 +75,31 @@ test("高分屏默认模型菜单紧贴自己的选择框", async () => {
     } finally { await page.close(); }
 }, 15000);
 
+for (const surface of ["侧栏", "弹窗"]) {
+    test(`减少动态效果下，${surface}里的菜单保持贴合选择框`, async () => {
+        const page = await open({ reduced: true });
+        try {
+            await page.getByRole("button", { name: `打开验证${surface}` }).click();
+            const container = page.locator(surface === "侧栏" ? ".ant-drawer" : ".ant-modal");
+            const select = container.locator(".model-default-select").first();
+            await select.click();
+            const popup = page.locator(".model-default-select-popup-image:not(.ant-select-dropdown-hidden)");
+            await popup.waitFor();
+            await page.waitForTimeout(150);
+            const triggerBox = (await select.boundingBox())!;
+            const popupBox = (await popup.boundingBox())!;
+            expect(Math.abs(popupBox.y - triggerBox.y - triggerBox.height)).toBeLessThanOrEqual(8);
+            expect(Math.abs(popupBox.x - triggerBox.x)).toBeLessThanOrEqual(8);
+            // Inspect the placement mechanism instead of assuming transform
+            // carries translation in this pinned Ant Design version.
+            const placement = await popup.evaluate(element => ({ transform: (element as HTMLElement).style.transform, left: (element as HTMLElement).style.left, top: (element as HTMLElement).style.top }));
+            expect(placement.transform).not.toContain("translate");
+            expect(parseFloat(placement.left)).toBeGreaterThan(0);
+            expect(parseFloat(placement.top)).toBeGreaterThan(0);
+        } finally { await page.close(); }
+    }, 15000);
+}
+
 test("菜单仍在窗口内但偏离选择框时单独告警", async () => {
     const page = await open({ reduced: true });
     try {
