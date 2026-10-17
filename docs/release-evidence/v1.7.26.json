@@ -1,8 +1,8 @@
 {
   "version": "v1.7.26",
-  "sourceDigest": "4b5ecdea7ff59d9fbe6ff525f9e379b85509c62c3b8f4026a247073993b94dee",
+  "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
   "ownerException": {
-    "sourceDigest": "4b5ecdea7ff59d9fbe6ff525f9e379b85509c62c3b8f4026a247073993b94dee",
+    "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
     "evidence": [
       "docs/release-evidence/v1.7.26-review.md"
     ],
@@ -11,7 +11,7 @@
     "instruction": "本版豁免付费矩阵，专项回归、独立 review、CI 和四平台安装升级门禁通过后发布；历史未知账务继续保留（推荐）"
   },
   "releaseAuthorization": {
-    "sourceDigest": "4b5ecdea7ff59d9fbe6ff525f9e379b85509c62c3b8f4026a247073993b94dee",
+    "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
     "evidence": [
       "docs/release-evidence/v1.7.26-review.md"
     ],
@@ -46,16 +46,16 @@
     ]
   },
   "review": {
-    "sourceDigest": "4b5ecdea7ff59d9fbe6ff525f9e379b85509c62c3b8f4026a247073993b94dee",
+    "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
     "evidence": [
       "docs/release-evidence/v1.7.26-review.md"
     ],
     "result": "pending",
     "independent": true,
-    "reviewer": "Grok final source review pending"
+    "reviewer": "Grok 20261017-164603-continue-626a7726 approved runtime/release contract; final release-note delta pending"
   },
   "upgrade": {
-    "sourceDigest": "4b5ecdea7ff59d9fbe6ff525f9e379b85509c62c3b8f4026a247073993b94dee",
+    "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
     "evidence": [
       "docs/release-evidence/v1.7.26-review.md"
     ],
@@ -63,7 +63,7 @@
   },
   "verification": {
     "userScenario": {
-      "sourceDigest": "4b5ecdea7ff59d9fbe6ff525f9e379b85509c62c3b8f4026a247073993b94dee",
+      "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
       "evidence": [
         "docs/release-evidence/v1.7.26-review.md"
       ],
@@ -71,15 +71,16 @@
       "status": "passed"
     },
     "generationAndRecovery": {
-      "sourceDigest": "4b5ecdea7ff59d9fbe6ff525f9e379b85509c62c3b8f4026a247073993b94dee",
+      "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
       "evidence": [
         "docs/release-evidence/v1.7.26-review.md"
       ],
       "method": "test",
-      "status": "passed"
+      "status": "passed",
+      "runtimeTestedHead": "2757c4d585790d8a639545ecce3b4fd883914492"
     },
     "errorContract": {
-      "sourceDigest": "4b5ecdea7ff59d9fbe6ff525f9e379b85509c62c3b8f4026a247073993b94dee",
+      "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
       "evidence": [
         "docs/release-evidence/v1.7.26-review.md"
       ],
@@ -87,7 +88,7 @@
       "status": "passed"
     },
     "noNewPaidGeneration": {
-      "sourceDigest": "4b5ecdea7ff59d9fbe6ff525f9e379b85509c62c3b8f4026a247073993b94dee",
+      "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
       "evidence": [
         "docs/release-evidence/v1.7.26-review.md"
       ],
@@ -95,7 +96,7 @@
       "status": "passed"
     },
     "ci": {
-      "sourceDigest": "4b5ecdea7ff59d9fbe6ff525f9e379b85509c62c3b8f4026a247073993b94dee",
+      "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
       "evidence": [
         "docs/release-evidence/v1.7.26-review.md"
       ],
@@ -103,7 +104,7 @@
       "status": "pending"
     },
     "localReleaseGate": {
-      "sourceDigest": "4b5ecdea7ff59d9fbe6ff525f9e379b85509c62c3b8f4026a247073993b94dee",
+      "sourceDigest": "8558a733d51bcc1896884d64c82fd33f0557bc33f4660b5e0e82895ef82b6c1a",
       "evidence": [
         ".github/workflows/release-desktop.yml",
         "docs/release-evidence/v1.7.26-review.md"
