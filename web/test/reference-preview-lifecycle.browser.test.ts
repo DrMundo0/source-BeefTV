@@ -24,7 +24,8 @@ beforeAll(async () => {
                     window.captures.push(url);
                     if (url.startsWith('slow')) await new Promise(resolve => window.pending.set(url, resolve));
                     if (signal.aborted) throw new DOMException('aborted', 'AbortError');
-                    return {poster: new Blob(['poster'], {type:'image/png'}), width:40, height:30, capturedAtMs:0};
+                    const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jO1sAAAAASUVORK5CYII='), c => c.charCodeAt(0));
+                    return {poster: new Blob([bytes], {type:'image/png'}), width:40, height:30, capturedAtMs:0};
                 }` }));
             builder.onLoad({ filter: /src\/services\/canvas-video-source\.ts$/ }, () => ({ loader: "js", contents: `export async function acquireCanvasVideoSource(key, content) { return {url: content || key, release() {}}; }` }));
             builder.onLoad({ filter: /src\/services\/image-storage\.ts$/ }, () => ({ loader: "js", contents: `
@@ -76,10 +77,23 @@ test("a slow video never delays an image; changing sources fences late completio
     const before = await page.locator("#result").textContent();
     await page.evaluate(() => (window as any).switchScope("second-user"));
     await page.waitForFunction((previous) => document.querySelector("#result")!.textContent !== previous && document.querySelector("#result")!.textContent!.includes("blob:"), before);
+    expect(await page.locator('#resolved-previews img[data-reference-id="new"]').evaluate((image) => !(window as any).revoked.includes((image as HTMLImageElement).src))).toBe(true);
     expect(await page.evaluate(() => (window as any).revoked.length)).toBeGreaterThan(0);
     await page.evaluate(() => (window as any).setReferences([]));
     await page.waitForFunction(() => document.querySelector("#result")!.textContent === "[]");
     expect(await page.evaluate(() => (window as any).probePool())).toBe(true);
+});
+
+test("cloning reference arrays during typing keeps the visible lease alive", async () => {
+    await mount();
+    const reference = video("typing", true);
+    await page.evaluate((references) => (window as any).setReferences(references), [reference]);
+    await page.waitForFunction(() => document.querySelector("#result")!.textContent!.includes("blob:"));
+    const src = await page.locator('#resolved-previews img').getAttribute("src");
+    for (let i = 0; i < 4; i++) await page.evaluate((references) => (window as any).setReferences(references), [reference]);
+    expect(await page.locator('#resolved-previews img').getAttribute("src")).toBe(src);
+    expect(await page.evaluate((url) => (window as any).revoked.includes(url), src)).toBe(false);
+    expect(await page.evaluate(() => (window as any).captures)).toEqual(["typing"]);
 });
 
 test("mention menu decodes only visible rows and releases them when closed", async () => {
@@ -96,7 +110,11 @@ test("mention menu decodes only visible rows and releases them when closed", asy
     expect(first).not.toContain("menu-39");
     await page.locator(".canvas-resource-mention-scroll").evaluate((element) => { element.scrollTop = element.scrollHeight; });
     await page.waitForFunction(() => (window as any).captures.includes("menu-39"));
+    await page.locator(".canvas-resource-mention-scroll").evaluate((element) => { element.scrollTop = 0; });
+    await page.waitForFunction(() => [...document.querySelectorAll('.canvas-resource-mention-item img')].some(image => !(window as any).revoked.includes((image as HTMLImageElement).src) && (image as HTMLImageElement).naturalWidth > 0));
     await editor.press("Escape");
     await page.waitForFunction(() => !document.querySelector("[data-canvas-resource-mention-menu]"), undefined, { timeout: 3000 });
     expect(await page.evaluate(() => (window as any).probePool())).toBe(true);
+    await editor.press("End");
+    await page.waitForFunction(() => [...document.querySelectorAll('.canvas-resource-mention-item img')].some(image => !(window as any).revoked.includes((image as HTMLImageElement).src) && (image as HTMLImageElement).naturalWidth > 0));
 }, 30_000);

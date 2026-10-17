@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { loadCanvasDrawingPreview } from "@/lib/canvas/canvas-drawing-storage";
@@ -9,8 +9,14 @@ import { captureUserScopeEpoch, getUserScopeGeneration, subscribeUserScope, user
 type ResolvedPreview = {
     identity: string;
     url: string;
-    derived: boolean;
 };
+
+type PreviewRequest = { cancelled: boolean; release?: () => void; url?: string };
+
+function releaseRequest(request: PreviewRequest) {
+    request.cancelled = true;
+    request.release?.();
+}
 
 const previewPromiseCache = new Map<string, Promise<string>>();
 subscribeUserScope(() => previewPromiseCache.clear());
@@ -22,51 +28,67 @@ export function useResolvedCanvasResourceReferences(references: CanvasResourceRe
     const requests = useMemo(
         () => references.flatMap((reference) => {
             const identity = previewIdentity(reference, projectId);
-            return identity ? [{ reference, identity: `${scopeGeneration}:${identity}` }] : [];
+            const decodeVideo = videoPreviewEnabled ?? reference.active;
+            return identity ? [{ reference, decodeVideo, identity: JSON.stringify([reference.id, scopeGeneration, identity, reference.kind === "video" && decodeVideo]) }] : [];
         }),
-        [projectId, references, scopeGeneration],
+        [projectId, references, scopeGeneration, videoPreviewEnabled],
     );
     const [resolvedById, setResolvedById] = useState<Record<string, ResolvedPreview>>({});
+    const inFlight = useRef(new Map<string, PreviewRequest>());
+
+    useEffect(() => () => {
+        for (const request of inFlight.current.values()) releaseRequest(request);
+        inFlight.current.clear();
+    }, []);
 
     useEffect(() => {
-        if (!requests.length) return;
-        let cancelled = false;
+        const activeKeys = new Set(requests.map(({ identity }) => identity));
+        for (const [key, request] of inFlight.current) {
+            if (activeKeys.has(key)) continue;
+            releaseRequest(request);
+            inFlight.current.delete(key);
+        }
         const epoch = captureUserScopeEpoch();
-        const leases: ReturnType<typeof acquireCanvasVideoPreview>[] = [];
-        const isCurrent = () => !cancelled && userScopeEpochMatches(epoch);
-        requests.forEach(({ reference, identity }) => {
+        requests.forEach(({ reference, identity, decodeVideo }) => {
+            if (inFlight.current.has(identity)) return;
+            const request: PreviewRequest = { cancelled: false };
+            inFlight.current.set(identity, request);
+            const isCurrent = () => !request.cancelled && userScopeEpochMatches(epoch);
             void (async () => {
                 let url = await resolveReferencePreview(reference, identity, projectId);
-                let derived = false;
                 if (!isCurrent()) return;
+                // A blob supplied by another preview consumer is lease-owned,
+                // not a durable poster. Visible consumers need their own lease.
+                if (reference.videoPreviewSource && !reference.previewStorageKey && url.startsWith("blob:")) url = "";
                 // Lists include unused nodes and assets; decode only used videos
                 // or thumbnails currently visible in the mention menu.
-                if (!url && reference.videoPreviewSource && (videoPreviewEnabled ?? reference.active)) {
+                if (!url && reference.videoPreviewSource && decodeVideo) {
                     const lease = acquireCanvasVideoPreview(reference.videoPreviewSource);
-                    leases.push(lease);
+                    request.release = lease.release;
                     url = (await lease.promise)?.content || "";
-                    derived = true;
                 }
-                if (!url || !isCurrent()) return;
+                if (!isCurrent()) return;
+                if (!url) { inFlight.current.delete(identity); request.release?.(); return; }
+                request.url = url;
                 setResolvedById((current) => {
                     if (current[reference.id]?.identity === identity && current[reference.id]?.url === url) return current;
-                    return { ...current, [reference.id]: { identity, url, derived } };
+                    return { ...current, [reference.id]: { identity, url } };
                 });
             })();
         });
-        return () => {
-            cancelled = true;
-            leases.forEach((lease) => lease.release());
-        };
-    }, [projectId, requests, videoPreviewEnabled]);
+    }, [projectId, requests]);
 
     return useMemo(
         () => references.map((reference) => {
             const key = previewIdentity(reference, projectId);
-            const identity = key ? `${scopeGeneration}:${key}` : "";
+            const decodeVideo = videoPreviewEnabled ?? reference.active;
+            const identity = key ? JSON.stringify([reference.id, scopeGeneration, key, reference.kind === "video" && decodeVideo]) : "";
             const resolved = identity ? resolvedById[reference.id] : undefined;
-            if (resolved?.derived && !(videoPreviewEnabled ?? reference.active)) return reference;
-            return resolved?.identity === identity && resolved.url !== reference.previewUrl ? { ...reference, previewUrl: resolved.url } : reference;
+            const owned = resolved?.identity === identity && inFlight.current.get(identity)?.url === resolved.url;
+            if (owned) return resolved.url !== reference.previewUrl ? { ...reference, previewUrl: resolved.url } : reference;
+            // Never render a derived URL without an active owner, including the
+            // first render after scrolling back or switching user scope.
+            return reference.videoPreviewSource && !reference.previewStorageKey && reference.previewUrl?.startsWith("blob:") ? { ...reference, previewUrl: undefined } : reference;
         }),
         [projectId, references, resolvedById, scopeGeneration, videoPreviewEnabled],
     );

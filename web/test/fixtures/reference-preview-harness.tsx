@@ -28,6 +28,7 @@ function Harness() {
     harness.setReferences = setReferences;
     harness.showMenu = () => setShowMenu(true);
     return <><pre id="result">{JSON.stringify(resolved.map(({ id, previewUrl }) => ({ id, previewUrl })))}</pre>
+        <div id="resolved-previews">{resolved.map(reference => reference.previewUrl && <img key={reference.id} data-reference-id={reference.id} src={reference.previewUrl} />)}</div>
         {showMenu && <CanvasResourceMentionTextarea value={value} onChange={setValue} references={references} onSelectReference={(reference) => reference} aria-label="引用编辑" />}</>;
 }
 
