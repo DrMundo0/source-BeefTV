@@ -31,11 +31,17 @@ export function validateTeamRelease(receipt, sourceDigest) {
     || receipt.upgrade?.preservedData !== true || !bound(receipt.upgrade)) fail('current-source independent review and data preservation required');
   for (const [id, method] of Object.entries({
     generationAndRecovery: 'test', canvasAndDiagnostics: 'test', assistantAndSkillDeferral: 'test',
-    installers: 'test', noNewPaidGeneration: 'source-diff', localReleaseGate: 'local-script', ci: 'github-actions',
+    installers: 'test', noNewPaidGeneration: 'source-diff', ci: 'github-actions',
   })) {
     const check = receipt.verification?.[id];
     if (check?.status !== 'passed' || check.method !== method || !bound(check)) fail(`missing source-bound check: ${id}`);
   }
+  // The official workflow runs this script before opening a draft. A local
+  // failure must not be relabeled passed just to prepare its preflight receipt.
+  const localGate = receipt.verification?.localReleaseGate;
+  if (!['passed', 'pending_release_workflow'].includes(localGate?.status)
+    || localGate.method !== 'local-script' || localGate.beforeDraft !== true || !bound(localGate)
+    || !localGate.evidence.includes('.github/workflows/release-desktop.yml')) fail('local release script must run before draft creation');
   const packages = receipt.packages;
   if (!exact(packages?.platforms, ['darwin-arm64', 'darwin-amd64', 'windows-amd64', 'linux-amd64'])
     || packages.status !== 'pending_release_workflow' || packages.archives !== null
