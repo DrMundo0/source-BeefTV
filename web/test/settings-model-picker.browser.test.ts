@@ -180,6 +180,11 @@ for (const reduced of [false, true]) {
                     }, handle, { timeout: 3000 });
                     const box = (await ok.boundingBox())!;
                     const viewport = page.viewportSize()!;
+                    const popupBox = (await page.locator(".ant-popconfirm").boundingBox())!;
+                    expect(popupBox.x).toBeGreaterThanOrEqual(0);
+                    expect(popupBox.y).toBeGreaterThanOrEqual(0);
+                    expect(popupBox.x + popupBox.width).toBeLessThanOrEqual(viewport.width + 1);
+                    expect(popupBox.y + popupBox.height).toBeLessThanOrEqual(viewport.height + 1);
                     expect(box.x).toBeGreaterThanOrEqual(0);
                     expect(box.y).toBeGreaterThanOrEqual(0);
                     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
