@@ -1,6 +1,6 @@
 import { Button } from "antd";
 import { useEffect, useRef, useState } from "react";
-import { browserChecks, checkEnvironment, type EnvironmentCheck } from "@/services/diagnostics/environment-check";
+import { browserCapabilities, browserChecks, checkEnvironment, type EnvironmentCheck } from "@/services/diagnostics/environment-check";
 import { probeBrowserStorage } from "@/services/diagnostics/browser-environment";
 
 const labels: Record<EnvironmentCheck["status"], string> = { pass: "正常", warning: "需留意", error: "需处理", repaired: "已修复", skipped: "可选", unknown: "未确认" };
@@ -16,9 +16,9 @@ export function EnvironmentChecks() {
         active.current = controller;
         setBusy(true);
         setError("");
-        await probeBrowserStorage(controller.signal);
+        const storage = await probeBrowserStorage(controller.signal);
         if (controller.signal.aborted) return;
-        const client = browserChecks();
+        const client = browserChecks({ ...browserCapabilities(), ...storage });
         try {
             const report = await checkEnvironment(true, controller.signal);
             if (controller.signal.aborted) return;

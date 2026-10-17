@@ -1,5 +1,37 @@
 import { expect, test } from "bun:test";
 import { browserChecks, browserCapabilities, probeBrowserStorage } from "../src/services/diagnostics/browser-environment";
+import { setActiveUserScope } from "../src/lib/user-scope";
+
+for (const finishOld of ["abort", "timeout", "account-switch"] as const) {
+    test(`an older ${finishOld} cannot overwrite the latest storage result`, async () => {
+        const previous = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+        const requests: Array<{ onerror?: () => void }> = [];
+        Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: {
+            open: () => { const request = {}; requests.push(request); return request; },
+            deleteDatabase: () => ({}),
+        } });
+        const controller = new AbortController();
+        try {
+            const older = probeBrowserStorage(controller.signal);
+            if (finishOld === "account-switch") setActiveUserScope("probe-next-account");
+            const newer = probeBrowserStorage();
+            requests[1].onerror?.();
+            const snapshot = await newer;
+            expect(snapshot.storageWritable).toBe(false);
+            if (finishOld !== "timeout") controller.abort();
+            const oldSnapshot = await older;
+            expect(oldSnapshot.storageTimedOut).toBe(finishOld === "timeout" ? true : undefined);
+            expect(browserCapabilities().storageWritable).toBe(false);
+            expect(browserCapabilities().storageTimedOut).toBe(false);
+            expect(browserChecks({ ...browserCapabilities(), ...snapshot }).find(item => item.id === "indexed-db")?.status).toBe("error");
+        } finally {
+            controller.abort();
+            if (previous) Object.defineProperty(globalThis, "indexedDB", previous);
+            else delete (globalThis as { indexedDB?: IDBFactory }).indexedDB;
+            setActiveUserScope(null);
+        }
+    }, 5000);
+}
 
 test("missing randomUUID is compatible while missing secure randomness is actionable", () => {
     const capabilities = { secureRandom: true, randomUUID: false, structuredClone: true, indexedDB: true, webGL: true, h264: true, hevc: false };

@@ -1,7 +1,14 @@
 import type { EnvironmentCheck } from "./environment-check";
+import { captureUserScopeEpoch, subscribeUserScope, userScopeEpochMatches } from "@/lib/user-scope";
 
 let storageWritable: boolean | undefined;
 let storageTimedOut = false;
+let latestStorageProbe = 0;
+subscribeUserScope(() => {
+    latestStorageProbe++;
+    storageWritable = undefined;
+    storageTimedOut = false;
+});
 
 export type BrowserCapabilities = { secureRandom: boolean; randomUUID: boolean; structuredClone: boolean; indexedDB: boolean; storageWritable?: boolean; storageTimedOut?: boolean; webGL: boolean; h264: boolean; hevc: boolean };
 
@@ -38,11 +45,21 @@ export function browserChecks(capabilities = browserCapabilities()): Environment
 
 // Use an isolated, uniquely named database. Never open or clear product stores.
 // Late success after the deadline still closes and removes the probe database.
-export async function probeBrowserStorage(signal?: AbortSignal): Promise<void> {
-    if (signal?.aborted) return;
-    try { if (typeof indexedDB === "undefined") { storageWritable = false; return; } }
-    catch { storageWritable = false; return; }
-    await new Promise<void>((resolve) => {
+type StorageProbeResult = Pick<BrowserCapabilities, "storageWritable" | "storageTimedOut">;
+export async function probeBrowserStorage(signal?: AbortSignal): Promise<StorageProbeResult> {
+    if (signal?.aborted) return {};
+    const probe = ++latestStorageProbe;
+    const epoch = captureUserScopeEpoch();
+    const publish = (result: StorageProbeResult) => {
+        if (probe === latestStorageProbe && !signal?.aborted && userScopeEpochMatches(epoch)) {
+            storageWritable = result.storageWritable;
+            storageTimedOut = result.storageTimedOut ?? false;
+        }
+        return result;
+    };
+    try { if (typeof indexedDB === "undefined") return publish({ storageWritable: false }); }
+    catch { return publish({ storageWritable: false }); }
+    return new Promise<StorageProbeResult>((resolve) => {
         const name = `beeftv-environment-probe-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         let settled = false;
         let database: IDBDatabase | undefined;
@@ -54,9 +71,8 @@ export async function probeBrowserStorage(signal?: AbortSignal): Promise<void> {
             signal?.removeEventListener("abort", abort);
             database?.close();
             removeProbe();
-            storageWritable = result;
-            storageTimedOut = timedOut;
-            resolve();
+            const snapshot = { storageWritable: result, storageTimedOut: timedOut };
+            resolve(signal?.aborted ? {} : publish(snapshot));
         };
         const timer = setTimeout(() => finish(undefined, true), 2000);
         const abort = () => finish();
