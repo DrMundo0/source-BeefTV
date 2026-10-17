@@ -13,6 +13,13 @@ harness.revoked = [];
 const revoke = URL.revokeObjectURL.bind(URL);
 URL.revokeObjectURL = (url) => { harness.revoked.push(url); revoke(url); };
 harness.switchScope = setActiveUserScope;
+const held: ReturnType<typeof acquireCanvasVideoPreview>[] = [];
+harness.holdVideo = async (id: string) => {
+    const lease = acquireCanvasVideoPreview({ metadata: { content: id } });
+    held.push(lease);
+    await lease.promise;
+};
+harness.releaseHeld = () => held.splice(0).forEach(lease => lease.release());
 harness.probePool = async () => {
     const lease = acquireCanvasVideoPreview({ metadata: { content: "probe" } });
     const result = await lease.promise;

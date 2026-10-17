@@ -98,6 +98,8 @@ test("cloning reference arrays during typing keeps the visible lease alive", asy
 
 test("mention menu decodes only visible rows and releases them when closed", async () => {
     await mount();
+    // A visible canvas node can hold the same poster while menu rows unmount.
+    await page.evaluate(() => (window as any).holdVideo("menu-0"));
     await page.evaluate((references) => { (window as any).setReferences(references); (window as any).showMenu(); }, Array.from({ length: 40 }, (_, i) => video(`menu-${i}`)));
     const editor = page.getByRole("textbox", { name: "引用编辑" });
     await editor.pressSequentially("@menu");
@@ -111,10 +113,11 @@ test("mention menu decodes only visible rows and releases them when closed", asy
     await page.locator(".canvas-resource-mention-scroll").evaluate((element) => { element.scrollTop = element.scrollHeight; });
     await page.waitForFunction(() => (window as any).captures.includes("menu-39"));
     await page.locator(".canvas-resource-mention-scroll").evaluate((element) => { element.scrollTop = 0; });
-    await page.waitForFunction(() => [...document.querySelectorAll('.canvas-resource-mention-item img')].some(image => !(window as any).revoked.includes((image as HTMLImageElement).src) && (image as HTMLImageElement).naturalWidth > 0));
+    await page.waitForFunction(() => { const image = document.querySelector('.canvas-resource-mention-item img') as HTMLImageElement | null; return image && !(window as any).revoked.includes(image.src) && image.naturalWidth > 0; });
     await editor.press("Escape");
     await page.waitForFunction(() => !document.querySelector("[data-canvas-resource-mention-menu]"), undefined, { timeout: 3000 });
     expect(await page.evaluate(() => (window as any).probePool())).toBe(true);
     await editor.press("End");
-    await page.waitForFunction(() => [...document.querySelectorAll('.canvas-resource-mention-item img')].some(image => !(window as any).revoked.includes((image as HTMLImageElement).src) && (image as HTMLImageElement).naturalWidth > 0));
+    await page.waitForFunction(() => { const image = document.querySelector('.canvas-resource-mention-item img') as HTMLImageElement | null; return image && !(window as any).revoked.includes(image.src) && image.naturalWidth > 0; });
+    await page.evaluate(() => (window as any).releaseHeld());
 }, 30_000);

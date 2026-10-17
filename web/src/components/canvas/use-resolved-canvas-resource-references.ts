@@ -9,9 +9,10 @@ import { captureUserScopeEpoch, getUserScopeGeneration, subscribeUserScope, user
 type ResolvedPreview = {
     identity: string;
     url: string;
+    owner: PreviewRequest;
 };
 
-type PreviewRequest = { cancelled: boolean; release?: () => void; url?: string };
+type PreviewRequest = { cancelled: boolean; release?: () => void };
 
 function releaseRequest(request: PreviewRequest) {
     request.cancelled = true;
@@ -69,10 +70,9 @@ export function useResolvedCanvasResourceReferences(references: CanvasResourceRe
                 }
                 if (!isCurrent()) return;
                 if (!url) { inFlight.current.delete(identity); request.release?.(); return; }
-                request.url = url;
                 setResolvedById((current) => {
-                    if (current[reference.id]?.identity === identity && current[reference.id]?.url === url) return current;
-                    return { ...current, [reference.id]: { identity, url } };
+                    if (current[reference.id]?.owner === request && current[reference.id]?.url === url) return current;
+                    return { ...current, [reference.id]: { identity, url, owner: request } };
                 });
             })();
         });
@@ -84,7 +84,7 @@ export function useResolvedCanvasResourceReferences(references: CanvasResourceRe
             const decodeVideo = videoPreviewEnabled ?? reference.active;
             const identity = key ? JSON.stringify([reference.id, scopeGeneration, key, reference.kind === "video" && decodeVideo]) : "";
             const resolved = identity ? resolvedById[reference.id] : undefined;
-            const owned = resolved?.identity === identity && inFlight.current.get(identity)?.url === resolved.url;
+            const owned = resolved?.identity === identity && inFlight.current.get(identity) === resolved.owner && !resolved.owner.cancelled;
             if (owned) return resolved.url !== reference.previewUrl ? { ...reference, previewUrl: resolved.url } : reference;
             // Never render a derived URL without an active owner, including the
             // first render after scrolling back or switching user scope.
