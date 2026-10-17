@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { validateTeamRelease } from './team-release-contract.mjs';
 import {
   THEME_AGENT_CONTRACT_VERSION,
   THEME_AGENT_SINCE,
@@ -104,8 +105,8 @@ test('v1.7.25 defers #176 and keeps source-bound checks, financial uncertainty a
       r => { r.releaseComplete = true; },
     ]) {
       const invalid = structuredClone(value);
-      mutate(invalid); save(invalid);
-      assert.throws(() => run());
+      mutate(invalid);
+      assert.throws(() => validateTeamRelease(invalid, sourceDigest));
     }
     commitVersion('v1.7.26');
     save({ ...value, version: 'v1.7.26', sourceDigest: run('--fingerprint').trim() }, 'v1.7.26');
