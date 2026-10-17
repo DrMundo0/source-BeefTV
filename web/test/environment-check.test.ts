@@ -5,7 +5,7 @@ import { setActiveUserScope } from "../src/lib/user-scope";
 for (const finishOld of ["abort", "timeout", "account-switch"] as const) {
     test(`an older ${finishOld} cannot overwrite the latest storage result`, async () => {
         const previous = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
-        const requests: Array<{ onerror?: () => void }> = [];
+        const requests: Array<{ onerror?: () => void; onsuccess?: () => void; result?: unknown }> = [];
         Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: {
             open: () => { const request = {}; requests.push(request); return request; },
             deleteDatabase: () => ({}),
@@ -20,6 +20,10 @@ for (const finishOld of ["abort", "timeout", "account-switch"] as const) {
             expect(snapshot.storageWritable).toBe(false);
             if (finishOld !== "timeout") controller.abort();
             const oldSnapshot = await older;
+            let closed = false;
+            requests[0].result = { close: () => { closed = true; }, transaction: () => { throw Error("late open must never write"); } };
+            requests[0].onsuccess?.();
+            expect(closed).toBe(true);
             expect(oldSnapshot.storageTimedOut).toBe(finishOld === "timeout" ? true : undefined);
             expect(browserCapabilities().storageWritable).toBe(false);
             expect(browserCapabilities().storageTimedOut).toBe(false);
