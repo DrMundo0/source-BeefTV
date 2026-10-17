@@ -6,7 +6,7 @@ import { ReferenceStoragePane } from "../../src/pages/settings/reference-storage
 import { ReferenceMediaTransportFields } from "../../src/pages/settings/reference-media-transport-fields";
 import type { ReferenceMediaTransport } from "../../src/stores/use-config-store";
 import { CanvasUploadModal } from "../../src/components/canvas/canvas-upload-modal";
-import { createReferenceLinkResolver } from "../../src/components/generation-reference-links";
+import { createReferenceLinkResolver } from "@/components/generation-reference-links";
 const params = new URLSearchParams(location.search);
 document.documentElement.classList.toggle("dark",params.has("dark"));
 document.body.style.background="var(--background)";
