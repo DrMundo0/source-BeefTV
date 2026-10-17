@@ -239,6 +239,10 @@ func (s *Service) Task(userID string, id string) (*model.Task, error) {
 	return s.taskDomain().Get(userID, id)
 }
 
+func (s *Service) TaskByClientOperation(userID, projectID, operationID string) (*model.Task, error) {
+	return s.taskDomain().FindOperation(userID, projectID, operationID)
+}
+
 func (s *Service) hydrateTaskProviderRequestID(task *model.Task) {
 	if task == nil || task.ProviderRequestID != "" {
 		return
@@ -277,8 +281,13 @@ func (s *Service) RetryTask(userID string, id string) (*model.Task, error) {
 	if s.IsDraining() {
 		return s.taskDomain().Retry(userID, id)
 	}
-	if task, err := s.repo.TaskForUser(userID, id); err == nil && task.Status == model.TaskStatusSucceeded && deliveryPaused(task.Stage) {
-		return s.resumeGenerationDownload(*task)
+	if task, err := s.repo.TaskForUser(userID, id); err == nil {
+		if task.Status == model.TaskStatusSucceeded && deliveryPaused(task.Stage) {
+			return s.resumeGenerationDownload(*task)
+		}
+		if restored, handled, err := s.recoverAcceptedImage(*task); handled {
+			return restored, err
+		}
 	}
 	return s.taskDomain().Retry(userID, id)
 }
