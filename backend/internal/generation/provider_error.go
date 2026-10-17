@@ -279,6 +279,7 @@ var providerCodeCategories = map[string]FailureCategory{
 	"pre_consume_token_quota_failed":       CategoryUnknown,
 	"upstream_crowded":                     CategoryThrottled,
 	"upstream_unavailable":                 CategoryProviderUnavailable,
+	"image_reference_upload_failed":        CategoryProviderUnavailable,
 	"upstream_rejected":                    CategoryUnknown,
 	"upstream_error":                       CategoryUnknown,
 }
@@ -444,6 +445,14 @@ func ClassifyError(err error) Failure {
 	}
 	var preparation RequestPreparationError
 	if errors.As(err, &preparation) {
+		failure := classifyHTTPErrorCause(preparation.Cause)
+		if failure.ProviderCode == "image_reference_upload_failed" {
+			failure.Category = CategoryProviderUnavailable
+			failure.Uncertain = false
+			failure.Reason = "参考图片上传失败，本次尚未开始生成"
+			failure.Action = "请稍后重试"
+			return normalizeFailure(failure)
+		}
 		return normalizeFailure(Failure{Category: CategoryInputInaccessible, Reason: "本次请求在准备时失败，未发送到模型服务", Action: "请检查参考素材和生成参数后重试"})
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
