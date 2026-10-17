@@ -38,7 +38,7 @@ export function DepthComponentsPanel({ initialState, onReady, onCancel, onOpenSe
     };
     const insufficient = Boolean(state && state.status !== "ready" && state.freeBytes < state.requiredBytes);
     return <div className="space-y-3 text-sm" data-canvas-no-zoom data-canvas-wheel-scroll>
-        <p className="leading-6 text-foreground/70">深度动作捕捉在本机处理视频，需要单独下载运行组件和模型。仅在你确认后下载。</p>
+        <p className="leading-6 text-foreground/70">视频在本机处理，确认后才会下载所需组件和模型。</p>
         <p role="status">{state ? statusText[state.status] : error ? "组件信息暂时无法读取" : "正在检查组件信息…"}</p>
         {state && state.status !== "unsupported" ? <>
             <div className="space-y-1 leading-6">
