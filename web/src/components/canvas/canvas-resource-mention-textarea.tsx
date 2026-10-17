@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ClipboardEvent, DragEvent, KeyboardEvent, MouseEvent, PointerEvent, TextareaHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, ChevronRight, FileText, Folder, Image as ImageIcon, Music2, Pencil, Search, UserRound, Video, Workflow } from "lucide-react";
@@ -112,7 +112,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         };
     }, []);
     const canvasReferences = useResolvedCanvasResourceReferences(references);
-    const rawAssetReferences = useMemo(() => includeAssetLibrary ? buildAssetMentionReferences(assets) : [], [assets, includeAssetLibrary]);
+    const rawAssetReferences = useMemo(() => includeAssetLibrary ? buildAssetMentionReferences(assets).map((item) => ({ ...item, active: highlightLabels && value.includes(canvasResourceMentionToken(item)) })) : [], [assets, includeAssetLibrary, highlightLabels, value]);
     const assetReferences = useResolvedCanvasResourceReferences(rawAssetReferences);
     const activeCanvasReferences = useMemo(() => canvasReferences.filter((item) => item.active), [canvasReferences]);
     const availableReferences = useMemo(() => [...(onSelectReference ? canvasReferences : activeCanvasReferences), ...assetReferences], [onSelectReference, canvasReferences, activeCanvasReferences, assetReferences]);
@@ -529,7 +529,7 @@ if (event.key === "Enter" && (event.nativeEvent.isComposing || composingRef.curr
                         onKeyDown?.(event as unknown as React.KeyboardEvent<HTMLTextAreaElement>);
                     }}
                     onKeyUp={(event) => {
-                        syncEditableMentionFromSelection();
+                        if (event.key !== "Escape") syncEditableMentionFromSelection();
                         props.onKeyUp?.(event as unknown as React.KeyboardEvent<HTMLTextAreaElement>);
                     }}
                     onMouseDown={(event) => props.onMouseDown?.(event as unknown as React.MouseEvent<HTMLTextAreaElement>)}
@@ -1004,11 +1004,23 @@ function MentionReferenceList({ references, activeReferenceId, onSelect }: { ref
 }
 
 function ReferencePreview({ reference }: { reference: CanvasResourceReference }) {
+    const [visible, setVisible] = useState(false);
+    const previewRef = useRef<HTMLSpanElement>(null);
+    const references = useMemo(() => [reference], [reference]);
+    const [resolved] = useResolvedCanvasResourceReferences(references, { videoPreviewEnabled: visible });
+    useEffect(() => {
+        const element = previewRef.current;
+        if (!element || reference.kind !== "video") return;
+        const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting));
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [reference.kind]);
+    return <span ref={previewRef} className="inline-flex shrink-0"><ResolvedReferencePreview reference={resolved} /></span>;
+}
+
+function ResolvedReferencePreview({ reference }: { reference: CanvasResourceReference }) {
     if (reference.kind === "image" && reference.previewUrl) return <img src={reference.previewUrl} alt="" className="canvas-resource-mention-preview is-image" />;
     if (reference.kind === "video" && reference.previewUrl) return <img src={reference.previewUrl} alt="" className="canvas-resource-mention-preview is-video" loading="lazy" decoding="async" />;
-    if (reference.kind === "video" && reference.mediaUrl) {
-        return <video src={reference.mediaUrl} aria-hidden="true" muted playsInline preload="metadata" className="canvas-resource-mention-preview is-video" onLoadedMetadata={(event) => primeVideoPreviewFrame(event.currentTarget)} />;
-    }
     if (reference.kind === "character" && reference.previewUrl) return <img src={reference.previewUrl} alt="" className="canvas-resource-mention-preview is-character" />;
     if (reference.kind === "skill") {
         return (

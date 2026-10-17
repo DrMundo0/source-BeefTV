@@ -1,71 +1,74 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { loadCanvasDrawingPreview } from "@/lib/canvas/canvas-drawing-storage";
 import { resolveImageUrl } from "@/services/image-storage";
 import { acquireCanvasVideoPreview, canvasDerivedPreviewSourceKey } from "@/services/canvas-video-preview";
+import { captureUserScopeEpoch, getUserScopeGeneration, subscribeUserScope, userScopeEpochMatches } from "@/lib/user-scope";
 
 type ResolvedPreview = {
     identity: string;
     url: string;
+    derived: boolean;
 };
 
 const previewPromiseCache = new Map<string, Promise<string>>();
+subscribeUserScope(() => previewPromiseCache.clear());
 
-export function useResolvedCanvasResourceReferences(references: CanvasResourceReference[], options?: { projectId?: string }) {
+export function useResolvedCanvasResourceReferences(references: CanvasResourceReference[], options?: { projectId?: string; videoPreviewEnabled?: boolean }) {
     const projectId = options?.projectId;
+    const videoPreviewEnabled = options?.videoPreviewEnabled;
+    const scopeGeneration = useSyncExternalStore(subscribeUserScope, getUserScopeGeneration, getUserScopeGeneration);
     const requests = useMemo(
         () => references.flatMap((reference) => {
             const identity = previewIdentity(reference, projectId);
-            return identity ? [{ reference, identity }] : [];
+            return identity ? [{ reference, identity: `${scopeGeneration}:${identity}` }] : [];
         }),
-        [projectId, references],
+        [projectId, references, scopeGeneration],
     );
     const [resolvedById, setResolvedById] = useState<Record<string, ResolvedPreview>>({});
 
     useEffect(() => {
         if (!requests.length) return;
         let cancelled = false;
+        const epoch = captureUserScopeEpoch();
         const leases: ReturnType<typeof acquireCanvasVideoPreview>[] = [];
-        void Promise.all(
-            requests.map(async ({ reference, identity }) => ({
-                id: reference.id,
-                identity,
-                url: await (async () => {
-                    const stored = await resolveReferencePreview(reference, identity, projectId);
-                    if (stored || !reference.videoPreviewSource) return stored;
+        const isCurrent = () => !cancelled && userScopeEpochMatches(epoch);
+        requests.forEach(({ reference, identity }) => {
+            void (async () => {
+                let url = await resolveReferencePreview(reference, identity, projectId);
+                let derived = false;
+                if (!isCurrent()) return;
+                // Lists include unused nodes and assets; decode only used videos
+                // or thumbnails currently visible in the mention menu.
+                if (!url && reference.videoPreviewSource && (videoPreviewEnabled ?? reference.active)) {
                     const lease = acquireCanvasVideoPreview(reference.videoPreviewSource);
                     leases.push(lease);
-                    if (cancelled) { lease.release(); return ""; }
-                    return (await lease.promise)?.content || "";
-                })(),
-            })),
-        ).then((resolved) => {
-            if (cancelled) return;
-            setResolvedById((current) => {
-                let changed = false;
-                const next = { ...current };
-                resolved.forEach(({ id, identity, url }) => {
-                    if (!url || (current[id]?.identity === identity && current[id]?.url === url)) return;
-                    next[id] = { identity, url };
-                    changed = true;
+                    url = (await lease.promise)?.content || "";
+                    derived = true;
+                }
+                if (!url || !isCurrent()) return;
+                setResolvedById((current) => {
+                    if (current[reference.id]?.identity === identity && current[reference.id]?.url === url) return current;
+                    return { ...current, [reference.id]: { identity, url, derived } };
                 });
-                return changed ? next : current;
-            });
+            })();
         });
         return () => {
             cancelled = true;
             leases.forEach((lease) => lease.release());
         };
-    }, [projectId, requests]);
+    }, [projectId, requests, videoPreviewEnabled]);
 
     return useMemo(
         () => references.map((reference) => {
-            const identity = previewIdentity(reference, projectId);
+            const key = previewIdentity(reference, projectId);
+            const identity = key ? `${scopeGeneration}:${key}` : "";
             const resolved = identity ? resolvedById[reference.id] : undefined;
+            if (resolved?.derived && !(videoPreviewEnabled ?? reference.active)) return reference;
             return resolved?.identity === identity && resolved.url !== reference.previewUrl ? { ...reference, previewUrl: resolved.url } : reference;
         }),
-        [projectId, references, resolvedById],
+        [projectId, references, resolvedById, scopeGeneration, videoPreviewEnabled],
     );
 }
 

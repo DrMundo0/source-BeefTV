@@ -355,15 +355,13 @@ func validateCustomRelayHost(host string) error {
 
 func resolveOutboundHost(ctx context.Context, host string) ([]net.IP, error) {
 	host = normalizeOutboundHost(host)
-	explicitHost := AllowedPrivateUpstreamHost(host)
-	return resolveOutboundHostWithPolicy(ctx, host, allowPrivateUpstreams() || explicitHost, explicitHost)
+	return resolveOutboundHostWithPolicy(ctx, host, allowPrivateUpstreams() || AllowedPrivateUpstreamHost(host))
 }
 
 func resolveCustomRelayHost(ctx context.Context, host string) ([]net.IP, error) {
 	host = normalizeOutboundHost(host)
-	explicitHost := AllowedPrivateUpstreamHost(host)
-	allowPrivateHost := allowPrivateUpstreams() || explicitHost
-	addresses, err := resolveOutboundHostWithPolicy(ctx, host, allowPrivateHost, explicitHost)
+	allowPrivateHost := allowPrivateUpstreams() || AllowedPrivateUpstreamHost(host)
+	addresses, err := resolveOutboundHostWithPolicy(ctx, host, allowPrivateHost)
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +375,7 @@ func resolveCustomRelayHost(ctx context.Context, host string) ([]net.IP, error) 
 	return addresses, nil
 }
 
-func resolveOutboundHostWithPolicy(ctx context.Context, host string, allowPrivateHost bool, explicitHost bool) ([]net.IP, error) {
+func resolveOutboundHostWithPolicy(ctx context.Context, host string, allowPrivateHost bool) ([]net.IP, error) {
 	if host == "" {
 		return nil, BadAuthRequest("外部服务域名无效")
 	}
@@ -398,7 +396,12 @@ func resolveOutboundHostWithPolicy(ctx context.Context, host string, allowPrivat
 		return nil, BadAuthRequest("外部服务域名没有可用地址")
 	}
 	for _, ip := range addresses {
-		if (!explicitHost && blockedLinkLocalOrSpecialIP(ip)) || (!allowPrivateHost && blockedOutboundIP(ip)) {
+		// Link-local includes cloud metadata (169.254.169.254). An operator
+		// allowlist may pin a LAN host, but it must not reopen that range.
+		if blockedLinkLocalOrSpecialIP(ip) {
+			return nil, BadAuthRequest("不允许访问链路本地、未指定或组播地址")
+		}
+		if !allowPrivateHost && blockedOutboundIP(ip) {
 			return nil, BadAuthRequest("不允许访问本机、内网或链路本地地址")
 		}
 	}
@@ -428,6 +431,51 @@ func blockedCustomRelayIP(ip net.IP) bool {
 		}
 	}
 	return false
+}
+
+var cgnatPrefix = netip.MustParsePrefix("100.64.0.0/10")
+
+// localUpstreamIP is loopback, RFC1918/ULA, or CGNAT. Link-local (including
+// cloud metadata), unspecified, multicast, and public addresses are not local.
+func localUpstreamIP(ip net.IP) bool {
+	if blockedLinkLocalOrSpecialIP(ip) {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() {
+		return true
+	}
+	address, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	return cgnatPrefix.Contains(address.Unmap())
+}
+
+func addressesAllowLocalHTTP(addresses []net.IP, allowPrivate bool) bool {
+	if !allowPrivate || len(addresses) == 0 {
+		return false
+	}
+	for _, ip := range addresses {
+		if !localUpstreamIP(ip) {
+			return false
+		}
+	}
+	return true
+}
+
+// HostAllowsLocalHTTP reports whether every resolved address is loopback,
+// RFC1918/ULA, or CGNAT, and private upstreams are enabled. An operator
+// allowlist does not make this true while CANVAS_ALLOW_PRIVATE_UPSTREAMS=false.
+// Link-local and metadata addresses stay false.
+func HostAllowsLocalHTTP(ctx context.Context, host string) bool {
+	if !allowPrivateUpstreams() {
+		return false
+	}
+	addresses, err := resolveOutboundHost(ctx, host)
+	if err != nil {
+		return false
+	}
+	return addressesAllowLocalHTTP(addresses, true)
 }
 
 func allowPrivateUpstreams() bool {
