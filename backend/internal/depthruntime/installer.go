@@ -24,6 +24,7 @@ type Manifest struct {
 
 type EnsureOptions struct {
 	ManifestURL      string
+	ManifestMirrors  []string
 	DataDir          string
 	Platform         string
 	Variant          string
@@ -258,6 +259,28 @@ func fetchManifest(ctx context.Context, rawURL string, signed bool, public ed255
 		return manifest, nil
 	}
 	return Manifest{}, fmt.Errorf("获取深度组件清单失败: %w", lastErr)
+}
+
+func fetchManifestSources(ctx context.Context, options EnsureOptions) (Manifest, error) {
+	sources := append([]string{options.ManifestURL}, options.ManifestMirrors...)
+	var lastErr error
+	for _, source := range sources {
+		attemptCtx := ctx
+		cancel := func() {}
+		if len(sources) > 1 {
+			attemptCtx, cancel = context.WithTimeout(ctx, 6*time.Second)
+		}
+		manifest, err := fetchManifest(attemptCtx, source, options.Platform == "windows-amd64", options.TrustedPublicKey)
+		cancel()
+		if err == nil {
+			return manifest, nil
+		}
+		if ctx.Err() != nil {
+			return Manifest{}, ctx.Err()
+		}
+		lastErr = err
+	}
+	return Manifest{}, lastErr
 }
 
 func extractRuntimeArchive(path string, destination string, artifact Artifact, maxExpanded int64) error {

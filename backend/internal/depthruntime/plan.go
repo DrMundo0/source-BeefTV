@@ -74,7 +74,7 @@ func installedRuntime(paths runtimePaths, platform string) bool {
 // Metadata preview and installation must use the same version and trust rules.
 func loadArtifacts(ctx context.Context, options EnsureOptions) (Manifest, Artifact, error) {
 	windows := options.Platform == "windows-amd64"
-	manifest, err := fetchManifest(ctx, options.ManifestURL, windows, options.TrustedPublicKey)
+	manifest, err := fetchManifestSources(ctx, options)
 	if err != nil {
 		if ctx.Err() != nil {
 			return Manifest{}, Artifact{}, ctx.Err()

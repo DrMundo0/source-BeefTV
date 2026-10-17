@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -13,6 +14,36 @@ import (
 	"infinite-canvas/backend/internal/depthruntime"
 	"infinite-canvas/backend/internal/model"
 )
+
+func TestComponentManifestMirrorsRespectExplicitOverride(t *testing.T) {
+	for _, platform := range []string{"darwin-arm64", "windows-amd64"} {
+		for _, override := range []string{"", "https://custom.invalid/manifest"} {
+			svc := New(Deps{DataDir: t.TempDir(), WindowsManifestPublicKeyBase64: base64.StdEncoding.EncodeToString(make([]byte, 32)), Getenv: func(key string) string {
+				if key == manifestEnv {
+					return override
+				}
+				return ""
+			}})
+			options, err := svc.componentOptions(platform, "cpu")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if override != "" {
+				if options.ManifestURL != override || len(options.ManifestMirrors) != 0 {
+					t.Fatalf("override leaked mirrors: %+v", options)
+				}
+				continue
+			}
+			name := "depth-runtime-manifest.json"
+			if platform == "windows-amd64" {
+				name = "depth-runtime-manifest.v2.json"
+			}
+			if options.ManifestURL != componentCOSBase+name || !reflect.DeepEqual(options.ManifestMirrors, []string{componentR2Base + name, componentGHBase + name}) {
+				t.Fatalf("default sources: %+v", options)
+			}
+		}
+	}
+}
 
 func TestCaptureDoesNotDownloadMissingComponents(t *testing.T) {
 	var hits atomic.Int32
