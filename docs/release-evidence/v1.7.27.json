@@ -1,6 +1,6 @@
 {
   "version": "v1.7.27",
-  "sourceDigest": "c73c8123894cf1313e4014c9330f6e965ca03a589500bcc66827c21e6be0151f",
+  "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
   "baseRelease": "v1.7.26",
   "baseCommit": "ddaf5f9abc64b16567c28ea5399d8f2069c47832",
   "includedPullRequests": [
@@ -8,7 +8,7 @@
     202
   ],
   "ownerException": {
-    "sourceDigest": "c73c8123894cf1313e4014c9330f6e965ca03a589500bcc66827c21e6be0151f",
+    "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
     "evidence": [
       "docs/release-evidence/v1.7.27-review.md"
     ],
@@ -17,7 +17,7 @@
     "instruction": "允许本版 Music 专项验收（推荐）"
   },
   "releaseAuthorization": {
-    "sourceDigest": "c73c8123894cf1313e4014c9330f6e965ca03a589500bcc66827c21e6be0151f",
+    "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
     "evidence": [
       "docs/release-evidence/v1.7.27-review.md"
     ],
@@ -53,7 +53,7 @@
   },
   "candidateTestedHead": "741b486c5907739001b842bcc62d9a8895ebc26d",
   "candidateAcceptance": {
-    "sourceDigest": "c73c8123894cf1313e4014c9330f6e965ca03a589500bcc66827c21e6be0151f",
+    "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
     "evidence": [
       "docs/release-evidence/music3-fix-candidate.md"
     ],
@@ -74,46 +74,46 @@
     "beefTVArtifactSHA256": "be8ae0f56cd1caf46f4e6422e91dcaee4d33e1e4d320a979d6790f190f8b1407"
   },
   "review": {
-    "sourceDigest": "c73c8123894cf1313e4014c9330f6e965ca03a589500bcc66827c21e6be0151f",
+    "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
     "evidence": [
       "docs/release-evidence/v1.7.27-review.md"
     ],
-    "result": "pending",
+    "result": "approved",
     "independent": true,
-    "reviewer": "pending final Grok review",
-    "reviewedHead": "7ecafb0f3336b22229d8bf75dca849e8d4e1ec2c"
+    "reviewer": "Codex independent music3_review",
+    "reviewedHead": "6495be928b8567bf632f2f8c8b694989137a0c5a"
   },
   "verification": {
     "musicContracts": {
-      "sourceDigest": "c73c8123894cf1313e4014c9330f6e965ca03a589500bcc66827c21e6be0151f",
+      "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
       "evidence": [
         "docs/release-evidence/v1.7.27-review.md"
       ],
       "status": "passed"
     },
     "transportSafety": {
-      "sourceDigest": "c73c8123894cf1313e4014c9330f6e965ca03a589500bcc66827c21e6be0151f",
+      "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
       "evidence": [
         "docs/release-evidence/v1.7.27-review.md"
       ],
       "status": "passed"
     },
     "officialAudioPlugin": {
-      "sourceDigest": "c73c8123894cf1313e4014c9330f6e965ca03a589500bcc66827c21e6be0151f",
+      "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
       "evidence": [
         "docs/release-evidence/v1.7.27-review.md"
       ],
       "status": "passed"
     },
     "ci": {
-      "sourceDigest": "c73c8123894cf1313e4014c9330f6e965ca03a589500bcc66827c21e6be0151f",
+      "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
       "evidence": [
         "docs/release-evidence/v1.7.27-review.md"
       ],
       "status": "pending"
     },
     "uiCrossReview": {
-      "sourceDigest": "c73c8123894cf1313e4014c9330f6e965ca03a589500bcc66827c21e6be0151f",
+      "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
       "evidence": [
         "https://github.com/glanderness/BeefTV/pull/202"
       ],
@@ -122,11 +122,12 @@
       "reviewer": "Lucas"
     },
     "localReleaseGate": {
-      "sourceDigest": "c73c8123894cf1313e4014c9330f6e965ca03a589500bcc66827c21e6be0151f",
+      "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
       "evidence": [
-        ".github/workflows/release-desktop.yml"
+        ".github/workflows/release-desktop.yml",
+        "docs/release-evidence/v1.7.27-review.md"
       ],
-      "status": "pending_release_workflow",
+      "status": "passed",
       "beforeDraft": true
     }
   },
