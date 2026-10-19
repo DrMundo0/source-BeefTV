@@ -35,7 +35,9 @@ const nonempty = value => typeof value === 'string' && value.trim() !== '';
 if (receipt.version !== version || receipt.sourceDigest !== sourceDigest) fail('receipt does not match this release source');
 if (version === 'v1.7.27') {
   const treeDigest = (ref, paths) => createHash('sha256').update(execFileSync('git', ['ls-tree', '-r', ref, '--', ...paths], { encoding: 'utf8' })).digest('hex');
-  const productPaths = ['backend', 'web', 'agent-host', 'plugin-packages', 'assets/app-icon.png'];
+  // The candidate predates the version's release-note copy. Only that exact
+  // summary file is excluded from behavioral reuse; final review still binds it.
+  const productPaths = ['backend', 'web', 'agent-host', 'plugin-packages', 'assets/app-icon.png', ':(exclude)web/src/components/layout/app-changelog.zh.ts'];
   validateMusic3Release(receipt, sourceDigest, {
     reviewedSourceDigest: treeDigest(receipt.review?.reviewedHead, sourcePaths),
     candidateProductDigest: treeDigest(receipt.candidateTestedHead, productPaths),
