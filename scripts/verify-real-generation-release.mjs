@@ -34,14 +34,18 @@ const fail = message => { throw new Error(`Real generation release gate: ${messa
 const nonempty = value => typeof value === 'string' && value.trim() !== '';
 if (receipt.version !== version || receipt.sourceDigest !== sourceDigest) fail('receipt does not match this release source');
 if (version === 'v1.7.27') {
-  const treeDigest = (ref, paths) => createHash('sha256').update(execFileSync('git', ['ls-tree', '-r', ref, '--', ...paths], { encoding: 'utf8' })).digest('hex');
+  const treeDigest = (ref, paths, omitReleaseNotes = false) => {
+    let tree = execFileSync('git', ['ls-tree', '-r', ref, '--', ...paths], { encoding: 'utf8' });
+    if (omitReleaseNotes) tree = tree.split('\n').filter(line => !line.endsWith('\tweb/src/components/layout/app-changelog.zh.ts')).join('\n');
+    return createHash('sha256').update(tree).digest('hex');
+  };
   // The candidate predates the version's release-note copy. Only that exact
   // summary file is excluded from behavioral reuse; final review still binds it.
-  const productPaths = ['backend', 'web', 'agent-host', 'plugin-packages', 'assets/app-icon.png', ':(exclude)web/src/components/layout/app-changelog.zh.ts'];
+  const productPaths = ['backend', 'web', 'agent-host', 'plugin-packages', 'assets/app-icon.png'];
   validateMusic3Release(receipt, sourceDigest, {
     reviewedSourceDigest: treeDigest(receipt.review?.reviewedHead, sourcePaths),
-    candidateProductDigest: treeDigest(receipt.candidateTestedHead, productPaths),
-    currentProductDigest: treeDigest('HEAD', productPaths),
+    candidateProductDigest: treeDigest(receipt.candidateTestedHead, productPaths, true),
+    currentProductDigest: treeDigest('HEAD', productPaths, true),
   });
   console.log('v1.7.27 Music-only release; full matrix NOT run; public API and installed-client acceptance PENDING; four-platform package gates remain mandatory.');
   process.exit(0);
