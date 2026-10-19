@@ -1,6 +1,6 @@
 {
   "version": "v1.7.27",
-  "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
+  "sourceDigest": "cdac6cf5be9aa6fb342553275b8b1a009fd55621c1991edaed8748fb75e2da51",
   "baseRelease": "v1.7.26",
   "baseCommit": "ddaf5f9abc64b16567c28ea5399d8f2069c47832",
   "includedPullRequests": [
@@ -8,7 +8,7 @@
     202
   ],
   "ownerException": {
-    "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
+    "sourceDigest": "cdac6cf5be9aa6fb342553275b8b1a009fd55621c1991edaed8748fb75e2da51",
     "evidence": [
       "docs/release-evidence/v1.7.27-review.md"
     ],
@@ -17,7 +17,7 @@
     "instruction": "允许本版 Music 专项验收（推荐）"
   },
   "releaseAuthorization": {
-    "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
+    "sourceDigest": "cdac6cf5be9aa6fb342553275b8b1a009fd55621c1991edaed8748fb75e2da51",
     "evidence": [
       "docs/release-evidence/v1.7.27-review.md"
     ],
@@ -53,7 +53,7 @@
   },
   "candidateTestedHead": "741b486c5907739001b842bcc62d9a8895ebc26d",
   "candidateAcceptance": {
-    "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
+    "sourceDigest": "cdac6cf5be9aa6fb342553275b8b1a009fd55621c1991edaed8748fb75e2da51",
     "evidence": [
       "docs/release-evidence/music3-fix-candidate.md"
     ],
@@ -71,58 +71,61 @@
     "reopened": true,
     "exportEqualsResource": true,
     "apiArtifactSHA256": "704441af079b917d4f1965b43ff082ed72c891a9e1c34b8209d5d7aabc542394",
-    "beefTVArtifactSHA256": "be8ae0f56cd1caf46f4e6422e91dcaee4d33e1e4d320a979d6790f190f8b1407"
+    "beefTVArtifactSHA256": "be8ae0f56cd1caf46f4e6422e91dcaee4d33e1e4d320a979d6790f190f8b1407",
+    "evidenceRole": "historical-reference-only"
   },
   "review": {
-    "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
+    "sourceDigest": "cdac6cf5be9aa6fb342553275b8b1a009fd55621c1991edaed8748fb75e2da51",
     "evidence": [
       "docs/release-evidence/v1.7.27-review.md"
     ],
-    "result": "approved",
+    "result": "pending",
     "independent": true,
     "reviewer": "Codex independent music3_review",
-    "reviewedHead": "6495be928b8567bf632f2f8c8b694989137a0c5a"
+    "reviewedHead": "652da132efd52c6c64e9108561c9ade07209fac3"
   },
   "verification": {
     "musicContracts": {
-      "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
+      "sourceDigest": "cdac6cf5be9aa6fb342553275b8b1a009fd55621c1991edaed8748fb75e2da51",
       "evidence": [
         "docs/release-evidence/v1.7.27-review.md"
       ],
       "status": "passed"
     },
     "transportSafety": {
-      "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
+      "sourceDigest": "cdac6cf5be9aa6fb342553275b8b1a009fd55621c1991edaed8748fb75e2da51",
       "evidence": [
         "docs/release-evidence/v1.7.27-review.md"
       ],
       "status": "passed"
     },
     "officialAudioPlugin": {
-      "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
+      "sourceDigest": "cdac6cf5be9aa6fb342553275b8b1a009fd55621c1991edaed8748fb75e2da51",
       "evidence": [
         "docs/release-evidence/v1.7.27-review.md"
       ],
       "status": "passed"
     },
     "ci": {
-      "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
+      "sourceDigest": "cdac6cf5be9aa6fb342553275b8b1a009fd55621c1991edaed8748fb75e2da51",
       "evidence": [
         "docs/release-evidence/v1.7.27-review.md"
       ],
       "status": "pending"
     },
     "uiCrossReview": {
-      "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
+      "sourceDigest": "cdac6cf5be9aa6fb342553275b8b1a009fd55621c1991edaed8748fb75e2da51",
       "evidence": [
         "https://github.com/glanderness/BeefTV/pull/202"
       ],
-      "status": "pending",
-      "method": "human-review",
-      "reviewer": "Lucas"
+      "status": "not_run_owner_waived",
+      "method": "explicit-owner-waiver",
+      "reviewer": "Ender",
+      "instruction": "撤回吧 这个直接上线 上线了再和Lucas说",
+      "notifyLucasAfterRelease": true
     },
     "localReleaseGate": {
-      "sourceDigest": "adc08054383691085e21bcbf41f494733b1b9c3c429df83354e2ca02ac637cdd",
+      "sourceDigest": "cdac6cf5be9aa6fb342553275b8b1a009fd55621c1991edaed8748fb75e2da51",
       "evidence": [
         ".github/workflows/release-desktop.yml",
         "docs/release-evidence/v1.7.27-review.md"
