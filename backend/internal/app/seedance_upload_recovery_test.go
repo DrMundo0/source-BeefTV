@@ -112,3 +112,35 @@ func TestSeedanceUploadRecoveryValidatesRemainingInlineReferences(t *testing.T) 
 		t.Fatalf("recovery skipped validation of a later reference: %v", err)
 	}
 }
+
+func TestSeedanceUploadGateway4xxKeepsUploadDiagnostics(t *testing.T) {
+	for _, stage := range []string{"create", "complete"} {
+		err := &generation.ReferenceUploadError{
+			Meta:       generation.ReferenceUploadMeta{Kind: "image", Index: 2, Stage: stage},
+			HTTPStatus: 400, Code: "video_reference_upload_incomplete", RequestID: "gateway-request-123456", Detail: "请先上传文件",
+			Cause: generation.HTTPError{StatusCode: 400},
+		}
+		task := model.Task{}
+		captureTaskFailureDiagnostics(&task, err, "unknown")
+		d := task.FailureDiagnostics
+		if d.Source != "reference_upload" || d.HTTPStatus != 400 || d.ProviderCode != err.Code || d.RequestID != err.RequestID || d.Stage != err.Meta.Label() {
+			t.Fatalf("gateway rejection lost upload diagnostics: %+v", d)
+		}
+	}
+}
+
+func TestSeedanceUploadTruncatedStorageErrorRemainsFailure(t *testing.T) {
+	h := newBeefAPISeedanceUploadHarness(t)
+	h.putHook = func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "10000")
+		w.Header().Set("X-Amz-Request-Id", "storage-request-123456")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("<Error><Code>"))
+	}
+	input := h.testInput(providerMedia{DataURL: dataURL("image/png", []byte("image"))}, providerMedia{}, providerMedia{})
+	err := prepareBeefAPISeedanceReferences(h.ctx(), input.Config, &input, nil)
+	var upload *generation.ReferenceUploadError
+	if !errors.As(err, &upload) || upload.HTTPStatus != 400 || upload.RequestID != "storage-request-123456" || h.completes != 0 || h.generates != 0 {
+		t.Fatalf("truncated storage rejection was accepted: %v", err)
+	}
+}

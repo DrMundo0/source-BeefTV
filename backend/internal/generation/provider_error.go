@@ -455,7 +455,9 @@ func ClassifyError(err error) Failure {
 	var referenceUpload *ReferenceUploadError
 	if errors.As(err, &referenceUpload) {
 		if referenceUpload.Meta.Stage != "put" && (referenceUpload.HTTPStatus == 400 || referenceUpload.HTTPStatus == 401 || referenceUpload.HTTPStatus == 402 || referenceUpload.HTTPStatus == 403) {
-			return ClassifyError(referenceUpload.Cause)
+			failure := ClassifyError(referenceUpload.Cause)
+			failure.RequestID = firstNonEmpty(referenceUpload.RequestID, failure.RequestID)
+			return failure
 		}
 		copy := referencePreparationCopies["reference_preupload_failed"]
 		failure := normalizeFailure(Failure{Category: CategoryProviderUnavailable, ProviderCode: "reference_preupload_failed",
