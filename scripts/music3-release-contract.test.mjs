@@ -15,11 +15,11 @@ function fixture() {
     priorFinancialUncertainty: { status: 'unresolved', carriedFromVersion: 'v1.7.26', pendingCNY: null, evidence: ['docs/release-evidence/v1.7.26.json'] },
     postReleaseAcceptance: { status: 'pending', model: 'minimax-music-v3.0', authorizedBudgetCNY: 20, priorConservativeEstimateCNY: 14, maximumNewPaidSubmissions: 2, maximumAdditionalCostCNY: 2, supplierFinalBillVerified: false, evidence: ['synthetic-test-fixture'] },
     candidateTestedHead: 'b'.repeat(40),
-    candidateAcceptance: { ...bound(), environment: 'isolated-desktop-backend-and-web-preview', productionWalletTested: false, installedWailsShellTested: false, apiElapsedSeconds: 180.29, heartbeatIntervalSeconds: 15, beefTVTaskId: '73f2816635112244477e47af022e699d', beefTVAttempts: 1, sampleRate: 44100, bitrate: 256000, format: 'mp3', saved: true, reopened: true, exportEqualsResource: true },
+    candidateAcceptance: { ...bound(), evidenceRole: 'historical-reference-only', environment: 'isolated-desktop-backend-and-web-preview', productionWalletTested: false, installedWailsShellTested: false, apiElapsedSeconds: 180.29, heartbeatIntervalSeconds: 15, beefTVTaskId: '73f2816635112244477e47af022e699d', beefTVAttempts: 1, sampleRate: 44100, bitrate: 256000, format: 'mp3', saved: true, reopened: true, exportEqualsResource: true },
     review: { ...bound(), result: 'approved', independent: true, reviewer: 'synthetic reviewer', reviewedHead: 'c'.repeat(40) },
     verification: {
       ...Object.fromEntries(['musicContracts', 'transportSafety', 'officialAudioPlugin', 'ci'].map(id => [id, { ...bound(), status: 'passed' }])),
-      uiCrossReview: { ...bound(), status: 'passed', method: 'human-review', reviewer: 'Lucas' },
+      uiCrossReview: { ...bound(), status: 'not_run_owner_waived', method: 'explicit-owner-waiver', reviewer: 'Ender', instruction: '撤回吧 这个直接上线 上线了再和Lucas说', notifyLucasAfterRelease: true },
       localReleaseGate: { ...bound(), evidence: ['.github/workflows/release-desktop.yml'], status: 'pending_release_workflow', beforeDraft: true },
     },
     packages: { platforms: ['darwin-arm64', 'darwin-amd64', 'windows-amd64', 'linux-amd64'], status: 'pending_release_workflow', archives: null, windowsReleasedUpgradeAndRollbackBeforeUpload: true, finalArchiveSmokeBeforeUpload: true, linuxNativeWindowBeforeUpload: true, signedManifestBeforePublish: true, publicReadbackAfterPublish: true, workflowEvidence: ['.github/workflows/release-desktop.yml'] },
@@ -44,8 +44,10 @@ for (const [name, mutate] of Object.entries({
   'invented production success': r => r.postReleaseAcceptance.status = 'passed',
   'stale review': r => r.review.sourceDigest = 'd'.repeat(64),
   'missing independent review': r => r.review.result = 'pending',
-  'missing human review': r => r.verification.uiCrossReview.status = 'pending',
+  'missing owner waiver': r => r.verification.uiCrossReview.status = 'pending',
   'wrong UI reviewer': r => r.verification.uiCrossReview.reviewer = 'agent',
+  'generic release order is not a human-review waiver': r => r.verification.uiCrossReview.instruction = '上线',
+  'missing Lucas notification': r => r.verification.uiCrossReview.notifyLucasAfterRelease = false,
   'missing CI': r => r.verification.ci.status = 'pending',
   'missing local gate': r => r.verification.localReleaseGate.beforeDraft = false,
   'missing platform': r => r.packages.platforms.pop(),
@@ -60,8 +62,9 @@ for (const [name, mutate] of Object.entries({
     assert.throws(() => validateMusic3Release(r, digest, proofs()));
   });
 }
-test('candidate acceptance cannot be carried to different application source', () => {
-  assert.throws(() => validateMusic3Release(fixture(), digest, { ...proofs(), candidateProductDigest: 'e'.repeat(64) }));
+test('historical candidate cannot be presented as final-source acceptance', () => {
+  const r = fixture(); r.candidateAcceptance.evidenceRole = 'current-release-passed';
+  assert.throws(() => validateMusic3Release(r, digest, proofs()));
 });
 test('review must cover the complete current release source', () => {
   assert.throws(() => validateMusic3Release(fixture(), digest, { ...proofs(), reviewedSourceDigest: 'f'.repeat(64) }));

@@ -108,3 +108,81 @@ func TestMusicPluginRejectsIncompleteOrNonAudioResponses(t *testing.T) {
 		})
 	}
 }
+
+func TestMusicChannelNameDoesNotEnableSSEForCustomOrigin(t *testing.T) {
+	t.Setenv("BEEFTV_ENTERPRISE_TEST_ORIGIN", "")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if _, ok := body["stream_format"]; ok {
+			t.Errorf("custom origin received enterprise SSE extension: %v", body)
+		}
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write([]byte("ID3music"))
+	}))
+	defer server.Close()
+	for _, withPlugin := range []bool{false, true} {
+		ctx := context.Background()
+		config := Config{ChannelID: "beefapi", Model: "minimax-music-v3.0", BaseURL: server.URL}
+		if withPlugin {
+			config.InterfaceType = "openai-audio"
+			ctx = WithProtocolRegistry(ctx, LoadOfficialFallbackRegistry())
+		}
+		if _, err := RunAudioTask(ctx, Input{Mode: "audio", Config: config, Prompt: "piano"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestMusicSignedResultDownloadsWithoutModelCredential(t *testing.T) {
+	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+	downloads := 0
+	media := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		downloads++
+		if r.Method != http.MethodGet || r.Header.Get("Authorization") != "" {
+			t.Error("signed media download must be an unauthenticated GET")
+		}
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write([]byte("ID3music"))
+	}))
+	defer media.Close()
+	done := "data: {\"type\":\"speech.audio.done\",\"audio_url\":\"" + media.URL + "/music.mp3?signature=test-fixture\"}\n\n"
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer model-key-fixture" {
+			t.Error("provider request did not carry its model credential")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(done))
+	}))
+	defer provider.Close()
+	t.Setenv("BEEFTV_ENTERPRISE_TEST_ORIGIN", provider.URL)
+	for _, withPlugin := range []bool{false, true} {
+		ctx := context.Background()
+		config := Config{Model: "minimax-music-v3.0", BaseURL: provider.URL, APIKey: "model-key-fixture"}
+		if withPlugin {
+			config.InterfaceType = "openai-audio"
+			ctx = WithProtocolRegistry(ctx, LoadOfficialFallbackRegistry())
+		}
+		if _, err := RunAudioTask(ctx, Input{Mode: "audio", Config: config, Prompt: "piano"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if downloads != 2 {
+		t.Fatalf("signed media downloads = %d, want 2", downloads)
+	}
+	delta := "data: {\"type\":\"speech.audio.delta\",\"audio\":\"SUQzbXVzaWM=\"}\n\n"
+	for _, body := range []string{
+		delta + done,
+		"data: {\"type\":\"speech.audio.done\",\"audio_url\":\"http://user:secret@" + strings.TrimPrefix(media.URL, "http://") + "/music.mp3\"}\n\n",
+		"data: {\"type\":\"speech.audio.done\",\"audio_url\":\"file:///music.mp3\"}\n\n",
+	} {
+		if _, _, err := readSpeechAudioEvents(context.Background(), []byte(body)); err == nil {
+			t.Fatal("accepted mixed or invalid signed result")
+		}
+	}
+	if downloads != 2 {
+		t.Fatalf("invalid result unexpectedly fetched media: %d", downloads)
+	}
+}

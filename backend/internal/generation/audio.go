@@ -53,7 +53,7 @@ func RunAudioTask(ctx context.Context, input Input) (map[string]interface{}, err
 	if input.Config.InterfaceType == string(model.ChannelInterfaceAsyncAudio) {
 		return RunAsyncAudioTask(ctx, input, body, format)
 	}
-	if music && (input.Config.ChannelID == "beefapi" || isBeefAPIHostFromURL(input.Config.BaseURL)) {
+	if music && isBeefAPIHostFromURL(input.Config.BaseURL) {
 		body["stream_format"] = "sse"
 	}
 	data, mimeType, err := PostBinary(ctx, input.Config, "/audio/speech", body)

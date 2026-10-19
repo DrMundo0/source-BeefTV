@@ -1,5 +1,5 @@
-// This approval is limited to v1.7.27. It defers production Music acceptance,
-// not package safety, human UI review, or the historical financial uncertainty.
+// These owner instructions are limited to v1.7.27. Production Music acceptance
+// and the Lucas notification follow publication; package safety still precedes it.
 export function validateMusic3Release(receipt, sourceDigest, proofs = {}) {
   const fail = message => { throw new Error(`v1.7.27 Music release: ${message}`); };
   const evidence = value => Array.isArray(value) && value.length > 0 && value.every(x => typeof x === 'string' && x.trim());
@@ -24,12 +24,14 @@ export function validateMusic3Release(receipt, sourceDigest, proofs = {}) {
     || pending.maximumNewPaidSubmissions !== 2 || pending.maximumAdditionalCostCNY !== 2
     || pending.supplierFinalBillVerified !== false || !evidence(pending.evidence)) fail('production acceptance remains pending with at most two Music calls inside CNY20');
   if (!/^[a-f0-9]{40}$/.test(receipt.candidateTestedHead || '')
-    || proofs.candidateProductDigest !== proofs.currentProductDigest || !/^[a-f0-9]{64}$/.test(proofs.currentProductDigest || '')) fail('candidate evidence must match current application and plugin source');
+    || receipt.candidateAcceptance?.evidenceRole !== 'historical-reference-only') fail('historical candidate evidence must not claim final-release acceptance');
   if (receipt.review?.result !== 'approved' || receipt.review.independent !== true || !bound(receipt.review)
     || !/^[a-f0-9]{40}$/.test(receipt.review.reviewedHead || '') || !receipt.review.reviewer
     || proofs.reviewedSourceDigest !== sourceDigest) fail('independent review must cover this final application and release source');
   const ui = receipt.verification?.uiCrossReview;
-  if (ui?.status !== 'passed' || ui.method !== 'human-review' || ui.reviewer !== 'Lucas' || !bound(ui)) fail('Lucas UI cross review is required');
+  if (ui?.status !== 'not_run_owner_waived' || ui.method !== 'explicit-owner-waiver' || ui.reviewer !== 'Ender' || !bound(ui)
+    || ui.instruction !== '撤回吧 这个直接上线 上线了再和Lucas说'
+    || ui.notifyLucasAfterRelease !== true) fail('exact owner waiver and post-release Lucas notification required');
   for (const id of ['musicContracts', 'transportSafety', 'officialAudioPlugin', 'ci']) {
     if (receipt.verification?.[id]?.status !== 'passed' || !bound(receipt.verification[id])) fail(`missing check: ${id}`);
   }
