@@ -49,7 +49,22 @@
     "supplierFinalBillVerified": false,
     "evidence": [
       "docs/release-evidence/v1.7.27-review.md"
-    ]
+    ],
+    "publicAPI": {
+      "status": "passed",
+      "commit": "79cfae055190b9ec5d05d54c3e2435d043db4ea1",
+      "elapsedSeconds": 76.093,
+      "firstByteSeconds": 0.742,
+      "gatewayBilledCNY": 1.0,
+      "invalidCasesBilledCNY": 0.0,
+      "audioSHA256": "eaa9462d7ffb4a52073faa1ff0f255d910d5dfc75fd2fce4d7d536533d4dffa0",
+      "evidence": [
+        "docs/release-evidence/v1.7.27-api.json"
+      ]
+    },
+    "executedPaidSubmissions": 1,
+    "remainingPaidSubmissions": 1,
+    "cumulativeConservativeEstimateCNY": 15
   },
   "candidateTestedHead": "741b486c5907739001b842bcc62d9a8895ebc26d",
   "candidateAcceptance": {
@@ -79,7 +94,7 @@
     "evidence": [
       "docs/release-evidence/v1.7.27-review.md"
     ],
-    "result": "pending",
+    "result": "approved",
     "independent": true,
     "reviewer": "Codex independent music3_review",
     "reviewedHead": "652da132efd52c6c64e9108561c9ade07209fac3"
@@ -109,9 +124,12 @@
     "ci": {
       "sourceDigest": "cdac6cf5be9aa6fb342553275b8b1a009fd55621c1991edaed8748fb75e2da51",
       "evidence": [
-        "docs/release-evidence/v1.7.27-review.md"
+        "docs/release-evidence/v1.7.27-review.md",
+        "docs/release-evidence/v1.7.27-ci.json"
       ],
-      "status": "pending"
+      "status": "passed",
+      "method": "completed-job-logs",
+      "observedGitHubAggregateStatus": "queued"
     },
     "uiCrossReview": {
       "sourceDigest": "cdac6cf5be9aa6fb342553275b8b1a009fd55621c1991edaed8748fb75e2da51",
