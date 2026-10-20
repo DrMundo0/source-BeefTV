@@ -16,7 +16,7 @@ function Assert-Rejected([scriptblock]$Action, [string]$Expected) {
 try {
     $copy = Join-Path $scratch "runtime"
     Copy-Item -LiteralPath $Runtime -Destination $copy -Recurse
-    foreach ($file in @("ffmpeg.exe", "ffprobe.exe", "LICENSE.txt", "manifest.json")) {
+    foreach ($file in @("ffmpeg.exe", "ffprobe.exe", "LICENSE.txt", "LICENSE", "README.txt", "manifest.json")) {
         [IO.File]::AppendAllText((Join-Path $copy $file), "changed")
         Assert-Rejected { $null = & $check -Runtime $copy } "checksum mismatch: $file"
         Copy-Item -LiteralPath (Join-Path $Runtime $file) -Destination (Join-Path $copy $file) -Force

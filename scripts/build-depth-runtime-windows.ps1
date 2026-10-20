@@ -47,7 +47,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $repoRoot "tools\depth-capture\depth_capture") -Destination $workerDir -Recurse
     $bin = Join-Path $runtime "bin"
     New-Item -ItemType Directory -Path $bin -Force | Out-Null
-    foreach ($file in @("ffmpeg.exe", "ffprobe.exe", "LICENSE.txt", "manifest.json")) {
+    foreach ($file in @("ffmpeg.exe", "ffprobe.exe", "LICENSE.txt", "LICENSE", "README.txt", "manifest.json")) {
         Copy-Item -LiteralPath (Join-Path $ffmpegSource $file) -Destination $bin
     }
 

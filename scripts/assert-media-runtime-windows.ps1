@@ -11,6 +11,8 @@ $expected = [ordered]@{
     "ffmpeg.exe" = $lock.binarySHA256
     "ffprobe.exe" = $lock.probeSHA256
     "LICENSE.txt" = $lock.licenseSHA256
+    "LICENSE" = $lock.licenseSHA256
+    "README.txt" = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot "..\licenses\ffmpeg-windows-README.txt") -Algorithm SHA256).Hash.ToLowerInvariant()
     "manifest.json" = (Get-FileHash -LiteralPath $lockPath -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 $archive = $null

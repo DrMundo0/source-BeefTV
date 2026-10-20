@@ -20,7 +20,7 @@ BeefTV 保留现有 FFmpeg 媒体能力。根目录 `LICENSE` 中的新源码可
 - `sources.json` 记录本次构建的平台、组件版本、许可和 WASM 文件哈希。`upstream` 是上游项目入口；`source` 仅记录本流水线实际生成的源码包，缺失时为 `null`，页面不生成不存在的下载链接。
 - macOS 构建 ffprobe 时同时生成 `BeefTV-vX.Y.Z-ffprobe-darwin-{arm64,amd64}-sources.tar.gz`，包含未经修改的源码、许可证、实际构建脚本、参数和二进制哈希。正式桌面流水线将它与安装包一同上传到同版本 GitHub Release。
 - 浏览器核心的源码包 `BeefTV-vX.Y.Z-ffmpeg-wasm-sources.tar.gz` 包含 21 份固定提交的源码归档、许可证、上游编译脚本和离线构建说明。正式桌面流水线先生成源码包，再将其下载信息写入各平台许可页，并与安装包一起上传。普通本地/Web 构建只在实际提供该源码包时写入下载信息。
-- Windows 的版本、上游 ZIP、两个可执行文件、许可证与源码归档哈希统一固定在 `licenses/ffmpeg-windows.json`。桌面和深度构建都调用同一个媒体打包器，拒绝任意系统安装的 FFmpeg。两者随包保留 `LICENSE.txt` 和完整 `manifest.json`；深度运行包在压缩后再次校验 ZIP 内的四个文件，并将对应信息写入构建元数据。
+- Windows 的版本、上游 ZIP、两个可执行文件、许可证与源码归档哈希统一固定在 `licenses/ffmpeg-windows.json`。桌面和深度构建都调用同一个媒体打包器，拒绝任意系统安装的 FFmpeg。两者随包保留 `LICENSE.txt`、完整 `manifest.json`，以及旧更新器要求的相同许可证副本 `LICENSE` 和 BeefTV 提供的 `README.txt`；深度运行包在压缩后再次校验 ZIP 内的六个文件，并将对应信息写入构建元数据。
 
 可单独生成 macOS 源码包：
 
@@ -49,7 +49,9 @@ Windows 桌面和深度运行包使用同一个入口：
 ./scripts/build-depth-runtime-windows.ps1 -Variant cpu -FFmpegDir ./build/media-runtime
 ```
 
-Windows 源码清单绑定 BtbN 固定构建配方、依赖镜像、FFmpeg 提交以及三份依赖缓存分片和一份补充源码归档。发布时须提供清单中匹配哈希的材料及构建说明；清单中的文件名和哈希本身不代表材料已经公开，也不声称完整工具链可离线或逐字节重建。
+上游仅保留最近 14 个每日构建，因此打包器从 BeefTV 的[固定组件归档](https://github.com/glanderness/BeefTV/releases/tag/media-ffmpeg-windows-n8.1.3-20261019)下载同一 ZIP。也可通过 `-ArchivePath` 或环境变量 `BEEFTV_WINDOWS_MEDIA_ARCHIVE` 指定已保存的 ZIP；桌面构建会继承该环境变量，仍执行相同的哈希校验，不接受其他版本。
+
+Windows 源码清单绑定 BtbN 固定构建配方、依赖镜像、FFmpeg 提交以及三份依赖缓存分片和一份补充源码归档。上述组件归档同时提供这些材料、构建说明与 `SHA256SUMS`，许可页链接到同一归档。更换构建时须一起更新对应材料；该归档不声称完整工具链可离线或逐字节重建。
 
 ## 发布责任
 

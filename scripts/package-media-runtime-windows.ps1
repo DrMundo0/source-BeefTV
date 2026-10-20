@@ -2,9 +2,10 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Destination,
-    [string]$ArchivePath
+    [string]$ArchivePath = $env:BEEFTV_WINDOWS_MEDIA_ARCHIVE
 )
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 if ($env:OS -ne "Windows_NT") { throw "Native Windows packaging is required" }
 $lockPath = Join-Path $PSScriptRoot "..\licenses\ffmpeg-windows.json"
 $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
@@ -24,6 +25,9 @@ try {
     Copy-Item -LiteralPath (Join-Path $upstream "bin\ffmpeg.exe") -Destination $stage
     Copy-Item -LiteralPath (Join-Path $upstream "bin\ffprobe.exe") -Destination $stage
     Copy-Item -LiteralPath (Join-Path $upstream "LICENSE.txt") -Destination $stage
+    # Released updaters require these names; retain the original license too.
+    Copy-Item -LiteralPath (Join-Path $upstream "LICENSE.txt") -Destination (Join-Path $stage "LICENSE")
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot "..\licenses\ffmpeg-windows-README.txt") -Destination (Join-Path $stage "README.txt")
     Copy-Item -LiteralPath $lockPath -Destination (Join-Path $stage "manifest.json")
     $null = & (Join-Path $PSScriptRoot "assert-media-runtime-windows.ps1") -Runtime $stage
     $binary = Join-Path $stage "ffmpeg.exe"

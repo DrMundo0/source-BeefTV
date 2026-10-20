@@ -31,7 +31,7 @@ export function distributionNotices({ root = repo, version, platform = "web", he
         files.set("ffmpeg-windows.json", Buffer.from(JSON.stringify(windows, null, 2) + "\n"));
         required.push({ id: "ffmpeg-windows-amd64", version: windows.runtimeVersion, license: windows.license,
             binaryHashes: { ffmpeg: windows.binarySHA256, ffprobe: windows.probeSHA256 },
-            upstream: windows.buildRecipe, sourceArtifacts: windows.sourceArtifacts });
+            upstream: windows.buildRecipe, sourceRelease: windows.sourceRelease, sourceArtifacts: windows.sourceArtifacts });
     }
     const components = required.map((component) => {
         // Only advertise packets produced by the source packaging steps.
@@ -51,7 +51,8 @@ export function distributionNotices({ root = repo, version, platform = "web", he
     const index = { schema: 1, version, platform, components };
     files.set("sources.json", Buffer.from(JSON.stringify(index, null, 2) + "\n"));
     const links = components.map((component) => {
-        const packet = component.source ? ` · <a href="${component.source.url}" target="_blank" rel="noopener noreferrer">本版本对应源码与构建说明</a>` : "";
+        const sourceURL = component.source?.url || component.sourceRelease;
+        const packet = sourceURL ? ` · <a href="${sourceURL}" target="_blank" rel="noopener noreferrer">本版本对应源码与构建说明</a>` : "";
         return `<li>${escapeHTML(component.id)} ${escapeHTML(component.version)} — ${escapeHTML(component.license)}<br><a href="${component.upstream}" target="_blank" rel="noopener noreferrer">上游项目与构建信息</a>${packet}</li>`;
     }).join("\n");
     files.set("index.html", Buffer.from(`<!doctype html>

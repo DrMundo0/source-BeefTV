@@ -44,6 +44,8 @@ test("Windows notices use the packager's pinned build and source artifact receip
     assert.deepEqual(JSON.parse(files.get("ffmpeg-windows.json")), lock);
     assert.equal(component.source, null);
     assert.equal(component.upstream, lock.buildRecipe);
+    assert.equal(component.sourceRelease, lock.sourceRelease);
+    assert.ok(files.get("index.html").toString().includes(lock.sourceRelease));
 });
 
 test("macOS source download names and hashes match the generated packet", (t) => {
