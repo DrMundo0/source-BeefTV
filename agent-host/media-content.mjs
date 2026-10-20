@@ -169,7 +169,9 @@ export function adaptMediaRequest(payload, { api, modelId, nativePartStore }, ex
       bytes += validatePart(part);
       if (bytes > MAX_REQUEST_BYTES) throw new Error('media_request_too_large');
       pending.push({ type: 'text', text: JSON.stringify({ source: part.source }) });
-      pending.push({ type: 'image_url', image_url: { url: `data:${part.mimeType};base64,${part.data}` } });
+      pending.push(part.mimeType === 'audio/wav'
+        ? { type: 'input_audio', input_audio: { data: part.data, format: 'wav' } }
+        : { type: 'image_url', image_url: { url: `data:${part.mimeType};base64,${part.data}` } });
     }
     messages.push({ ...message, content: kept.join('\n') });
   }
