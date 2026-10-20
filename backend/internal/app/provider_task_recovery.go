@@ -132,7 +132,7 @@ func (s *Service) queryFailedVideoTask(ctx context.Context, task *model.Task, cl
 	var result map[string]interface{}
 	var providerStatus string
 	if upscale {
-		result, providerStatus, err = generation.QueryUpscaleResult(queryCtx, input, providerRequestID)
+		result, providerStatus, err = generation.RecoverUpscaleResult(queryCtx, input, providerRequestID)
 	} else if beefVideo {
 		result, providerStatus, err = queryBeefAPIVideoResult(queryCtx, input, providerRequestID)
 	} else if workflowVideo {

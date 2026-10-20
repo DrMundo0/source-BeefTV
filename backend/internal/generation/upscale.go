@@ -3,6 +3,7 @@ package generation
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -10,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	_ "golang.org/x/image/webp"
 )
 
 type UpscaleOptions struct {
@@ -39,12 +42,21 @@ func ValidateUpscaleInput(input Input) error {
 	if kind == "image" && (len(input.ReferenceImages) != 1 || len(input.ReferenceVideos) != 0) || kind == "video" && (len(input.ReferenceVideos) != 1 || len(input.ReferenceImages) != 0) || len(input.ReferenceAudios) != 0 || input.Mask != nil {
 		return errors.New("每个超分任务需要一个同类型素材")
 	}
+	source := input.ReferenceImages
+	if kind == "video" {
+		source = input.ReferenceVideos
+	}
+	if !upscaleOwnedSource.MatchString(source[0].StorageKey) || source[0].URL != "" || source[0].DataURL != "" {
+		return errors.New("超分只能使用当前素材库中的图片或视频")
+	}
 	format := input.Upscale.OutputFormat
 	if format != "" && format != "png" && format != "jpeg" {
 		return errors.New("图片输出格式须为 PNG 或 JPEG")
 	}
 	return nil
 }
+
+var upscaleOwnedSource = regexp.MustCompile(`^resource:[A-Za-z0-9_-]{1,128}$`)
 
 // Preparation uses the existing owner-scoped media reader and gateway upload.
 // Resuming an accepted task never uploads again or calls the create endpoint.
@@ -73,30 +85,50 @@ func PrepareUpscale(ctx context.Context, input Input) (Input, error) {
 	if err != nil {
 		return input, err
 	}
-	if !skip {
-		limit := 30 << 20
-		if kind == "video" {
-			limit = 200 << 20
+	if skip {
+		return input, errors.New("超分素材未通过素材库归属校验")
+	}
+	deliveryLimit, err := GeneratedFileLimit(ctx)
+	if err != nil {
+		return input, err
+	}
+	factor := int64(input.Upscale.Factor)
+	estimatedBytes := int64(len(data))*factor*factor*2 + 1<<20
+	limit := 30 << 20
+	if kind == "video" {
+		limit = 200 << 20
+	}
+	if len(data) == 0 || len(data) > limit {
+		return input, errors.New("素材为空或超过超分文件大小限制")
+	}
+	if kind == "image" {
+		if mime != "image/png" && mime != "image/jpeg" && mime != "image/webp" {
+			return input, errors.New("图片仅支持 PNG、JPEG 或 WebP")
 		}
-		if len(data) == 0 || len(data) > limit {
-			return input, errors.New("素材为空或超过超分文件大小限制")
-		}
-		if kind == "image" {
-			if mime != "image/png" && mime != "image/jpeg" && mime != "image/webp" {
-				return input, errors.New("图片仅支持 PNG、JPEG 或 WebP")
-			}
-			meta, _, err := image.DecodeConfig(bytes.NewReader(data))
-			if err != nil || int64(meta.Width)*int64(meta.Height) > 32<<20 {
-				return input, errors.New("图片无法读取或超过 3200 万像素")
-			}
-		} else if err := ValidateUpscaleVideoSource(ctx, data); err != nil {
+		meta, err := upscaleImageConfig(data)
+		if err != nil {
 			return input, err
 		}
+		// Bound PNG/JPEG output by expanded pixels, including 16-bit RGBA.
+		estimatedBytes = int64(meta.Width)*int64(meta.Height)*factor*factor*8 + 1<<20
+	} else if err := ValidateUpscaleVideoSource(ctx, data); err != nil {
+		return input, err
+	}
+	if estimatedBytes > deliveryLimit {
+		return input, fmt.Errorf("预计超分结果可能超过本机单个生成资源上限 %s，请降低放大倍数或调高资源上限后重试", formatStorageLimit(deliveryLimit))
 	}
 	if err := PrepareBeefAPIVideoReferences(ctx, input.Config, &input, ownedSeedanceMediaReader(ctx, runtime.Call.UserID)); err != nil {
 		return input, err
 	}
 	return input, nil
+}
+
+func upscaleImageConfig(data []byte) (image.Config, error) {
+	meta, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || meta.Width <= 0 || meta.Height <= 0 || int64(meta.Width)*int64(meta.Height) > 32<<20 {
+		return meta, errors.New("图片无法读取或超过 3200 万像素")
+	}
+	return meta, nil
 }
 
 func upscaleBody(input Input) map[string]any {
@@ -164,7 +196,7 @@ func RunUpscaleTask(ctx context.Context, input Input) (map[string]any, error) {
 			TaskID string `json:"task_id"`
 		}
 		if err := PostJSONWithSubmissionKey(WithRequestKind(ctx, "create"), prepared.Config, "/media-upscale/tasks", upscaleBody(prepared), &receipt); err != nil {
-			return nil, err
+			return nil, upscaleSubmissionError(err)
 		}
 		id = receipt.TaskID
 		if _, err := upscaleTaskPath(id); err != nil {
@@ -177,6 +209,53 @@ func RunUpscaleTask(ctx context.Context, input Input) (map[string]any, error) {
 		result, _, err := QueryUpscaleResult(ctx, input, id)
 		return VideoPollOutcome{Done: result != nil, Result: result}, err
 	})
+}
+
+// Manual recovery actively queries the saved upstream task; polling remains GET-only.
+func RecoverUpscaleResult(ctx context.Context, input Input, id string) (map[string]any, string, error) {
+	path, err := upscaleTaskPath(id)
+	if err != nil {
+		return nil, "", err
+	}
+	var receipt struct {
+		TaskID string `json:"task_id"`
+	}
+	if err := PostJSON(WithRequestKind(ctx, "poll"), input.Config, path+"/recover", map[string]any{}, &receipt); err != nil {
+		return nil, "", err
+	}
+	if receipt.TaskID != id {
+		return nil, "", errors.New("超分回执与原任务不一致")
+	}
+	return QueryUpscaleResult(ctx, input, id)
+}
+
+// The gateway returned a structured validation rejection with no accepted task.
+type SubmissionRejectedError struct{ Cause error }
+
+func (e SubmissionRejectedError) Error() string { return e.Cause.Error() }
+func (e SubmissionRejectedError) Unwrap() error { return e.Cause }
+
+func upscaleSubmissionError(err error) error {
+	var unknown SubmissionUnknownError
+	if errors.As(err, &unknown) {
+		return err
+	}
+	var upstream HTTPError
+	if !errors.As(err, &upstream) || upstream.StatusCode != 400 && upstream.StatusCode != 422 {
+		return err
+	}
+	var rejection struct {
+		TaskID string `json:"task_id"`
+		ID     string `json:"id"`
+		Error  struct {
+			Code string `json:"code"`
+		} `json:"error"`
+		Code string `json:"code"`
+	}
+	if json.Unmarshal([]byte(upstream.Body), &rejection) == nil && rejection.TaskID == "" && rejection.ID == "" && (rejection.Error.Code != "" || rejection.Code != "") {
+		return SubmissionRejectedError{Cause: err}
+	}
+	return err
 }
 
 // Receipts cannot choose a download host or path. Only the authenticated

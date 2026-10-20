@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -68,5 +69,22 @@ func TestUpscaleConfigRequiresConnectedAccount(t *testing.T) {
 	s, _, _, _ := creationTestService(t)
 	if _, err := s.upscaleConfig("topaz-standard-v2"); err == nil {
 		t.Fatal("missing managed credential accepted")
+	}
+}
+
+func TestUpscaleImageRejectionRetainsNoJobEvidence(t *testing.T) {
+	s, _, _, _ := creationTestService(t)
+	rejected := generation.SubmissionRejectedError{Cause: generation.HTTPError{StatusCode: 400, Body: `{"error":{"code":"fal_billing_unavailable","message":"billing unavailable"}}`}}
+	task := &model.Task{ID: "upscale-rejected", UserID: "user", Type: "canvas_image", Model: "topaz-standard-v2", RouteID: "original"}
+	attempt := &model.RouteAttempt{ID: "upscale-attempt", TaskID: task.ID, RouteID: "original", DispatchState: "submission_unknown"}
+	s.finishTaskRouteAttempt(attempt, task, rejected)
+	if attempt.DispatchState != "rejected_no_job" || attempt.FailureCode != "upstream_400" {
+		t.Fatalf("known rejection lost: %+v", attempt)
+	}
+	attempt.DispatchState = "submission_unknown"
+	port := &taskRouteExecutionPortStub{processResults: map[string]taskRouteExecutionStubResult{"original": {err: rejected}}}
+	result, err := (&taskRouteExecutor{port: port}).execute(context.Background(), task, attempt)
+	if err != nil || isImageRecoveryError(result.err) || !routeFailureInfo(result.err).RejectedNoJob {
+		t.Fatalf("rejection became uncertain image recovery: %v %v", result.err, err)
 	}
 }

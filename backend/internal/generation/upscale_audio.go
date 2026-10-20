@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"infinite-canvas/backend/internal/mediatools"
 )
@@ -30,7 +31,7 @@ func ValidateUpscaleVideoSource(ctx context.Context, data []byte) error {
 	if err != nil {
 		return err
 	}
-	if !facts.HasVideo || facts.DurationMs <= 0 || facts.DurationMs > 300_000 {
+	if !facts.HasVideo || facts.DurationMs <= 0 || facts.DurationMs > 300_000 || !strings.Contains(","+facts.FormatName+",", ",mov,") && !strings.Contains(","+facts.FormatName+",", ",mp4,") {
 		return errors.New("超分视频须为不超过 5 分钟的 MP4 或 MOV")
 	}
 	if facts.HasAudio {

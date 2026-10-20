@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -227,7 +229,7 @@ func TestUpscaleRejectsOwnerAndInvalidInputBeforePaidSubmit(t *testing.T) {
 func TestUpscaleOriginalStatusIdentityAndCancellation(t *testing.T) {
 	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
 	status, returnedID := "unknown", "original-task"
-	var creates, cancels atomic.Int32
+	var creates, cancels, recovers atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/v1/media-upscale/tasks/original-task/cancel" {
@@ -236,7 +238,11 @@ func TestUpscaleOriginalStatusIdentityAndCancellation(t *testing.T) {
 			return
 		}
 		if r.Method == "POST" {
-			creates.Add(1)
+			if r.URL.Path == "/v1/media-upscale/tasks/original-task/recover" {
+				recovers.Add(1)
+			} else {
+				creates.Add(1)
+			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"task_id": returnedID, "status": status, "model": "topaz-standard-v2", "media_type": "image"})
 	}))
@@ -246,6 +252,9 @@ func TestUpscaleOriginalStatusIdentityAndCancellation(t *testing.T) {
 	result, observed, err := QueryUpscaleResult(ctx, Input{Mode: "image", Config: config}, "original-task")
 	if err != nil || result != nil || observed != "unknown" {
 		t.Fatalf("unknown result=%v status=%s err=%v", result, observed, err)
+	}
+	if _, _, err := RecoverUpscaleResult(ctx, Input{Mode: "image", Config: config}, "original-task"); err != nil || recovers.Load() != 1 {
+		t.Fatalf("manual recover: calls=%d err=%v", recovers.Load(), err)
 	}
 	if err := CancelUpscale(ctx, config, "original-task"); err != nil {
 		t.Fatal(err)
@@ -319,5 +328,99 @@ func TestUpscaleShortAudioDoesNotTrimVideoOrChangeFPS(t *testing.T) {
 	fps, err := exec.Command(probe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", path).Output()
 	if err != nil || string(bytes.TrimSpace(fps)) != "24/1" {
 		t.Fatal("frame rate changed", string(fps), err)
+	}
+}
+
+type upscaleBudget struct{ LimitsPort }
+
+func (upscaleBudget) GeneratedFileBytes(context.Context) (int64, error) { return 1 << 20, nil }
+
+func TestUpscalePreflightRejectsExternalReferencesAndOversizedDelivery(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); w.WriteHeader(500) }))
+	defer server.Close()
+	runtime := taskRuntime(func(r *Runtime) {
+		r.Call.UserID = "user-1"
+		r.Endpoints.BeefAPIVideoBaseURL = server.URL
+		r.Resources = upscaleResources{kind: "image", data: upscalePNG(t, 64, 48)}
+		r.Limits = upscaleBudget{}
+	})
+	input := Input{Mode: "image", Prompt: "AI 超分", Config: Config{BaseURL: server.URL, Model: "topaz-standard-v2"}, Upscale: &UpscaleOptions{Factor: 2}}
+	for _, source := range []Media{{StorageKey: "legacy-key", URL: "https://untrusted.invalid/source.png"}, {StorageKey: "resource:source", URL: "https://untrusted.invalid/source.png"}, {StorageKey: "resource:source", DataURL: "data:image/png;base64,AA=="}, {StorageKey: "resource:source"}} {
+		input.ReferenceImages = []Media{source}
+		if _, err := PrepareUpscale(WithRuntime(context.Background(), runtime), input); err == nil {
+			t.Fatal("invalid source or known over-budget result accepted")
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("invalid input made %d upstream requests", calls.Load())
+	}
+}
+
+func TestUpscaleWebPConfigAndPixelLimit(t *testing.T) {
+	data, err := base64.StdEncoding.DecodeString("UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAAAfQsqYVrf+BiOh/AAA=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta, err := upscaleImageConfig(data); err != nil || meta.Width != 1 || meta.Height != 1 {
+		t.Fatalf("valid WebP rejected: %+v %v", meta, err)
+	}
+	// VP8X stores canvas dimensions in 24-bit little-endian fields.
+	header := make([]byte, 30)
+	copy(header, "RIFF")
+	binary.LittleEndian.PutUint32(header[4:], 22)
+	copy(header[8:], "WEBPVP8X")
+	binary.LittleEndian.PutUint32(header[16:], 10)
+	for _, offset := range []int{24, 27} {
+		header[offset] = 0xff
+		header[offset+1] = 0x1f
+	}
+	if _, err := upscaleImageConfig(header); err == nil {
+		t.Fatal("oversized WebP header accepted")
+	}
+}
+
+func TestUpscaleRejectsWebMContainer(t *testing.T) {
+	bin, err := mediatools.ResolveFFmpeg()
+	if err != nil {
+		t.Skip("ffmpeg unavailable")
+	}
+	path := filepath.Join(t.TempDir(), "source.webm")
+	if out, err := exec.Command(bin, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x48:duration=0.2", "-c:v", "libvpx-vp9", path).CombinedOutput(); err != nil {
+		t.Fatalf("WebM fixture %s %v", out, err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateUpscaleVideoSource(context.Background(), data); err == nil {
+		t.Fatal("WebM accepted as MP4/MOV")
+	}
+}
+
+func TestUpscaleSubmissionRejectionRequiresNoTaskEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		status   int
+		body     string
+		rejected bool
+	}{
+		{400, `{"error":{"code":"fal_billing_unavailable"}}`, true},
+		{422, `{"code":"invalid_params"}`, true},
+		{400, `{"task_id":"original","error":{"code":"invalid_params"}}`, false},
+		{400, `{"id":"original","error":{"code":"invalid_params"}}`, false},
+		{400, `<html>bad gateway</html>`, false},
+		{409, `{"error":{"code":"idempotency_conflict"}}`, false},
+		{503, `{"error":{"code":"upstream_unavailable"}}`, false},
+	} {
+		err := upscaleSubmissionError(HTTPError{StatusCode: tc.status, Body: tc.body})
+		var rejection SubmissionRejectedError
+		if errors.As(err, &rejection) != tc.rejected {
+			t.Fatalf("status=%d body=%s rejection=%v", tc.status, tc.body, err)
+		}
+	}
+	unknown := SubmissionUnknownError{Cause: HTTPError{StatusCode: 400, Body: `{"code":"invalid_params"}`}}
+	var rejection SubmissionRejectedError
+	if errors.As(upscaleSubmissionError(unknown), &rejection) {
+		t.Fatal("earlier uncertainty became safe rejection")
 	}
 }
