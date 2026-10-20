@@ -96,6 +96,9 @@ func TestUpscaleExecuteFourModelsUsesOwnedUploadAndOriginalResult(t *testing.T) 
 			kind := UpscaleMediaType(model)
 			source, output := upscalePNG(t, 64, 48), upscalePNG(t, 128, 96)
 			mime := "image/png"
+			if model == "topaz-standard-v2" {
+				source, output = upscalePNG(t, 1920, 1080), upscalePNG(t, 3840, 2160)
+			}
 			if kind == "video" {
 				source, output, mime = upscaleClip(t, 64, 48, true), upscaleClip(t, 128, 96, false), "video/mp4"
 			}
@@ -399,6 +402,7 @@ func TestUpscaleRejectsWebMContainer(t *testing.T) {
 }
 
 func TestUpscaleSubmissionRejectionRequiresNoTaskEvidence(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
 	for _, tc := range []struct {
 		status   int
 		body     string
@@ -411,8 +415,19 @@ func TestUpscaleSubmissionRejectionRequiresNoTaskEvidence(t *testing.T) {
 		{400, `<html>bad gateway</html>`, false},
 		{409, `{"error":{"code":"idempotency_conflict"}}`, false},
 		{503, `{"error":{"code":"upstream_unavailable"}}`, false},
+		{503, `{"code":"fal_billing_unavailable"}`, true},
+		{503, `{"error":{"code":"upscale_unavailable"}}`, true},
+		{503, `{"task_id":"original","code":"fal_billing_unavailable"}`, false},
+		{503, `{"id":"original","code":"fal_billing_unavailable"}`, false},
+		{502, `{"code":"upscale_submission_unknown"}`, false},
 	} {
-		err := upscaleSubmissionError(HTTPError{StatusCode: tc.status, Body: tc.body})
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(tc.status)
+			_, _ = io.WriteString(w, tc.body)
+		}))
+		var receipt map[string]any
+		err := postJSONWithSubmissionKey(WithSubmissionKey(context.Background(), "stable-operation"), Config{BaseURL: server.URL}, "/media-upscale/tasks", map[string]any{}, &receipt, upscaleSubmissionError)
+		server.Close()
 		var rejection SubmissionRejectedError
 		if errors.As(err, &rejection) != tc.rejected {
 			t.Fatalf("status=%d body=%s rejection=%v", tc.status, tc.body, err)

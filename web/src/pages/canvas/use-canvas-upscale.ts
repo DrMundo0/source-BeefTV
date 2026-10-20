@@ -14,7 +14,7 @@ import { useEffectiveConfig } from "@/stores/use-config-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { generationErrorMessage } from "@/lib/generation-error";
 import { isGenerationCanceled } from "@/lib/canvas/canvas-project-generation";
-import type { QuotedUpscaleSource, UpscaleQuote } from "@/lib/canvas/canvas-upscale";
+import { createUpscaleResultNodes, type QuotedUpscaleSource, type UpscaleQuote } from "@/lib/canvas/canvas-upscale";
 
 type Options = {
     projectId: string;
@@ -130,15 +130,7 @@ export function useCanvasUpscale({ projectId, nodesRef, connectionsRef, setNodes
                 return node;
             });
             submitted.current.add(quote.id);
-            const targets = origins.map((node) => ({
-                id: nanoid(),
-                type: node.type,
-                title: `${node.title || "素材"} · ${quote.params.factor}× 超分`,
-                position: { x: node.position.x + node.width + 96, y: node.position.y },
-                width: node.width,
-                height: node.height,
-                metadata: { status: "loading" as const, prompt: "AI 超分", generatedFromNodeId: node.id },
-            }));
+            const targets = createUpscaleResultNodes(origins, nodesRef.current, quote.params.factor);
             const nextNodes = [...nodesRef.current, ...targets];
             const nextConnections = [...connectionsRef.current, ...targets.map((node, index) => ({ id: nanoid(), fromNodeId: origins[index].id, toNodeId: node.id }))];
             nodesRef.current = nextNodes;

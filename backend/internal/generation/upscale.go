@@ -109,8 +109,8 @@ func PrepareUpscale(ctx context.Context, input Input) (Input, error) {
 		if err != nil {
 			return input, err
 		}
-		// Bound PNG/JPEG output by expanded pixels, including 16-bit RGBA.
-		estimatedBytes = int64(meta.Width)*int64(meta.Height)*factor*factor*8 + 1<<20
+		// Estimate common 8-bit PNG/JPEG output; actual bytes remain quota checked.
+		estimatedBytes = int64(meta.Width)*int64(meta.Height)*factor*factor*4 + 1<<20
 	} else if err := ValidateUpscaleVideoSource(ctx, data); err != nil {
 		return input, err
 	}
@@ -195,8 +195,8 @@ func RunUpscaleTask(ctx context.Context, input Input) (map[string]any, error) {
 		var receipt struct {
 			TaskID string `json:"task_id"`
 		}
-		if err := PostJSONWithSubmissionKey(WithRequestKind(ctx, "create"), prepared.Config, "/media-upscale/tasks", upscaleBody(prepared), &receipt); err != nil {
-			return nil, upscaleSubmissionError(err)
+		if err := postJSONWithSubmissionKey(WithRequestKind(ctx, "create"), prepared.Config, "/media-upscale/tasks", upscaleBody(prepared), &receipt, upscaleSubmissionError); err != nil {
+			return nil, err
 		}
 		id = receipt.TaskID
 		if _, err := upscaleTaskPath(id); err != nil {
@@ -229,19 +229,13 @@ func RecoverUpscaleResult(ctx context.Context, input Input, id string) (map[stri
 	return QueryUpscaleResult(ctx, input, id)
 }
 
-// The gateway returned a structured validation rejection with no accepted task.
-type SubmissionRejectedError struct{ Cause error }
-
-func (e SubmissionRejectedError) Error() string { return e.Cause.Error() }
-func (e SubmissionRejectedError) Unwrap() error { return e.Cause }
-
 func upscaleSubmissionError(err error) error {
 	var unknown SubmissionUnknownError
 	if errors.As(err, &unknown) {
 		return err
 	}
 	var upstream HTTPError
-	if !errors.As(err, &upstream) || upstream.StatusCode != 400 && upstream.StatusCode != 422 {
+	if !errors.As(err, &upstream) {
 		return err
 	}
 	var rejection struct {
@@ -252,7 +246,11 @@ func upscaleSubmissionError(err error) error {
 		} `json:"error"`
 		Code string `json:"code"`
 	}
-	if json.Unmarshal([]byte(upstream.Body), &rejection) == nil && rejection.TaskID == "" && rejection.ID == "" && (rejection.Error.Code != "" || rejection.Code != "") {
+	if json.Unmarshal([]byte(upstream.Body), &rejection) != nil || rejection.TaskID != "" || rejection.ID != "" {
+		return err
+	}
+	code := firstNonEmpty(rejection.Error.Code, rejection.Code)
+	if (upstream.StatusCode == 400 || upstream.StatusCode == 422) && code != "" || upstream.StatusCode == 503 && (code == "fal_billing_unavailable" || code == "upscale_unavailable") {
 		return SubmissionRejectedError{Cause: err}
 	}
 	return err
