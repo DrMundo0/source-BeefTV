@@ -344,7 +344,7 @@ export function CanvasNodeToolbar({
     const imageSettingsTools = isImage ? allTools.filter((tool) => tool.id === "replace" || tool.id === "resize" || tool.id === "node-lock") : [];
     const processMenuLabel = compact ? "工具" : isVideo ? "提取素材" : isImage ? "图片工具" : isAudio ? "音频处理" : "文本调整";
     const videoProcessingTools = [
-        ...registryToolbarTools.filter((tool) => tool.id === "trimRegenerate" || tool.id === "cropVideo" || tool.id === "depthCapture"),
+        ...registryToolbarTools.filter((tool) => tool.id === "trimRegenerate" || tool.id === "cropVideo" || tool.id === "depthCapture" || tool.id === "video-super-resolve"),
         ...(narrow ? inGroup("workspace") : []),
     ];
     const videoAudioTool = registryToolbarTools.find((tool) => tool.id === "extractAudio");
