@@ -9,6 +9,16 @@ All notable public changes to BeefTV are documented in this file.
 - Added reproducible local builds, automated quality checks, and multi-architecture container publishing.
 - Standardized public artifacts, runtime identifiers, documentation, and repository links on the BeefTV name.
 
+## v2.0.0
+
+- 内置助手可准备分镜、整理参考素材和生成方案，在确认后继续检查结果、剪辑和导出成片及可编辑工程。
+- 新增默认多模态模型选择，用于影音审查；未配置时仍可使用其他创作工具，并明确提示无法完成的媒体检查。
+- 加强参考图与成片检查；局部改稿保留未指定修改的镜头、声音和参考素材。
+- 技能市场支持浏览和安装固定版本；可通过网页、CLI 或外部助手准备投稿，上传和公开送审分别确认。
+- 大参考素材支持分片上传和中断后继续，上传、下载、校验和保存分别显示进度。
+- 修复生成结果回到画布、旧节点占用和重复下载问题；大画布导出使用原生保存入口。
+- 改善剪辑预览、低帧率视频回放和竖版字幕，更新项目许可入口与第三方许可、源码说明。
+
 ## v1.7.27
 
 - Music 3.0 默认生成 44.1 kHz、256 kbps 的 MP3；设置仅展示实际支持的格式，已有 FLAC 设置自动调整为 MP3。
