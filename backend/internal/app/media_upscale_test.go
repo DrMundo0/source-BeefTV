@@ -88,3 +88,59 @@ func TestUpscaleImageRejectionRetainsNoJobEvidence(t *testing.T) {
 		t.Fatalf("rejection became uncertain image recovery: %v %v", result.err, err)
 	}
 }
+
+func TestUpscaleFourModelsAdmitAndReplayThroughTaskDomain(t *testing.T) {
+	for _, name := range []string{"topaz-standard-v2", "topaz-wonder-3.5", "topaz-proteus", "topaz-starlight-fast-2"} {
+		t.Run(name, func(t *testing.T) {
+			s, db, _, _ := creationTestService(t)
+			if err := s.SaveLocalModelConfig([]byte(`{"channels":[{"id":"beefapi","baseUrl":"https://enterprise.beefapi.com","apiKey":"synthetic-admission-key","enabled":true}]}`)); err != nil {
+				t.Fatal(err)
+			}
+			kind := generation.UpscaleMediaType(name)
+			mime := "image/png"
+			if kind == "video" {
+				mime = "video/mp4"
+			}
+			if err := db.Create(&model.Resource{ID: "owned-source", UserID: "user", Kind: kind, Provider: "local", Status: model.ResourceStatusReady, MimeType: mime, Size: 1024, ObjectKey: "users/user/source"}).Error; err != nil {
+				t.Fatal(err)
+			}
+			field := "referenceImages"
+			if kind == "video" {
+				field = "referenceVideos"
+			}
+			input := map[string]any{"mode": kind, "prompt": "AI 超分", "config": map[string]any{"credentialRef": "beefapi-enterprise", "model": name, "interfaceType": "newapi"}, "upscale": map[string]any{"factor": 2}, field: []any{map[string]any{"storageKey": "resource:owned-source"}}, "metadata": map[string]any{"clientOperationId": "stable-upscale-operation"}}
+			request := CreateTaskRequest{Type: "canvas_" + kind, Operation: kind, Model: name, Prompt: "AI 超分", Input: input}
+			first, err := s.CreateTask("user", request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			replay, err := s.CreateTask("user", request)
+			if err != nil || replay.ID != first.ID {
+				t.Fatalf("admission replay: %v %v", replay, err)
+			}
+			var count int64
+			db.Model(&model.Task{}).Count(&count)
+			if count != 1 {
+				t.Fatalf("created %d tasks", count)
+			}
+			stored, err := s.repo.Task(first.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(stored.InputJSON, "synthetic-admission-key") {
+				t.Fatal("plaintext credential persisted")
+			}
+			raw, err := s.decryptTaskInputJSON(stored.InputJSON)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var prepared generation.Input
+			if err = json.Unmarshal([]byte(raw), &prepared); err != nil {
+				t.Fatal(err)
+			}
+			if err = generation.ValidateUpscaleInput(prepared); err != nil {
+				t.Fatalf("admitted input cannot execute: %v", err)
+			}
+		})
+	}
+}
