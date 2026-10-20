@@ -28,10 +28,13 @@ func TestUpscaleAdmissionPinsOfficialCredentialAndPayload(t *testing.T) {
 	if err := (taskCatalogAdapter{s}).ValidateCapability(resolved); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := (taskCatalogAdapter{s}).Select("owner", localtask.SelectRequest{Input: resolved, Model: "topaz-standard-v2", Type: "canvas_image"}); err != nil {
+		t.Fatalf("managed upscale admission rejected: %v", err)
+	}
 	for _, request := range []localtask.SelectRequest{
 		{Input: resolved, Model: "topaz-proteus", Type: "canvas_image"},
 		{Input: resolved, Model: "topaz-standard-v2", Type: "canvas_video"},
-		{Input: input, Model: "topaz-standard-v2", Type: "canvas_image"},
+		{Input: map[string]any{"mode": "image", "config": map[string]any{"model": "topaz-standard-v2", "apiKey": "forged-key", "baseUrl": "https://untrusted.invalid"}}, Model: "topaz-standard-v2", Type: "canvas_image"},
 	} {
 		if _, err := (taskCatalogAdapter{s}).Select("owner", request); err == nil {
 			t.Fatal("mismatched task identity or unmanaged credentials accepted")

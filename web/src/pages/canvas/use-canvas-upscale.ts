@@ -7,6 +7,7 @@ import { runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-g
 import { getImageBlob, resolveImageUrl } from "@/services/image-storage";
 import { getMediaBlob, resolveMediaUrl } from "@/services/file-storage";
 import { uploadResourceFile, resourceStorageKey } from "@/services/api/resources";
+import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import { estimateUpscale, runUpscaleTask, upscaleModel, type UpscaleMode, type UpscaleSource, type UpscaleParams } from "@/services/api/media-upscale";
 import type { GenerationTask } from "@/services/api/task-center";
 import { useEffectiveConfig } from "@/stores/use-config-store";
@@ -91,7 +92,19 @@ export function useCanvasUpscale({ projectId, nodesRef, connectionsRef, setNodes
                 const current = nodesRef.current.find((item) => item.id === id);
                 if (!current || fingerprint(current) !== original) throw new Error("素材已变化，请重新获取费用");
                 const source: UpscaleSource = { id, name: node.title, storageKey, mimeType: media.mimeType, type: media.type, bytes: media.bytes, width: media.width, height: media.height, durationMs: media.durationMs };
-                const patch = (item: CanvasNodeData) => (item.id === id ? { ...item, metadata: { ...item.metadata, storageKey: source.storageKey } } : item);
+                const linked = await ensureCanvasNodeAsset({
+                    canvasId: projectId,
+                    domainProjectId: useCanvasStore.getState().openProject(projectId)?.projectId,
+                    node: { ...current, metadata: { ...current.metadata, storageKey: source.storageKey } },
+                    source: "canvas-manual",
+                    signal,
+                    expectedScope: scope,
+                });
+                assertCurrent();
+                if (!linked.confirmed) throw new Error("素材尚未保存完成，请稍后重试");
+                const latest = nodesRef.current.find((item) => item.id === id);
+                if (!latest || fingerprint(latest) !== original) throw new Error("素材已变化，请重新获取费用");
+                const patch = (item: CanvasNodeData) => (item.id === id ? { ...item, metadata: { ...item.metadata, storageKey: source.storageKey, assetId: linked.assetId } } : item);
                 nodesRef.current = nodesRef.current.map(patch);
                 setNodes((items) => items.map(patch));
                 const expected = fingerprint(patch(current));
@@ -143,6 +156,11 @@ export function useCanvasUpscale({ projectId, nodesRef, connectionsRef, setNodes
                         await runCanvasGenerationTaskToConsumer(
                             { projectId, nodeId: target.id, mode: item.mode, prompt: "AI 超分", config, signal: controller.signal, expectedScope: quote.scope, clientOperationId: createClientId() },
                             {
+                                onSubmission: (metadata) => {
+                                    const patch = (node: CanvasNodeData) => (node.id === target.id ? { ...node, metadata: { ...node.metadata, ...metadata } } : node);
+                                    nodesRef.current = nodesRef.current.map(patch);
+                                    setNodes((nodes) => nodes.map(patch));
+                                },
                                 bindTask: (task) => bindGenerationTask(target.id, task),
                                 consumeTask: (task) => applyGenerationTaskResult(target.id, task),
                                 isCurrent: () => quote.epoch === epoch.current && userScopeMatches(quote.scope),

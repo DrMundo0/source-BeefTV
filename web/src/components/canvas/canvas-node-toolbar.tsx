@@ -337,7 +337,7 @@ export function CanvasNodeToolbar({
     const processTools = compact
         ? [...inGroup("portrait"), ...inGroup("viewpoint"), ...inGroup("lighting"), ...inGroup("panorama"), ...inGroup("process")]
         : isImage
-          ? inGroup("process").filter((tool) => tool.id === "crop" || tool.id === "split" || tool.id === "annotation")
+          ? inGroup("process").filter((tool) => tool.id === "crop" || tool.id === "split" || tool.id === "annotation" || tool.id === "superResolve")
           : inGroup("process");
     const workspaceTools = narrow ? [] : inGroup("workspace");
     const utilityTools = inGroup("utility");
