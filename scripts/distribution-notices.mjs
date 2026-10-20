@@ -26,8 +26,13 @@ export function distributionNotices({ root = repo, version, platform = "web", he
     }
     if (platform.startsWith("darwin-")) required.push({ id: `ffprobe-${platform}`, version: "8.0.1", license: "LGPL-2.1-or-later",
         upstream: "https://github.com/FFmpeg/FFmpeg/tree/894da5ca7d742e4429ffb2af534fcda0103ef593" });
-    if (platform === "windows-amd64") required.push({ id: "ffmpeg-windows-amd64", version: "8.0.1", license: "GPL-3.0-or-later",
-        upstream: "https://www.gyan.dev/ffmpeg/builds/" });
+    if (platform === "windows-amd64") {
+        const windows = JSON.parse(readFileSync(resolve(root, "licenses/ffmpeg-windows.json"), "utf8"));
+        files.set("ffmpeg-windows.json", Buffer.from(JSON.stringify(windows, null, 2) + "\n"));
+        required.push({ id: "ffmpeg-windows-amd64", version: windows.runtimeVersion, license: windows.license,
+            binaryHashes: { ffmpeg: windows.binarySHA256, ffprobe: windows.probeSHA256 },
+            upstream: windows.buildRecipe, sourceArtifacts: windows.sourceArtifacts });
+    }
     const components = required.map((component) => {
         // Only advertise packets produced by the source packaging steps.
         if (!component.id.startsWith("ffprobe-darwin-") && component.id !== "ffmpeg-wasm") return { ...component, source: null };

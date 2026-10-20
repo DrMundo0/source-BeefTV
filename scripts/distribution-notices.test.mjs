@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
@@ -16,6 +16,7 @@ function fixture(t) {
         writeFileSync(resolve(root, name), name);
     }
     writeFileSync(resolve(root, "web/node_modules/@ffmpeg/core/package.json"), JSON.stringify({ version: "0.12.10", license: "GPL-2.0-or-later" }));
+    writeFileSync(resolve(root, "licenses/ffmpeg-windows.json"), readFileSync(new URL("../licenses/ffmpeg-windows.json", import.meta.url)));
     return root;
 }
 
@@ -30,6 +31,19 @@ test("every platform includes offline texts without inventing source downloads",
         for (const name of ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "GPL-2.0.txt", "GPL-3.0.txt", "LGPL-2.1.txt"]) assert.ok(files.get(name)?.length);
         assert.doesNotMatch(files.get("index.html").toString(), /releases\/download|href="sources\//);
     }
+});
+
+test("Windows notices use the packager's pinned build and source artifact receipt", (t) => {
+    const root = fixture(t);
+    const lock = JSON.parse(readFileSync(resolve(root, "licenses/ffmpeg-windows.json"), "utf8"));
+    const files = distributionNotices({ root, version: "v1.7.28", platform: "windows-amd64" });
+    const component = JSON.parse(files.get("sources.json")).components.find((c) => c.id === "ffmpeg-windows-amd64");
+    assert.equal(component.version, lock.runtimeVersion);
+    assert.deepEqual(component.binaryHashes, { ffmpeg: lock.binarySHA256, ffprobe: lock.probeSHA256 });
+    assert.deepEqual(component.sourceArtifacts, lock.sourceArtifacts);
+    assert.deepEqual(JSON.parse(files.get("ffmpeg-windows.json")), lock);
+    assert.equal(component.source, null);
+    assert.equal(component.upstream, lock.buildRecipe);
 });
 
 test("macOS source download names and hashes match the generated packet", (t) => {

@@ -7,9 +7,9 @@ BeefTV 保留现有 FFmpeg 媒体能力。根目录 `LICENSE` 中的新源码可
 | 组件 | 版本与许可 | 使用方式 |
 | --- | --- | --- |
 | 浏览器 `@ffmpeg/core` | 0.12.10，GPL-2.0-or-later | Worker 中运行，提供剪辑、裁剪、合并、音频处理及导出 |
-| Windows FFmpeg/ffprobe | Gyan 8.0.1 essentials，GPL-3.0-or-later | 独立命令行进程，通过参数和文件交换数据 |
+| Windows FFmpeg/ffprobe | BtbN n8.1.3-18-g46d899d7a0-20261019，GPL-3.0-or-later | 独立命令行进程，通过参数和文件交换数据 |
 | macOS ffprobe | FFmpeg 8.0.1，LGPL-2.1-or-later | 从固定源码编译，关闭 GPL 特性与外部库，独立进程探测媒体 |
-| Windows 可选深度运行包 | 主 FFmpeg/ffprobe；历史包还含 imageio-ffmpeg wheel 自带的 FFmpeg | Python 启动独立进程；后续构建移除未使用的 imageio-ffmpeg，保留 imageio |
+| Windows 可选深度运行包 | 与桌面相同的固定 BtbN 构建；历史包还含 imageio-ffmpeg wheel 自带的 FFmpeg | Python 启动独立进程；后续构建移除未使用的 imageio-ffmpeg，保留 imageio |
 
 原生命令行工具和浏览器 WASM 的使用方式不同，需要分别判断组合分发的许可要求。独立进程、Worker 或单独下载均不能自动证明兼容；第三方清单也不能替代对应源码交付。
 
@@ -20,6 +20,7 @@ BeefTV 保留现有 FFmpeg 媒体能力。根目录 `LICENSE` 中的新源码可
 - `sources.json` 记录本次构建的平台、组件版本、许可和 WASM 文件哈希。`upstream` 是上游项目入口；`source` 仅记录本流水线实际生成的源码包，缺失时为 `null`，页面不生成不存在的下载链接。
 - macOS 构建 ffprobe 时同时生成 `BeefTV-vX.Y.Z-ffprobe-darwin-{arm64,amd64}-sources.tar.gz`，包含未经修改的源码、许可证、实际构建脚本、参数和二进制哈希。正式桌面流水线将它与安装包一同上传到同版本 GitHub Release。
 - 浏览器核心的源码包 `BeefTV-vX.Y.Z-ffmpeg-wasm-sources.tar.gz` 包含 21 份固定提交的源码归档、许可证、上游编译脚本和离线构建说明。正式桌面流水线先生成源码包，再将其下载信息写入各平台许可页，并与安装包一起上传。普通本地/Web 构建只在实际提供该源码包时写入下载信息。
+- Windows 的版本、上游 ZIP、两个可执行文件、许可证与源码归档哈希统一固定在 `licenses/ffmpeg-windows.json`。桌面和深度构建都调用同一个媒体打包器，拒绝任意系统安装的 FFmpeg。两者随包保留 `LICENSE.txt` 和完整 `manifest.json`；深度运行包在压缩后再次校验 ZIP 内的四个文件，并将对应信息写入构建元数据。
 
 可单独生成 macOS 源码包：
 
@@ -41,11 +42,20 @@ python3 scripts/package-wasm-sources.py \
 
 固定版本清单在 `licenses/ffmpeg-wasm-sources.json`。源码选择依据上游 0.12.10 发布提交、依赖历史以及现有核心报告的版本：FFmpeg 5.1.4、Emscripten 3.1.40 的精确提交、x264 core 164 和 LAME 3.100 均吻合。源码包保留 `build/*.sh`、修改过的 `src/fftools` 和绑定代码；离线构建配方仅将上游下载步骤改为使用已归档文件。上游未提供签名构建证明，源码包不声称能逐字节复现 npm 产物。自行重编译并替换核心是另一个需要功能验证的操作。
 
+Windows 桌面和深度运行包使用同一个入口：
+
+```powershell
+./scripts/package-media-runtime-windows.ps1 -Destination ./build/media-runtime
+./scripts/build-depth-runtime-windows.ps1 -Variant cpu -FFmpegDir ./build/media-runtime
+```
+
+Windows 源码清单绑定 BtbN 固定构建配方、依赖镜像、FFmpeg 提交以及三份依赖缓存分片和一份补充源码归档。发布时须提供清单中匹配哈希的材料及构建说明；清单中的文件名和哈希本身不代表材料已经公开，也不声称完整工具链可离线或逐字节重建。
+
 ## 发布责任
 
 分发者应保留各组件的署名、许可和适用的源码材料，并提供与所分发二进制对应的源码、修改和必要构建脚本。上游主页或版本号本身不构成完整对应源码的交付。
 
-Windows 预构建工具及 imageio wheel 内嵌 FFmpeg 的依赖源码、补丁和构建材料仍需分别取得；不能用 FFmpeg 主源码或 imageio Python 包的 BSD 许可替代。源码包归档也不自动证明组合分发的许可相容性。本次源码归档不替换编码器。
+历史 Gyan 预构建工具及 imageio wheel 内嵌 FFmpeg 的依赖源码、补丁和构建材料须按原二进制分别核对；不能用新 BtbN 源码、FFmpeg 主源码或 imageio Python 包的 BSD 许可替代。源码包归档也不自动证明组合分发的许可相容性。
 
 深度组件通过 OpenCV 读取视频，并调用运行包 `bin/` 下的 FFmpeg 写出预览，不使用 `imageio-ffmpeg`。后续构建因此移除这个重复的可执行文件，并在搬移自检中实际读取视频，确认无需该 wheel。已经发布的旧运行包仍须按其实际内容核对，移除后续构建的依赖不等于补齐旧二进制的源码。
 
@@ -53,5 +63,5 @@ Windows 预构建工具及 imageio wheel 内嵌 FFmpeg 的依赖源码、补丁�
 
 - [FFmpeg 许可说明](https://ffmpeg.org/legal.html)
 - [ffmpeg.wasm 官方许可问答](https://ffmpegwasm.netlify.app/docs/faq/)
-- [Gyan Windows 构建说明](https://www.gyan.dev/ffmpeg/builds/)
+- [BtbN Windows 构建配方](https://github.com/BtbN/FFmpeg-Builds/tree/63ac3265b0789ea16c7b1f8351cd2ad195a28722)
 - [Remotion 第三方组件与 FFmpeg 说明](https://www.remotion.dev/docs/acknowledgements)

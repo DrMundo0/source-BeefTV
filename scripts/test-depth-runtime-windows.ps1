@@ -15,6 +15,7 @@ $python = Join-Path $root ".python\python.exe"
 $worker = Join-Path $root "worker"
 $source = Join-Path $root "vda"
 $bin = Join-Path $root "bin"
+$null = & (Join-Path $PSScriptRoot "assert-media-runtime-windows.ps1") -Runtime $bin
 foreach ($required in @($python, (Join-Path $worker "depth_capture\__main__.py"), (Join-Path $source "video_depth_anything\video_depth.py"), (Join-Path $bin "ffmpeg.exe"), (Join-Path $bin "ffprobe.exe"))) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "深度运行包缺少文件: $required" }
 }

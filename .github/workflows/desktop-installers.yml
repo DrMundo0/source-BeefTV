@@ -10,6 +10,8 @@ on:
       - 'scripts/build-beeftv*'
       - 'scripts/package-media-runtime-*'
       - 'scripts/test-media-runtime-*'
+      - 'scripts/assert-media-runtime-*'
+      - 'licenses/ffmpeg-windows.json'
       - 'backend/internal/mediatools/**'
       - 'backend/internal/asset/media_metadata*'
       - 'backend/internal/desktopupdate/**'
