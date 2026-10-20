@@ -40,7 +40,7 @@ try {
     $packages = @(
         "torch==2.8.0", "torchvision==0.23.0", "numpy==2.1.3",
         "opencv-python==4.10.0.84", "pillow==11.1.0", "matplotlib==3.10.0",
-        "imageio==2.37.0", "imageio-ffmpeg==0.6.0", "easydict==1.13",
+        "imageio==2.37.0", "easydict==1.13",
         "einops==0.8.1", "tqdm==4.67.1"
     )
     & uv pip install --python $python --target $sitePackages --torch-backend=$backend @packages

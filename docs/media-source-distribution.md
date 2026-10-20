@@ -9,7 +9,7 @@ BeefTV 保留现有 FFmpeg 媒体能力。根目录 `LICENSE` 中的新源码可
 | 浏览器 `@ffmpeg/core` | 0.12.10，GPL-2.0-or-later | Worker 中运行，提供剪辑、裁剪、合并、音频处理及导出 |
 | Windows FFmpeg/ffprobe | Gyan 8.0.1 essentials，GPL-3.0-or-later | 独立命令行进程，通过参数和文件交换数据 |
 | macOS ffprobe | FFmpeg 8.0.1，LGPL-2.1-or-later | 从固定源码编译，关闭 GPL 特性与外部库，独立进程探测媒体 |
-| Windows 可选深度运行包 | 主 FFmpeg/ffprobe，以及 imageio-ffmpeg wheel 内的另一个 FFmpeg | Python 启动独立进程；wheel 自带二进制需单独核对 |
+| Windows 可选深度运行包 | 主 FFmpeg/ffprobe；历史包还含 imageio-ffmpeg wheel 自带的 FFmpeg | Python 启动独立进程；后续构建移除未使用的 imageio-ffmpeg，保留 imageio |
 
 原生命令行工具和浏览器 WASM 的使用方式不同，需要分别判断组合分发的许可要求。独立进程、Worker 或单独下载均不能自动证明兼容；第三方清单也不能替代对应源码交付。
 
@@ -46,6 +46,8 @@ python3 scripts/package-wasm-sources.py \
 分发者应保留各组件的署名、许可和适用的源码材料，并提供与所分发二进制对应的源码、修改和必要构建脚本。上游主页或版本号本身不构成完整对应源码的交付。
 
 Windows 预构建工具及 imageio wheel 内嵌 FFmpeg 的依赖源码、补丁和构建材料仍需分别取得；不能用 FFmpeg 主源码或 imageio Python 包的 BSD 许可替代。源码包归档也不自动证明组合分发的许可相容性。本次源码归档不替换编码器。
+
+深度组件通过 OpenCV 读取视频，并调用运行包 `bin/` 下的 FFmpeg 写出预览，不使用 `imageio-ffmpeg`。后续构建因此移除这个重复的可执行文件，并在搬移自检中实际读取视频，确认无需该 wheel。已经发布的旧运行包仍须按其实际内容核对，移除后续构建的依赖不等于补齐旧二进制的源码。
 
 ## 参考
 

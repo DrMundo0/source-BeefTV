@@ -37,6 +37,19 @@ try {
     }
     $dimensions = & (Join-Path $bin "ffprobe.exe") -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 $mediaCheck
     if ($LASTEXITCODE -ne 0 -or $dimensions.Trim() -ne "64,48") { throw "搬移后的 FFprobe 无法读取视频" }
+    # VDA reads frames with OpenCV; BeefTV writes previews with runtime/bin/ffmpeg.
+    # Check the packaged path without installing imageio's second FFmpeg.
+    $frameCheck = @'
+import importlib.util, os, sys
+assert importlib.util.find_spec('imageio_ffmpeg') is None, 'Unexpected duplicate FFmpeg wheel'
+sys.path.insert(0, os.environ['BEEFTV_VDA_SOURCE'])
+from utils.dc_utils import read_video_frames
+frames, fps = read_video_frames(sys.argv[1], -1)
+assert frames.shape == (2, 48, 64, 3), frames.shape
+assert fps == 5.0, fps
+'@
+    & $python -c $frameCheck $mediaCheck
+    if ($LASTEXITCODE -ne 0) { throw "深度运行包无法在没有 imageio-ffmpeg 时读取视频" }
 } finally {
     if (Test-Path -LiteralPath $mediaCheck) { Remove-Item -LiteralPath $mediaCheck -Force }
 }
