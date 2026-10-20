@@ -29,12 +29,17 @@ export function distributionNotices({ root = repo, version, platform = "web", he
     if (platform === "windows-amd64") required.push({ id: "ffmpeg-windows-amd64", version: "8.0.1", license: "GPL-3.0-or-later",
         upstream: "https://www.gyan.dev/ffmpeg/builds/" });
     const components = required.map((component) => {
-        // Only the locally built macOS ffprobe has a source packet in this pipeline.
-        // Upstream project links are separate from corresponding-source delivery.
-        if (!component.id.startsWith("ffprobe-darwin-")) return { ...component, source: null };
+        // Only advertise packets produced by the source packaging steps.
+        if (!component.id.startsWith("ffprobe-darwin-") && component.id !== "ffmpeg-wasm") return { ...component, source: null };
         const name = `BeefTV-${version}-${component.id}-sources.tar.gz`;
         const source = resolve(sourcesDir, name);
         const bytes = existsSync(source) ? readFileSync(source) : null;
+        if (bytes && component.id === "ffmpeg-wasm") {
+            const lock = JSON.parse(readFileSync(resolve(root, "licenses/ffmpeg-wasm-sources.json"), "utf8"));
+            if (lock.version !== component.version || Object.entries(component.binaryHashes).some(([key, hash]) => lock.binaryHashes[key] !== hash)) {
+                throw new Error("FFmpeg.wasm source packet does not match the installed core");
+            }
+        }
         return { ...component, source: bytes ? { name, size: bytes.length, sha256: sha256(bytes),
             url: `https://github.com/glanderness/BeefTV/releases/download/${version}/${name}` } : null };
     });

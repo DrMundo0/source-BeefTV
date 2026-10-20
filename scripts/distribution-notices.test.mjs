@@ -46,6 +46,20 @@ test("macOS source download names and hashes match the generated packet", (t) =>
     assert.ok(files.get("index.html").toString().includes(source.url));
 });
 
+test("WASM source links require the matching published core", (t) => {
+    const root = fixture(t);
+    const binaryHashes = JSON.parse(distributionNotices({ root, version: "v1.7.27" }).get("sources.json")).components[0].binaryHashes;
+    writeFileSync(resolve(root, "licenses/ffmpeg-wasm-sources.json"), JSON.stringify({ version: "0.12.10", binaryHashes }));
+    mkdirSync(resolve(root, "dist"));
+    const name = "BeefTV-v1.7.27-ffmpeg-wasm-sources.tar.gz";
+    writeFileSync(resolve(root, "dist", name), "source-packet");
+    const files = distributionNotices({ root, version: "v1.7.27" });
+    assert.equal(JSON.parse(files.get("sources.json")).components[0].source.name, name);
+    assert.ok(files.get("index.html").toString().includes(name));
+    writeFileSync(resolve(root, "web/node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.wasm"), "changed core");
+    assert.throws(() => distributionNotices({ root, version: "v1.7.27" }), /does not match/);
+});
+
 test("slim builds omit WASM and invalid inputs fail before producing notices", (t) => {
     const root = fixture(t);
     const files = distributionNotices({ root, version: "v1.7.28", heavyMedia: false });
