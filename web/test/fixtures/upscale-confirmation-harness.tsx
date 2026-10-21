@@ -2,12 +2,12 @@ import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App, ConfigProvider } from "antd";
 import { UpscaleNodeContent } from "../../src/components/canvas/nodes/upscale-node";
-import { CanvasNodeGraphContext } from "../../src/components/canvas/canvas-node-graph-context";
-import { CanvasNodeActionContext } from "../../src/components/canvas/canvas-node-action-context";
+import { CanvasNodeGraphContext } from "@/components/canvas/canvas-node-graph-context";
+import { CanvasNodeActionContext } from "@/components/canvas/canvas-node-action-context";
 import { useCanvasUpscaleBatch } from "../../src/pages/canvas/use-canvas-upscale-batch";
 import { createDefaultUpscaleSettings } from "../../src/lib/canvas/canvas-upscale";
-import { canvasThemes } from "../../src/lib/canvas-theme";
-import { setActiveUserScope } from "../../src/lib/user-scope";
+import { canvasThemes } from "@/lib/canvas-theme";
+import { setActiveUserScope } from "@/lib/user-scope";
 import { createModelChannel, useConfigStore } from "../../src/stores/use-config-store";
 import { CanvasNodeType, type CanvasNodeData, type CanvasConnection } from "../../src/types/canvas";
 

@@ -8,6 +8,9 @@ let creates: Record<string, unknown>[] = [];
 
 beforeAll(async () => {
     const build = await Bun.build({ entrypoints: [import.meta.dir + "/fixtures/upscale-confirmation-harness.tsx"], target: "browser", define: { "import.meta.env": "{}", "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "source-alias", setup(builder) {
+        // Bun 1.3.9 needs one explicit file identity when the fixture and the
+        // component reach these shared contexts through different import forms.
+        builder.onResolve({ filter: /^\.\.?\/.*(?:canvas-node-(?:graph|action)-context|canvas-theme|user-scope)$/ }, args => ({ path: Bun.resolveSync(args.path, args.resolveDir) }));
         builder.onResolve({ filter: /^@\// }, args => {
             // This suite owns the actual component, hook, quote client and AntD
             // dialog. Canvas persistence is covered by repository tests; isolate
