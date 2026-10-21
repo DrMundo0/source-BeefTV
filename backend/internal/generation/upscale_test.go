@@ -89,6 +89,18 @@ func upscaleClip(t *testing.T, width, height int, audio bool) []byte {
 	return data
 }
 
+type upscaleProgressPort struct {
+	active atomic.Bool
+	stage  atomic.Value
+}
+
+func (p *upscaleProgressPort) ReportReference(ReferenceProgress) { p.active.Store(true) }
+func (p *upscaleProgressPort) ClearReference()                   { p.active.Store(false) }
+func (p *upscaleProgressPort) SetStage(_ context.Context, stage string) error {
+	p.stage.Store(stage)
+	return nil
+}
+
 func TestUpscaleExecuteFourModelsUsesOwnedUploadAndOriginalResult(t *testing.T) {
 	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
 	for _, model := range []string{"topaz-standard-v2", "topaz-wonder-3.5", "topaz-proteus", "topaz-starlight-fast-2"} {
@@ -103,6 +115,7 @@ func TestUpscaleExecuteFourModelsUsesOwnedUploadAndOriginalResult(t *testing.T) 
 				source, output, mime = upscaleClip(t, 64, 48, true), upscaleClip(t, 128, 96, false), "video/mp4"
 			}
 			var creates, uploads, downloads, estimates atomic.Int32
+			progress := &upscaleProgressPort{}
 			var posted map[string]any
 			var server *httptest.Server
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +147,9 @@ func TestUpscaleExecuteFourModelsUsesOwnedUploadAndOriginalResult(t *testing.T) 
 					w.WriteHeader(202)
 					_, _ = io.WriteString(w, `{"task_id":"original-task","status":"queued"}`)
 				case "/v1/media-upscale/tasks/original-task":
+					if progress.active.Load() || progress.stage.Load() != "正在确认超分结果" {
+						t.Error("accepted upscale still shows reference upload progress")
+					}
 					_ = json.NewEncoder(w).Encode(map[string]any{"task_id": "original-task", "status": "completed", "model": model, "media_type": kind, "result_url": "https://untrusted.invalid/steal"})
 				case "/v1/media-upscale/tasks/original-task/content":
 					downloads.Add(1)
@@ -148,6 +164,8 @@ func TestUpscaleExecuteFourModelsUsesOwnedUploadAndOriginalResult(t *testing.T) 
 			runtime := taskRuntime(func(r *Runtime) {
 				r.Endpoints.BeefAPIVideoBaseURL = server.URL
 				r.Resources = upscaleResources{data: source, kind: kind}
+				r.ReferenceProgress = progress
+				r.Stages = progress
 			})
 			input := Input{Mode: kind, Prompt: "AI 超分", Config: Config{BaseURL: server.URL, APIKey: "synthetic-upscale-key", Model: model, InterfaceType: "newapi"}, Upscale: &UpscaleOptions{Factor: 2}}
 			if kind == "image" {
