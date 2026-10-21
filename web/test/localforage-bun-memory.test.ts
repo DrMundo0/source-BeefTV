@@ -3,6 +3,20 @@ import localforage from "localforage";
 import { BUN_MEMORY_DRIVER } from "./helpers/localforage-bun-memory";
 import "@/lib/localforage-storage";
 
+async function runStorageProbe(source: string) {
+    const child = Bun.spawn([process.execPath, "-e", source], { cwd: import.meta.dir + "/..", stdout: "pipe", stderr: "pipe" });
+    // The parent timer still runs if a child regresses into the microtask loop.
+    const watchdog = setTimeout(() => child.kill("SIGKILL"), 3000);
+    try {
+        const [status, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+        expect({ status, stderr }).toEqual({ status: 0, stderr: "" });
+        return stdout.trim();
+    } finally {
+        clearTimeout(watchdog);
+        if (child.exitCode === null) child.kill("SIGKILL");
+    }
+}
+
 test("Bun preload initializes methods after module configuration and before test spies", async () => {
     expect(localforage.config()).toMatchObject({ name: "infinite-canvas", storeName: "app_state" });
     const read = localforage.getItem;
@@ -73,17 +87,7 @@ test("an explicitly unavailable driver rejects ready and read/write without recu
             catch (error) { if (error.message !== "No available storage method found.") throw error; }
         }
         console.log("ready/read/write rejected");`;
-    const child = Bun.spawn([process.execPath, "-e", source], { cwd: import.meta.dir + "/..", stdout: "pipe", stderr: "pipe" });
-    // The parent timer still runs if a child regresses into the microtask loop.
-    const watchdog = setTimeout(() => child.kill("SIGKILL"), 3000);
-    try {
-        const [status, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
-        expect({ status, stderr }).toEqual({ status: 0, stderr: "" });
-        expect(stdout.trim()).toBe("ready/read/write rejected");
-    } finally {
-        clearTimeout(watchdog);
-        if (child.exitCode === null) child.kill("SIGKILL");
-    }
+    expect(await runStorageProbe(source)).toBe("ready/read/write rejected");
 });
 
 test("loading the driver preserves the real facade's default database and store configuration", async () => {
@@ -98,8 +102,5 @@ test("loading the driver preserves the real facade's default database and store 
         const reopened = localforage.createInstance({ name: "infinite-canvas", storeName: "app_state" });
         if (await reopened.getItem("default-partition") !== "saved") throw new Error("default instance used another partition");
         console.log("facade default partition preserved");`;
-    const child = Bun.spawn([process.execPath, "-e", source], { cwd: import.meta.dir + "/..", stdout: "pipe", stderr: "pipe" });
-    const [status, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
-    expect({ status, stderr }).toEqual({ status: 0, stderr: "" });
-    expect(stdout.trim()).toBe("facade default partition preserved");
+    expect(await runStorageProbe(source)).toBe("facade default partition preserved");
 });
