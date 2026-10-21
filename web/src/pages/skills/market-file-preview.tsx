@@ -15,5 +15,5 @@ export function MarketFilePreview({ skillId, releaseId }: { skillId: string; rel
         catch (e) { setError(e instanceof Error ? e.message : "技能正文暂时无法读取"); }
         finally { setBusy(false); }
     };
-    return <section className="skill-market-preview"><h3>使用说明</h3>{content ? <pre>{content}</pre> : null}{error ? <Alert type="error" title={error} /> : null}{!eof ? <Button loading={busy} onClick={() => void read()}>{offset ? "继续读取说明" : "读取 SKILL.md"}</Button> : null}</section>;
+    return <section><h3>使用说明</h3>{content ? <pre>{content}</pre> : null}{error ? <Alert type="error" title={error} /> : null}{!eof ? <Button loading={busy} onClick={() => void read()}>{offset ? "继续读取说明" : "读取 SKILL.md"}</Button> : null}</section>;
 }

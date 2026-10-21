@@ -13,6 +13,7 @@
 .skill-market-preview { max-height: 65vh; overflow-y: auto; overflow-wrap: anywhere; }
 .skill-market-preview h3 { font-weight: 600; margin: 16px 0 8px; }
 .skill-market-preview ul { padding-left: 20px; list-style: disc; }
+.skill-market-preview .skill-market-trials li { margin-bottom: 16px; }
 .skill-market-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--muted); border-radius: var(--r-sm); max-height: 300px; overflow: auto; }
 .skill-publish-layout { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 24px; }
 .skill-publish-list { display: flex; flex-direction: column; gap: 8px; }

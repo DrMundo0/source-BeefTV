@@ -7,24 +7,28 @@ import (
 )
 
 func (s *Service) ValidateAgentSkills(userID string, pins []skills.Pin) ([]skills.Pin, error) {
-	validated, err := s.skillDomain().ValidateAgentSkills(userID, pins)
+	domain := s.skillDomain()
+	validated, err := domain.ValidateAgentSkills(userID, pins)
 	if err != nil {
 		return nil, err
 	}
 	for _, pin := range validated {
-		if err := s.checkAgentSkillRequirements(userID, pin); err != nil {
+		if err := s.checkAgentSkillRequirements(domain, userID, pin); err != nil {
 			return nil, err
 		}
 	}
 	return validated, nil
 }
 func (s *operationSession) AgentSkillVersion(userID string, pin skills.Pin) (*skills.AgentResource, error) {
-	if err := s.service.checkAgentSkillRequirements(userID, pin); err != nil {
+	if err := s.service.checkAgentSkillRequirements(s.service.skillDomain(), userID, pin); err != nil {
 		return nil, err
 	}
 	return s.service.skillDomain().AgentVersion(userID, pin)
 }
 func (s *operationSession) AgentSkillFile(userID string, pin skills.Pin, path string) (*skills.AgentFile, error) {
+	if err := s.service.checkAgentSkillRequirements(s.service.skillDomain(), userID, pin); err != nil {
+		return nil, err
+	}
 	return s.service.skillDomain().AgentFile(userID, pin, path)
 }
 func (s *Service) AgentSkillCatalog(userID string) ([]skills.AgentCatalogItem, error) {
@@ -34,8 +38,8 @@ func (s *operationSession) AgentSkillCatalog(userID string) ([]skills.AgentCatal
 	return s.service.skillDomain().AgentCatalog(userID)
 }
 
-func (s *Service) checkAgentSkillRequirements(userID string, pin skills.Pin) error {
-	required, err := s.skillDomain().AgentRequirements(userID, pin)
+func (s *Service) checkAgentSkillRequirements(domain *skills.Service, userID string, pin skills.Pin) error {
+	required, err := domain.AgentRequirements(userID, pin)
 	if err != nil {
 		return err
 	}
