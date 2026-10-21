@@ -33,7 +33,8 @@ func (r *Repository) DiagnosticTasks(userID string, from time.Time, to time.Time
 			query = query.Where("project_id = ?", projectID)
 		}
 	}
-	err := query.Order("created_at asc").Limit(diagnosticTaskLimit).Find(&tasks).Error
+	// The extra row lets the exporter distinguish a full page from truncation.
+	err := query.Order("created_at asc").Order("id asc").Limit(diagnosticTaskLimit + 1).Find(&tasks).Error
 	return tasks, err
 }
 
@@ -48,7 +49,7 @@ func (r *Repository) DiagnosticTaskLogs(userID string, from time.Time, to time.T
 			query = query.Where("task_id IN (SELECT id FROM tasks WHERE user_id = ? AND project_id = ?)", userID, projectID)
 		}
 	}
-	err := query.Order("created_at asc").Limit(diagnosticTaskLogLimit).Find(&logs).Error
+	err := query.Order("created_at asc").Order("id asc").Limit(diagnosticTaskLogLimit + 1).Find(&logs).Error
 	return logs, err
 }
 
@@ -63,6 +64,6 @@ func (r *Repository) DiagnosticAPICallLogs(userID string, from time.Time, to tim
 			query = query.Where("task_id IN (SELECT id FROM tasks WHERE user_id = ? AND project_id = ?)", userID, projectID)
 		}
 	}
-	err := query.Omit("RequestBody", "ResponseBody").Order("created_at asc").Limit(diagnosticAPICallLimit).Find(&logs).Error
+	err := query.Omit("RequestBody", "ResponseBody").Order("created_at asc").Order("id asc").Limit(diagnosticAPICallLimit + 1).Find(&logs).Error
 	return logs, err
 }
