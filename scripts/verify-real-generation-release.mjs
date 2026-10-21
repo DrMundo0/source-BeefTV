@@ -17,6 +17,8 @@ import {
   releaseAgentChecks,
   releaseDeterministicChecks,
   validateDeferredV1713,
+  validateTargetedV200,
+  targetedV200SourceProof,
 } from './real-generation-release-contract.mjs';
 
 // Tree identities survive squash/merge commits, but change whenever shipped
@@ -33,6 +35,12 @@ const receipt = JSON.parse(readFileSync(`docs/release-evidence/${version}.json`,
 const fail = message => { throw new Error(`Real generation release gate: ${message}`); };
 const nonempty = value => typeof value === 'string' && value.trim() !== '';
 if (receipt.version !== version || receipt.sourceDigest !== sourceDigest) fail('receipt does not match this release source');
+if (receipt.ownerException?.scope === 'v2.0.0-wand-audio-targeted-retest-20261021') {
+  const originalBytes = readFileSync('docs/release-evidence/v2.0.0-original-execution.json');
+  const result = validateTargetedV200(receipt, sourceDigest, { originalBytes, sourceProof: targetedV200SourceProof(sourceTree) });
+  console.log(`v2.0.0 targeted acceptance: ${result.retainedCases} media cases and ${result.retainedChecks} checks retain their original execution source; ${result.currentChecks} checks verified on current source. CNY ${receipt.spentCNY}/50; final packages ${receipt.packages.status}.`);
+  process.exit(0);
+}
 if (version === 'v1.7.27') {
   const treeDigest = (ref, paths) => createHash('sha256').update(execFileSync('git', ['ls-tree', '-r', ref, '--', ...paths], { encoding: 'utf8' })).digest('hex');
   validateMusic3Release(receipt, sourceDigest, {

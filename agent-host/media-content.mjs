@@ -13,7 +13,7 @@ function supportsNativeMedia({ api, modelId }) {
 export function mediaCapabilityContext(model) {
   return supportsNativeMedia(model)
     ? '[本轮媒体能力：可请求 frames 静态画面、video 连续视频和 audio 音频；结论以实际成功读取的内容为准。]'
-    : '[本轮媒体能力：主模型可查看 frames 静态画面及客观检测，不能直接接收 video/audio。连续动作和声音可交给 media_review 使用单独配置的审片模型检查，先读取 overview 取得版本；它返回模型观察而非主模型亲眼所见。若未配置或读取失败，明确未检查，仍可完成无需这些判断的剪辑与渲染。]';
+    : '[本轮媒体能力：主模型可查看 frames 静态画面及客观检测，不能直接接收 video/audio。连续视频及音轨用 media_review mode=video，独立音频用 media_review mode=audio，交给单独配置的审片模型检查；先读取 overview 取得版本。它返回模型观察而非主模型亲自看过或听过。若未配置或读取失败，明确未检查，仍可完成无需这些判断的剪辑与渲染。]';
 }
 
 function validatePart(part) {
