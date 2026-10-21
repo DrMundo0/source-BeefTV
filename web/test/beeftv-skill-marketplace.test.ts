@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { canSubmitPublication, requirementLabel, publicationStatus } from "../src/pages/skills/market-copy";
+import { canSubmitPublication, requirementLabel, publicationStatus, unsupportedRequirements } from "../src/pages/skills/market-copy";
 
 async function source(path: string) {
     return Bun.file(new URL(path, import.meta.url)).text();
@@ -30,4 +30,12 @@ test("unknown capabilities and publication states never look accepted", () => {
     expect(requirementLabel("needs secret")).toContain("未确认");
     expect(publicationStatus("new-unknown-state")).toBe("状态待刷新");
     expect(publicationStatus("rejected")).toBe("需要修改");
+});
+
+test("legacy publication requirements stay visible until the author explicitly removes them", () => {
+    const original = ["text", "model.audio", "future"];
+    expect(unsupportedRequirements(original)).toEqual(["text", "future"]);
+    expect(original).toEqual(["text", "model.audio", "future"]);
+    expect(unsupportedRequirements([])).toEqual([]);
+    expect(unsupportedRequirements(["beeftv.canvas", "model.image", "model.video", "model.audio"])).toEqual([]);
 });

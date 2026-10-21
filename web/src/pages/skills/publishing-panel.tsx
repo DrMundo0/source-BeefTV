@@ -2,9 +2,9 @@ import { Alert, App, Button, Checkbox, Form, Input, Select, Skeleton } from "ant
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { getDesktopAppBinding } from "@/services/desktop-runtime";
-import { listSkills, type Skill } from "@/services/api/skills";
+import { getSkill, listSkills, type Skill } from "@/services/api/skills";
 import { disconnectMarketAuthorization, getMarketAuthorization, listPublishPlans, preparePublication, refreshPublication, startMarketAuthorization, submitPublication, uploadPublication, type MarketAuthorization, type PublishPlan, type SkillMetadata } from "@/services/api/skill-market";
-import { canSubmitPublication, capabilityOptions, publicationStatus, requirementLabel } from "./market-copy";
+import { canSubmitPublication, capabilityOptions, publicationStatus, requirementLabel, unsupportedRequirements } from "./market-copy";
 
 export async function openSkillWebsite(url: string) {
     const binding = getDesktopAppBinding()?.OpenSkillMarketURL;
@@ -14,7 +14,7 @@ export async function openSkillWebsite(url: string) {
 
 export function SkillPublishingPanel({ planId }: { planId?: string }) {
     const { message } = App.useApp();
-    const [params] = useSearchParams();
+    const [params, setParams] = useSearchParams();
     const [plans, setPlans] = useState<PublishPlan[]>([]);
     const [selected, setSelected] = useState("");
     const [skills, setSkills] = useState<Skill[]>([]);
@@ -24,10 +24,12 @@ export function SkillPublishingPanel({ planId }: { planId?: string }) {
     const [error, setError] = useState("");
     const [confirmed, setConfirmed] = useState(false);
     const [creating, setCreating] = useState(false);
+    const [preparingFrom, setPreparingFrom] = useState<PublishPlan | null>(null);
     const [form] = Form.useForm<SkillMetadata & { localSkillId: string }>();
+    const formRequirements = Form.useWatch("requirements", form) || [];
     const current = plans.find(item => item.planId === selected);
     const website = auth.websiteUrl || "https://beeftv.app/skills";
-    const replace = (next: PublishPlan) => { setPlans(items => [next, ...items.filter(item => item.planId !== next.planId)]); setSelected(next.planId); setConfirmed(false); };
+    const replace = (next: PublishPlan) => { setPlans(items => [next, ...items.filter(item => item.planId !== next.planId)]); setSelected(next.planId); setConfirmed(false); setParams({ tab: "publish", planId: next.planId }); };
     const reload = useCallback(async () => {
         setLoading(true); setError("");
         try {
@@ -55,9 +57,14 @@ export function SkillPublishingPanel({ planId }: { planId?: string }) {
         const values = await form.validateFields();
         const skill = skills.find(item => item.skillId === values.localSkillId);
         if (!skill) return;
+        if (preparingFrom && skill.skillId === preparingFrom.skillId && skill.versionId !== preparingFrom.versionId) {
+            setError("本机技能已更新，原稿仍保留。请从“我的技能”检查当前文件后重新准备投稿。");
+            return;
+        }
         await run(async () => {
             const { localSkillId, ...metadata } = values;
-            replace(await preparePublication(localSkillId, { ...metadata, name: metadata.name || skill.skillName, description: metadata.description || skill.description, requirements: metadata.requirements || [], showcase: [] }));
+            replace(await preparePublication(localSkillId, { ...preparingFrom?.metadata, ...metadata, name: metadata.name || skill.skillName, description: metadata.description || skill.description, requirements: metadata.requirements || [], showcase: preparingFrom?.metadata.showcase || [] }, preparingFrom?.planId));
+            setPreparingFrom(null);
             setCreating(false); message.success("已准备本机草稿，请检查文件后确认上传");
         });
     };
@@ -65,6 +72,14 @@ export function SkillPublishingPanel({ planId }: { planId?: string }) {
         const skill = skills.find(item => item.skillId === id);
         if (skill) form.setFieldsValue({ name: skill.skillName, description: skill.description, versionLabel: skill.version || "1.0.0" });
     };
+    const reprepare = (plan: PublishPlan) => run(async () => {
+        const { skill } = await getSkill(plan.skillId);
+        if (skill.versionId !== plan.versionId) throw new Error("本机技能已更新，原稿仍保留。请从“我的技能”检查当前文件后重新准备投稿。");
+        setSkills(items => [skill, ...items.filter(item => item.skillId !== skill.skillId)]);
+        form.resetFields();
+        form.setFieldsValue({ ...plan.metadata, requirements: [...plan.metadata.requirements], localSkillId: plan.skillId });
+        setPreparingFrom(plan); setConfirmed(false); setCreating(true);
+    });
     return <section aria-label="技能投稿">
         <div className="skill-publish-status">
             <p>投稿分两步：先将选定文件上传为私有草稿，再检查公开预览并确认送审。只有审核通过后，其他人才能下载。</p>
@@ -77,24 +92,27 @@ export function SkillPublishingPanel({ planId }: { planId?: string }) {
             {auth.userCode && !auth.connected ? <p>确认码：<strong>{auth.userCode}</strong>。请在打开的官网核对，完成后返回检查授权状态。</p> : null}
         </div>
         {error ? <Alert type="error" showIcon title={error} className="mb-4" /> : null}
-        <div className="skill-market-actions mb-4"><Button type="primary" onClick={() => { setCreating(true); form.resetFields(); }}>准备新投稿</Button><Button onClick={() => void reload()} loading={loading}>刷新本机草稿</Button></div>
+        <div className="skill-market-actions mb-4"><Button type="primary" onClick={() => { setPreparingFrom(null); setCreating(true); form.resetFields(); }}>准备新投稿</Button><Button onClick={() => void reload()} loading={loading}>刷新本机草稿</Button></div>
         {loading ? <Skeleton active /> : creating ? <Form form={form} layout="vertical" className="max-w-3xl" initialValues={{ versionLabel: "1.0.0", requirements: [], sourceUrl: "" }}>
-            <Form.Item name="localSkillId" label="选择本机技能" rules={[{ required: true, message: "请选择一个技能" }]}><Select onChange={selectSkill} options={skills.filter(skill => skill.sourceType !== "market").map(skill => ({ value: skill.skillId, label: skill.skillName }))} /></Form.Item>
+            {preparingFrom ? <Alert type="info" title="沿用原稿的文件与版本。修改后生成新的本机草稿，原稿继续保留；请重新检查并确认上传。" className="mb-4" /> : null}
+            <Form.Item name="localSkillId" label="选择本机技能" rules={[{ required: true, message: "请选择一个技能" }]}><Select disabled={Boolean(preparingFrom)} onChange={selectSkill} options={skills.filter(skill => skill.sourceType !== "market").map(skill => ({ value: skill.skillId, label: skill.skillName }))} /></Form.Item>
             <Form.Item name="name" label="公开名称" rules={[{ required: true, message: "请填写公开名称" }]}><Input maxLength={80} /></Form.Item>
             <Form.Item name="description" label="用途和输入输出" rules={[{ required: true, message: "请说明输入、输出和使用场景" }]}><Input.TextArea rows={4} maxLength={500} /></Form.Item>
             <div className="grid gap-4 sm:grid-cols-2"><Form.Item name="versionLabel" label="版本" rules={[{ required: true, message: "请填写版本" }]}><Input maxLength={64} /></Form.Item><Form.Item name="license" label="许可证" rules={[{ required: true, message: "请选择你有权采用的许可证" }]}><Select options={["MIT", "Apache-2.0", "CC-BY-4.0", "CC-BY-SA-4.0", "CC0-1.0"].map(value => ({ value, label: value }))} /></Form.Item></div>
             <Form.Item name="sourceUrl" label="来源链接（改写他人内容时请填写）" rules={[{ type: "url", message: "请填写完整链接" }]}><Input /></Form.Item>
-            <Form.Item name="requirements" label="必需工具与理解能力"><Select mode="multiple" options={capabilityOptions} /></Form.Item>
+            <Form.Item name="requirements" label="必需工具与理解能力" extra="纯文字技能留空。请移除任何未确认的选项；具体使用条件写在下方。" rules={[{ validator: (_, value: string[] = []) => unsupportedRequirements(value).length ? Promise.reject(new Error("请移除未确认的能力；纯文字技能留空即可。")) : Promise.resolve() }]}><Select mode="multiple" allowClear options={[...capabilityOptions, ...unsupportedRequirements(formRequirements).map(value => ({ value, label: requirementLabel(value) }))]} /></Form.Item>
             <Form.Item name="requirementNotes" label="模型、素材和费用说明"><Input.TextArea rows={3} maxLength={1000} placeholder="例如：使用图片理解模型核对参考图，生成视频时按所选模型计费。" /></Form.Item>
             <p className="skill-market-help">请先在助手中试用。不要上传密钥、私人素材或没有分享许可的内容。</p><div className="skill-market-actions"><Button type="primary" loading={busy} onClick={() => void makePlan()}>准备文件预览</Button><Button onClick={() => setCreating(false)}>返回稿件</Button></div>
         </Form> : <div className="skill-publish-layout">
             <nav className="skill-publish-list" aria-label="本机投稿草稿">{plans.map(plan => <Button key={plan.planId} aria-pressed={selected === plan.planId} onClick={() => setSelected(plan.planId)}><span>{plan.metadata.name}<br /><small>{publicationStatus(plan.status)}</small></span></Button>)}</nav>
             {current ? <article className="skill-market-preview" key={current.planId}><h2>{current.metadata.name} · {current.metadata.versionLabel}</h2><p>{publicationStatus(current.status)}</p><p>{current.metadata.description}</p><p>许可：{current.metadata.license}</p><p>使用条件：{current.metadata.requirements.map(requirementLabel).join("、") || "没有额外工具要求"}</p>{current.metadata.requirementNotes ? <p>{current.metadata.requirementNotes}</p> : null}
+                {unsupportedRequirements(current.metadata.requirements).length ? <Alert type="warning" title="这份草稿包含未确认的使用条件，请修改信息后重新准备。纯文字技能无需额外理解能力。" /> : null}
+                {!current.submissionId && current.status === "awaiting_upload_confirmation" ? <Button disabled={busy} onClick={() => void reprepare(current)}>修改信息并重新准备</Button> : null}
                 <h3>文件清单</h3><ul>{current.files.map(file => <li key={file.path}>{file.path} · {file.size} 字节</li>)}</ul>
                 {current.instruction ? <><h3>SKILL.md 正文</h3><pre>{current.instruction}</pre></> : null}
                 {current.preview?.warnings?.map(value => <Alert key={value} type="warning" title={value} />)}
                 {current.reviewReason ? <Alert type="info" title="审核意见" description={current.reviewReason} /> : null}
-                {current.status === "awaiting_upload_confirmation" || current.status === "uploading" ? <><Checkbox checked={confirmed} onChange={e => setConfirmed(e.target.checked)}>我已核对文件和分享权限，确认上传为私有草稿。</Checkbox><div className="skill-market-actions"><Button type="primary" disabled={!confirmed || !auth.connected} loading={busy} onClick={() => void run(async () => { replace(await uploadPublication(current)); message.success("已读取公开预览，请再次核对后送审"); })}>确认上传私有草稿</Button></div></> : null}
+                {current.status === "awaiting_upload_confirmation" || current.status === "uploading" ? <><Checkbox checked={confirmed} onChange={e => setConfirmed(e.target.checked)}>我已核对文件和分享权限，确认上传为私有草稿。</Checkbox><div className="skill-market-actions"><Button type="primary" disabled={!confirmed || !auth.connected || unsupportedRequirements(current.metadata.requirements).length > 0} loading={busy} onClick={() => void run(async () => { replace(await uploadPublication(current)); message.success("已读取公开预览，请再次核对后送审"); })}>确认上传私有草稿</Button></div></> : null}
                 {current.status === "awaiting_submit_confirmation" ? <><p>通过审核后，以上内容和文件将公开。此预览对应作者：{current.preview?.author}。</p><Checkbox checked={confirmed} onChange={e => setConfirmed(e.target.checked)}>我已检查这份公开预览，确认提交审核。</Checkbox><div className="skill-market-actions"><Button type="primary" disabled={!auth.connected || !canSubmitPublication(current, confirmed)} loading={busy} onClick={() => void run(async () => { replace(await submitPublication(current)); message.success("已送审，可在官网查看结果和修改意见"); })}>确认送审</Button></div></> : null}
                 {current.submissionId ? <div className="skill-market-actions"><Button loading={busy} onClick={() => void run(async () => replace(await refreshPublication(current.planId)))}>刷新预览与审核状态</Button><Button onClick={() => void run(() => openSkillWebsite(`${website}/submissions/${encodeURIComponent(current.submissionId!)}`))}>在官网修改稿件</Button></div> : null}
                 {current.status === "rejected" ? <p>请在官网按审核意见修改，保存后回到这里刷新预览，再次确认送审。</p> : null}

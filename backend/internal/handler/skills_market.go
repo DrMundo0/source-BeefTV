@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"infinite-canvas/backend/internal/app"
 	"infinite-canvas/backend/internal/skillhub"
+	"infinite-canvas/backend/internal/skills"
 )
 
 func marketReply(c *gin.Context, value any, err error) {
@@ -133,14 +134,21 @@ func registerSkillMarketRoutes(r *gin.RouterGroup, svc *app.Service) {
 	})
 	m.POST("/publish-plans", func(c *gin.Context) {
 		var a struct {
-			SkillID  string            `json:"skillId"`
-			Metadata skillhub.Metadata `json:"metadata"`
+			SkillID      string            `json:"skillId"`
+			SourcePlanID string            `json:"sourcePlanId"`
+			Metadata     skillhub.Metadata `json:"metadata"`
 		}
 		if e := c.ShouldBindJSON(&a); e != nil {
 			marketReply(c, nil, app.BadAuthRequest("请填写投稿信息"))
 			return
 		}
-		v, e := svc.SkillsDomain().PublishPrepare(owner(c), a.SkillID, a.Metadata)
+		var v *skills.PublishPlan
+		var e error
+		if a.SourcePlanID != "" {
+			v, e = svc.SkillsDomain().PublishReprepare(owner(c), a.SourcePlanID, a.Metadata)
+		} else {
+			v, e = svc.SkillsDomain().PublishPrepare(owner(c), a.SkillID, a.Metadata)
+		}
 		marketReply(c, v, e)
 	})
 	m.GET("/publish-plans/:id", func(c *gin.Context) {

@@ -52,6 +52,32 @@ func (s *Service) PublishPrepareInCanvas(user, id, canvas string, meta skillhub.
 	if e != nil {
 		return nil, e
 	}
+	return s.preparePublicationBundle(user, id, canvas, meta, bundle)
+}
+
+// Repreparing changes metadata only. The saved source plan still binds the
+// original owner, canvas and immutable local version, never a replacement file.
+func (s *Service) PublishReprepare(user, sourcePlanID string, meta skillhub.Metadata) (*PublishPlan, error) {
+	unlock := s.lockMarket(user)
+	defer unlock()
+	source, err := s.PublishPlan(user, sourcePlanID)
+	if err != nil {
+		return nil, err
+	}
+	if source.SubmissionID != "" || source.Status != "awaiting_upload_confirmation" {
+		return nil, kernel.NewAppError(409, "这份稿件已有上传记录，请刷新状态并在官网修改")
+	}
+	bundle, err := s.SkillPackageBundle(user, source.SkillID)
+	if err != nil {
+		return nil, err
+	}
+	if bundle.VersionID != source.VersionID || bundle.ContentHash != source.ContentHash {
+		return nil, kernel.NewAppError(409, "本机技能已更新，原稿仍保留；请检查当前文件后重新准备投稿")
+	}
+	return s.preparePublicationBundle(user, source.SkillID, source.CanvasID, meta, bundle)
+}
+
+func (s *Service) preparePublicationBundle(user, id, canvas string, meta skillhub.Metadata, bundle *SkillPackageBundle) (*PublishPlan, error) {
 	files := map[string][]byte{}
 	manifest := []skillhub.File{}
 	for _, f := range bundle.Files {
@@ -108,6 +134,9 @@ func (s *Service) PublishPrepareInCanvas(user, id, canvas string, meta skillhub.
 	if meta.Requirements == nil {
 		meta.Requirements = []string{}
 	}
+	if e := validatePublicationRequirements(meta.Requirements); e != nil {
+		return nil, e
+	}
 	if meta.Showcase == nil {
 		meta.Showcase = []skillhub.Showcase{}
 	}
@@ -125,6 +154,13 @@ func (s *Service) PublishPrepareInCanvas(user, id, canvas string, meta skillhub.
 		return nil, e
 	}
 	return p, nil
+}
+
+func validatePublicationRequirements(requirements []string) error {
+	if checkMarketRequirements(requirements) != nil {
+		return &kernel.AppError{Status: 400, Code: 400, Reason: "invalid_skill_requirements", Message: "requirements 只接受 beeftv.canvas、model.image、model.video、model.audio。纯文字技能请使用空数组 []，其他条件写入 requirementNotes；修正后重新准备投稿。"}
+	}
+	return nil
 }
 func (s *Service) PublishPlans(user string) ([]PublishPlan, error) {
 	unlock := s.lockMarket(user)
@@ -169,6 +205,9 @@ func (s *Service) PublishUpload(ctx context.Context, user, id, expectedHash stri
 	}
 	if p.Status == "submitted" {
 		return p, nil
+	}
+	if e := validatePublicationRequirements(p.Metadata.Requirements); e != nil {
+		return nil, e
 	}
 	c, e := marketClient()
 	if e != nil {

@@ -2292,11 +2292,24 @@
             "name": {
               "type": "string"
             },
+            "requirementNotes": {
+              "description": "自然语言描述模型、素材和费用条件，不作为能力 ID。",
+              "maxLength": 1000,
+              "type": "string"
+            },
             "requirements": {
+              "description": "仅列出必需能力的明确 ID。纯文字技能使用空数组 []，不得填写 text 或模型名称；其他使用条件写入 requirementNotes。",
               "items": {
+                "enum": [
+                  "beeftv.canvas",
+                  "model.image",
+                  "model.video",
+                  "model.audio"
+                ],
                 "type": "string"
               },
-              "type": "array"
+              "type": "array",
+              "uniqueItems": true
             },
             "showcase": {
               "items": {
@@ -2315,7 +2328,8 @@
             }
           },
           "required": [
-            "license"
+            "license",
+            "requirements"
           ],
           "type": "object"
         },

@@ -24,7 +24,7 @@ export const getMarketAuthorization = () => http.get<MarketAuthorization>(`${roo
 export const startMarketAuthorization = () => http.post<MarketAuthorization>(`${root}/authorization/start`);
 export const disconnectMarketAuthorization = () => http.delete<MarketAuthorization>(`${root}/authorization`);
 export const listPublishPlans = () => http.get<{ items: PublishPlan[] }>(`${root}/publish-plans`);
-export const preparePublication = (skillId: string, metadata: SkillMetadata) => http.post<PublishPlan>(`${root}/publish-plans`, { skillId, metadata });
+export const preparePublication = (skillId: string, metadata: SkillMetadata, sourcePlanId?: string) => http.post<PublishPlan>(`${root}/publish-plans`, { skillId, metadata, sourcePlanId });
 export const refreshPublication = (planId: string) => http.post<PublishPlan>(`${root}/publish-plans/${id(planId)}/refresh`);
 // These two calls are used only by user confirmation controls, never by the model tool surface.
 export const uploadPublication = (plan: PublishPlan) => http.post<PublishPlan>(`${root}/publish-plans/${id(plan.planId)}/upload`, { confirmed: true, archiveSha256: plan.archiveSha256 });
