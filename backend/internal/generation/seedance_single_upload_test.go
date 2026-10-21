@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
@@ -161,5 +162,48 @@ func TestTransportTracePreservesDNSFailureAndRequestDispatch(t *testing.T) {
 	callbacks.TLSHandshakeStart()
 	if dispatched, phase := trace.result(); !dispatched || phase != "tls" {
 		t.Fatal("later handshake erased earlier dispatch")
+	}
+}
+
+func TestSeedanceUploadDNSValidationHonorsDeadline(t *testing.T) {
+	previous := net.DefaultResolver
+	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		timer := time.NewTimer(250 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timer.C:
+			return nil, errors.New("owned slow DNS failure")
+		}
+	}}
+	t.Cleanup(func() { net.DefaultResolver = previous })
+	for _, operation := range []string{"validation", "put", "confirmation"} {
+		t.Run(operation, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+			defer cancel()
+			receipts := &recordingReceipts{}
+			ctx = WithRuntime(ctx, Runtime{Receipts: receipts})
+			started := time.Now()
+			var err error
+			switch operation {
+			case "validation":
+				err = ValidateBeefAPISeedanceSecureURL(ctx, "https://owned-slow-dns.invalid/upload")
+			case "put":
+				err = PutBeefAPISeedanceBytes(ctx, BeefAPISeedanceUploadSession{UploadURL: "https://owned-slow-dns.invalid/upload"}, []byte("owned"))
+			case "confirmation":
+				req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "https://owned-slow-dns.invalid/complete", nil)
+				_, _, err = DoBinary(req)
+			}
+			if !errors.Is(err, context.DeadlineExceeded) || time.Since(started) > 200*time.Millisecond {
+				t.Fatalf("DNS validation ignored deadline: duration=%s error=%v", time.Since(started), err)
+			}
+			if operation != "validation" {
+				seen := receipts.snapshot()
+				if len(seen) != 1 || seen[0].Dispatched || seen[0].TransportPhase != "dns" {
+					t.Fatalf("DNS failure evidence: %+v", seen)
+				}
+			}
+		})
 	}
 }

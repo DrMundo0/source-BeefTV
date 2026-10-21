@@ -14,7 +14,7 @@ type transportTrace struct {
 }
 
 func (t *transportTrace) attach(req *http.Request) *http.Request {
-	t.phase.Store("connect")
+	t.phase.Store("")
 	trace := &httptrace.ClientTrace{
 		DNSStart: func(httptrace.DNSStartInfo) { t.phase.Store("dns") },
 		DNSDone: func(info httptrace.DNSDoneInfo) {
