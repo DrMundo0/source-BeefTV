@@ -113,7 +113,7 @@ func OutboundHTTPClient(timeout time.Duration) *http.Client {
 			if len(via) >= maxOutboundRedirects {
 				return errors.New("外部服务重定向次数过多")
 			}
-			_, err := ValidateOutboundURL(req.URL.String())
+			_, err := ValidateOutboundURLContext(req.Context(), req.URL.String())
 			return err
 		},
 	}

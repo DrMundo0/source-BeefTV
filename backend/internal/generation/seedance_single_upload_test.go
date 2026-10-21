@@ -166,6 +166,7 @@ func TestTransportTracePreservesDNSFailureAndRequestDispatch(t *testing.T) {
 }
 
 func TestSeedanceUploadDNSValidationHonorsDeadline(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
 	previous := net.DefaultResolver
 	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		timer := time.NewTimer(250 * time.Millisecond)
@@ -178,7 +179,7 @@ func TestSeedanceUploadDNSValidationHonorsDeadline(t *testing.T) {
 		}
 	}}
 	t.Cleanup(func() { net.DefaultResolver = previous })
-	for _, operation := range []string{"validation", "put", "confirmation"} {
+	for _, operation := range []string{"validation", "put", "confirmation", "redirect"} {
 		t.Run(operation, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 			defer cancel()
@@ -194,13 +195,20 @@ func TestSeedanceUploadDNSValidationHonorsDeadline(t *testing.T) {
 			case "confirmation":
 				req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "https://owned-slow-dns.invalid/complete", nil)
 				_, _, err = DoBinary(req)
+			case "redirect":
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					http.Redirect(w, r, "https://owned-slow-dns.invalid/complete", http.StatusFound)
+				}))
+				defer server.Close()
+				req, _ := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
+				_, _, err = DoBinary(req)
 			}
 			if !errors.Is(err, context.DeadlineExceeded) || time.Since(started) > 200*time.Millisecond {
 				t.Fatalf("DNS validation ignored deadline: duration=%s error=%v", time.Since(started), err)
 			}
 			if operation != "validation" {
 				seen := receipts.snapshot()
-				if len(seen) != 1 || seen[0].Dispatched || seen[0].TransportPhase != "dns" {
+				if len(seen) != 1 || seen[0].Dispatched != (operation == "redirect") || seen[0].TransportPhase != "dns" {
 					t.Fatalf("DNS failure evidence: %+v", seen)
 				}
 			}
