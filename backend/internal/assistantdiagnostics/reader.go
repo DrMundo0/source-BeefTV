@@ -123,6 +123,7 @@ func (r *Reader) DiagnosticAssistantEvidence(userID string, from, to time.Time, 
 		file := filepath.Join(r.dataDir, directory, base+".sqlite")
 		if readErr := readSession(file, session, from, to, &out); readErr != nil {
 			out.Coverage.Status = "partial"
+			out.Coverage.Reason = readErr.Error() // readSession returns fixed reason codes only.
 		}
 	}
 	if len(out.Records) > maxRecords {

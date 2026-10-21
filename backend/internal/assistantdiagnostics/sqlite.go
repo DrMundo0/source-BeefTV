@@ -30,7 +30,11 @@ func readSession(file string, session ownedSession, from, to time.Time, out *dia
 	if err != nil || resolved != abs {
 		return errors.New("runtime_file_linked")
 	}
-	u := url.URL{Scheme: "file", Path: file}
+	uriPath := filepath.ToSlash(file)
+	if filepath.VolumeName(file) != "" && !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	u := url.URL{Scheme: "file", Path: uriPath}
 	q := u.Query()
 	q.Set("mode", "ro")
 	q.Set("_query_only", "1")

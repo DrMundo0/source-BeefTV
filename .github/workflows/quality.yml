@@ -47,7 +47,9 @@ jobs:
         working-directory: backend
         run: |
           go test ./internal/supporttrace ./internal/diagnostics ./internal/assistantdiagnostics -count=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test ./cmd/beeftv -run '^TestOfflineDiagnostics' -count=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   released-windows-upgrades:
     if: github.event_name == 'workflow_dispatch'
