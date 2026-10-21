@@ -4,6 +4,7 @@ import base64
 import hashlib
 import importlib.util
 import json
+import os
 import re
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -26,12 +27,14 @@ class FakeS3:
     def __init__(self):
         self.objects = {}
         self.writes = []
+        self.reads = []
         self.before_put = None
 
     def get(self, key, destination):
         if key not in self.objects:
             return None
         content = self.objects[key]
+        self.reads.append((key, len(content)))
         Path(destination).write_bytes(content)
         return hashlib.sha256(content).hexdigest()
 
@@ -54,9 +57,14 @@ class PublicationTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         self.store = FakeS3()
+        self.legacy_store = FakeS3()
         store = self.store
         self.public_requests = []
         requests = self.public_requests
+        self.transfers = []
+        self.range_mode = "normal"
+        self.etag_mode = "strong"
+        fixture = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
@@ -65,14 +73,42 @@ class PublicationTests(unittest.TestCase):
                 if not re.fullmatch(r"BeefTV-Desktop-Updater/v\d+\.\d+\.\d+", agent):
                     self.send_error(403)
                     return
-                content = store.objects.get(self.path.lstrip("/"))
+                origin = fixture.legacy_store if self.headers.get("X-Test-Origin") == "legacy" else store
+                content = origin.objects.get(self.path.lstrip("/"))
                 if content is None:
                     self.send_error(404)
                     return
-                self.send_response(200)
-                self.send_header("Content-Length", str(len(content)))
+                etag = '"' + hashlib.sha256(content).hexdigest() + '"'
+                if fixture.range_mode == "echo" and self.headers.get("If-Match"):
+                    etag = self.headers['If-Match']
+                if fixture.etag_mode == "weak":
+                    etag = "W/" + etag
+                if self.headers.get("If-Match") not in (None, etag) and fixture.range_mode != "ignore-if-match":
+                    self.send_error(412)
+                    return
+                status = 200
+                if self.headers.get("Range") and fixture.range_mode != "ignored":
+                    status = 206
+                    total = len(content)
+                    content = content[:release.PROBE_BYTES]
+                    if fixture.range_mode == "corrupt-prefix":
+                        content = b"!" * len(content)
+                    if fixture.range_mode == "truncated":
+                        content = content[:7]
+                    self.send_response(status)
+                    self.send_header("Content-Range", f"bytes 0-{release.PROBE_BYTES - 1}/{total}")
+                    self.send_header("Content-Length", str(release.PROBE_BYTES))
+                else:
+                    self.send_response(status)
+                    self.send_header("Content-Length", str(len(content)))
+                if fixture.etag_mode != "missing":
+                    self.send_header("ETag", etag)
                 self.end_headers()
-                self.wfile.write(content)
+                fixture.transfers.append((self.path, status, len(content)))
+                try:
+                    self.wfile.write(content)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
 
             def log_message(self, *args):
                 pass
@@ -84,7 +120,10 @@ class PublicationTests(unittest.TestCase):
 
         def opener(request, timeout):
             url = f"http://127.0.0.1:{self.server.server_port}{urlsplit(request.full_url).path}"
-            return urllib.request.urlopen(urllib.request.Request(url, headers=dict(request.header_items())), timeout=timeout)
+            headers = dict(request.header_items())
+            if urlsplit(request.full_url).hostname == "legacy.example":
+                headers["X-Test-Origin"] = "legacy"
+            return urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=timeout)
 
         # Cryptography belongs to the existing Go verifier. Exercise invocation
         # and its failure result here, without replacing production verification.
@@ -94,13 +133,89 @@ class PublicationTests(unittest.TestCase):
         self.publisher = release.Publisher(self.store, release.PublicHTTP(opener), "/tmp/update-release",
                                            "https://updates.beefapi.com/beeftv", lambda *args: None)
 
-    def manifest(self, version="v1.5.7", omit=None):
+    def bridge(self):
+        return release.Publisher(self.legacy_store, self.publisher.public, "/tmp/update-release",
+                                 release.R2_PUBLIC_BASE, lambda *args: None,
+                                 feed_public_base="https://legacy.example/beeftv")
+
+    def test_bridge_requires_the_exact_already_active_r2_feed(self):
+        old = self.manifest()
+        self.publisher.stage(old, self.root)
+        self.publisher.activate(old)
+        newer = self.manifest("v1.5.8")
+        self.publisher.stage(newer, self.root)
+        with self.assertRaises(release.PublishError):
+            self.bridge().activate(newer, require_active_source=True)
+        self.assertEqual(self.legacy_store.writes, [])
+        self.assertEqual(self.store.objects[release.LATEST], old.read_bytes())
+
+    def test_bridge_updates_only_legacy_feed_and_backup_with_original_signed_bytes(self):
+        old = self.manifest()
+        old_bytes = old.read_bytes()
+        self.legacy_store.objects[release.LATEST] = old_bytes
+        newer = self.manifest("v1.5.8")
+        self.publisher.stage(newer, self.root)
+        self.publisher.activate(newer)
+        bridge = self.bridge()
+        self.assertEqual(bridge.activate(newer, require_active_source=True), "v1.5.8")
+        self.assertEqual(self.legacy_store.objects[release.LATEST], newer.read_bytes())
+        self.assertEqual(len(self.legacy_store.writes), 2)
+        self.assertTrue(all(key == release.LATEST or key.startswith("beeftv/latest-backups/")
+                            for key, _ in self.legacy_store.writes))
+        self.assertIn(old_bytes, self.legacy_store.objects.values())
+        self.assertFalse(any(key.endswith((".zip", ".exe", ".dmg", ".deb"))
+                             for key in self.legacy_store.objects))
+        before = list(self.legacy_store.writes)
+        bridge.activate(newer, require_active_source=True)
+        self.assertEqual(self.legacy_store.writes, before)
+
+    def test_bridge_rejects_corrupt_r2_package_before_any_cos_write(self):
+        manifest = self.manifest()
+        self.publisher.stage(manifest, self.root)
+        self.publisher.activate(manifest)
+        key = next(key for key in self.store.objects if key.endswith(".zip"))
+        self.store.objects[key] = b"changed"
+        with self.assertRaises(release.PublishError):
+            self.bridge().activate(manifest, require_active_source=True)
+        self.assertEqual(self.legacy_store.writes, [])
+
+    def test_bridge_failure_does_not_rollback_canonical_r2_feed(self):
+        manifest = self.manifest()
+        self.publisher.stage(manifest, self.root)
+        self.publisher.activate(manifest)
+        def competing_writer(key):
+            if key == release.LATEST:
+                self.legacy_store.objects[key] = b"concurrent feed"
+        self.legacy_store.before_put = competing_writer
+        with self.assertRaisesRegex(release.PublishError, "changed concurrently"):
+            self.bridge().activate(manifest, require_active_source=True)
+        self.assertEqual(self.store.objects[release.LATEST], manifest.read_bytes())
+
+    def test_bridge_resume_requires_active_r2_and_checks_legacy_feed_after_recovery(self):
+        manifest = self.manifest()
+        self.publisher.stage(manifest, self.root)
+        bridge = self.bridge()
+        bridge.store.provider = "cos"
+        bridge.store.resume = Mock(side_effect=lambda key, source, *_:
+                                   bridge.store.objects.__setitem__(key, source.read_bytes()))
+        confirmations = dict(confirm_no_inflight=True, confirm_writers_frozen=True,
+                             confirm_no_unlock_attempt=True, require_active_source=True)
+        with patch.object(release, "require_terminal_publisher"):
+            with self.assertRaises(release.PublishError):
+                bridge.resume(manifest, b"lock", b"claim", **confirmations)
+            bridge.store.resume.assert_not_called()
+            self.publisher.activate(manifest)
+            self.assertEqual(bridge.resume(manifest, b"lock", b"claim", **confirmations), "v1.5.7")
+        bridge.store.resume.assert_called_once_with(release.LATEST, manifest, b"lock", b"claim")
+        self.assertEqual(self.legacy_store.objects[release.LATEST], manifest.read_bytes())
+
+    def manifest(self, version="v1.5.7", omit=None, copies=32):
         platforms = {}
         for platform in sorted(release.PLATFORMS):
             if platform == omit:
                 continue
             name = f"BeefTV-{version}-{platform}.zip"
-            data = (version + platform).encode() * 32
+            data = (version + platform).encode() * copies
             (self.root / name).write_bytes(data)
             platforms[platform] = {"url": f"https://updates.beefapi.com/beeftv/{version}/{name}",
                                    "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
@@ -145,6 +260,166 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(failure.exception.code, 403)
         release.PublicHTTP().check(url, len(data), hashlib.sha256(data).hexdigest(), version="v1.5.8")
         self.assertEqual(self.public_requests[-1][1], "BeefTV-Desktop-Updater/v1.5.8")
+
+    def test_same_job_receipt_cuts_activation_to_1k_per_package_and_keeps_full_feeds(self):
+        manifest = self.manifest(copies=512)
+        for suffix in ['darwin-arm64.dmg', 'darwin-amd64.dmg', 'windows-amd64-setup.exe', 'linux-amd64.deb']:
+            (self.root / ('BeefTV-v1.5.7-' + suffix)).write_bytes(suffix.encode() * 512)
+        verified = {}
+        self.publisher.public.verified = verified
+        self.publisher.stage(manifest, self.root, with_installers=True)
+        self.assertEqual(len(verified), 8)
+        package_bytes = sum(row['size'] for row in verified.values())
+        self.assertEqual(sum(n for path, _, n in self.transfers if not path.endswith('.json')), package_bytes)
+        self.assertEqual(sum(n for path, n in self.store.reads if not path.endswith('.json')), package_bytes)
+        receipt = self.root / 'receipt.json'
+        binding = {'schema': 1, 'manifestSHA256': release.fingerprint(manifest)[1], 'job': 'fixture'}
+        release.write_verification_receipt(receipt, binding, verified)
+        self.publisher.public = release.PublicHTTP(self.publisher.public.opener,
+                                                   release.read_verification_receipt(receipt, binding))
+        self.transfers.clear()
+        self.publisher.activate(manifest, self.root)
+        packages = [x for x in self.transfers if not x[0].endswith('.json')]
+        self.assertEqual(len(packages), 8)
+        self.assertTrue(all(status == 206 and size == 1024 for _, status, size in packages))
+        self.assertTrue(all(status == 200 for path, status, _ in self.transfers if path.endswith('.json')))
+        self.assertEqual(self.store.objects[release.LATEST], manifest.read_bytes())
+
+    def test_failed_stage_invalidates_old_receipt_and_resume_cannot_use_it(self):
+        manifest = self.manifest()
+        receipt = self.root / 'receipt.json'
+        receipt.write_text('old proof')
+        owner = dict(GITHUB_REPOSITORY='glanderness/BeefTV', GITHUB_RUN_ID='123',
+                     GITHUB_RUN_ATTEMPT='1', GITHUB_JOB='publish')
+        argv = ['publish', 'stage', '--manifest', str(manifest), '--verifier', '/tmp/update-release',
+                '--endpoint-url', 'https://cos.ap-guangzhou.myqcloud.com',
+                '--verification-receipt', str(receipt)]
+        with patch.dict(os.environ, owner), patch('sys.argv', argv), \
+                patch.object(release, 'storage_config'), patch.object(release, 'Publisher') as publisher, \
+                redirect_stderr(io.StringIO()):
+            publisher.return_value.stage.side_effect = release.PublishError('failed full check')
+            self.assertEqual(release.main(), 1)
+        self.assertFalse(receipt.exists())
+        argv[1] = 'resume'
+        with patch('sys.argv', argv), patch.object(release, 'storage_config') as storage, \
+                redirect_stderr(io.StringIO()):
+            self.assertEqual(release.main(), 1)
+        storage.assert_not_called()
+
+    def test_r2_cli_rehashes_full_objects_even_with_a_receipt_and_cache_ignoring_if_match(self):
+        manifest = self.manifest(copies=512)
+        receipt = self.root / 'receipt.json'
+        owner = dict(GITHUB_REPOSITORY='glanderness/BeefTV', GITHUB_RUN_ID='123',
+                     GITHUB_RUN_ATTEMPT='1', GITHUB_JOB='publish')
+        argv = ['publish', 'stage', '--manifest', str(manifest), '--verifier', '/tmp/update-release',
+                '--endpoint-url', 'https://' + 'a' * 32 + '.r2.cloudflarestorage.com',
+                '--verification-receipt', str(receipt)]
+        http, publisher = release.PublicHTTP, release.Publisher
+        self.store.check_conditions = Mock()
+        self.range_mode = 'ignore-if-match'
+        def make_publisher(*args, **kwargs):
+            return publisher(*args, **kwargs, release_check=lambda *a: None)
+        with patch.dict(os.environ, owner), patch.object(release, 'storage_config', return_value=self.store), \
+                patch.object(release, 'PublicHTTP', side_effect=lambda **kw: http(self.publisher.public.opener, **kw)), \
+                patch.object(release, 'Publisher', side_effect=make_publisher), patch('builtins.print'):
+            with patch('sys.argv', argv):
+                self.assertEqual(release.main(), 0)
+            self.assertEqual(json.loads(receipt.read_text())['objects'], {})
+            self.transfers.clear()
+            argv[1] = 'activate'
+            with patch('sys.argv', argv):
+                self.assertEqual(release.main(), 0)
+            packages = [x for x in self.transfers if not x[0].endswith('.json')]
+            self.assertEqual(len(packages), 4)
+            self.assertTrue(all(status == 200 and size > 1024 for _, status, size in packages))
+            key = next(k for k in self.store.objects if k.endswith('.zip'))
+            original = self.store.objects[key]
+            self.store.objects[key] = original[:1024] + b'!' * (len(original) - 1024)
+            with patch('sys.argv', argv), redirect_stderr(io.StringIO()):
+                self.assertEqual(release.main(), 1)
+            self.assertEqual(self.store.objects[release.LATEST], manifest.read_bytes())
+
+    def test_receipt_cannot_activate_changed_asset_or_suppressed_range(self):
+        for mode in ['changed', 'missing', 'ignored', 'corrupt-prefix', 'truncated', 'echo']:
+            with self.subTest(mode=mode):
+                self.store.objects.clear()
+                manifest = self.manifest(copies=512)
+                self.publisher.public.verified = {}
+                self.range_mode = 'normal'
+                self.publisher.stage(manifest, self.root)
+                if mode == 'changed':
+                    key = next(k for k in self.store.objects if k.endswith('.zip'))
+                    self.store.objects[key] = b'corrupt'
+                elif mode == 'missing':
+                    del self.store.objects[next(k for k in self.store.objects if k.endswith('.zip'))]
+                else:
+                    self.range_mode = mode
+                    if mode == 'echo':
+                        key = next(k for k in self.store.objects if k.endswith('.zip'))
+                        data = self.store.objects[key]
+                        self.store.objects[key] = data[:1024] + b'!' * (len(data) - 1024)
+                with self.assertRaises(release.PublishError):
+                    self.publisher.activate(manifest)
+                self.assertNotIn(release.LATEST, self.store.objects)
+
+    def test_no_strong_etag_or_missing_receipt_keeps_full_hash_verification(self):
+        for mode in ['weak', 'missing']:
+            with self.subTest(mode=mode):
+                self.etag_mode = mode
+                self.store.objects.clear()
+                self.publisher.public.verified = {}
+                manifest = self.manifest(copies=512)
+                self.publisher.stage(manifest, self.root)
+                self.assertEqual(self.publisher.public.verified, {})
+                self.publisher.public.verified = release.read_verification_receipt(self.root / 'absent.json', {})
+                self.transfers.clear()
+                self.publisher.activate(manifest)
+                self.assertTrue(all(status == 200 for _, status, _ in self.transfers))
+
+    def test_receipt_is_bound_to_signed_envelope_storage_and_exact_ci_attempt_job(self):
+        manifest = self.manifest()
+        args = Mock(provider='cos', endpoint_url='https://cos.ap-guangzhou.myqcloud.com',
+                    region='ap-guangzhou', bucket='fixture-123', public_base='https://fixture.example/beeftv')
+        owner = dict(GITHUB_REPOSITORY='glanderness/BeefTV', GITHUB_RUN_ID='123',
+                     GITHUB_RUN_ATTEMPT='1', GITHUB_JOB='publish')
+        with patch.dict(os.environ, owner, clear=True):
+            binding = release.verification_binding(manifest, args)
+        receipt = self.root / 'receipt.json'
+        release.write_verification_receipt(receipt, binding, {})
+        for key in ['manifestSHA256', 'provider', 'endpoint', 'region', 'bucket', 'publicBase']:
+            with self.subTest(key=key), self.assertRaises(release.PublishError):
+                release.read_verification_receipt(receipt, {**binding, key: 'changed'})
+        for key in owner:
+            with self.subTest(key=key), self.assertRaises(release.PublishError):
+                release.read_verification_receipt(receipt, {**binding, 'owner': {**owner, key: 'changed'}})
+        with patch.dict(os.environ, {}, clear=True), self.assertRaises(release.PublishError):
+            release.verification_binding(manifest, args)
+
+    def test_failed_full_hash_cannot_create_verification_proof(self):
+        data = b'fixture' * 1024
+        self.store.objects['beeftv/asset.zip'] = data
+        public = release.PublicHTTP(self.publisher.public.opener, {})
+        with self.assertRaises(release.PublishError):
+            public.check('https://updates.beefapi.com/beeftv/asset.zip', len(data), '0' * 64, version='v1.5.7')
+        self.assertEqual(public.verified, {})
+
+    def test_malformed_receipt_is_reported_before_publisher_or_latest_write(self):
+        manifest = self.manifest()
+        receipt = self.root / 'receipt.json'
+        owner = dict(GITHUB_REPOSITORY='glanderness/BeefTV', GITHUB_RUN_ID='123',
+                     GITHUB_RUN_ATTEMPT='1', GITHUB_JOB='publish')
+        argv = ['publish', 'activate', '--manifest', str(manifest), '--verifier', '/tmp/update-release',
+                '--endpoint-url', 'https://cos.ap-guangzhou.myqcloud.com', '--verification-receipt', str(receipt)]
+        for data in [b'{', b'\xff', b'null']:
+            with self.subTest(data=data):
+                receipt.write_bytes(data)
+                with patch.dict(os.environ, owner), patch('sys.argv', argv), \
+                        patch.object(release, 'storage_config'), patch.object(release, 'Publisher') as publisher, \
+                        redirect_stderr(io.StringIO()) as error:
+                    self.assertEqual(release.main(), 1)
+                publisher.assert_not_called()
+                self.assertNotIn('Traceback', error.getvalue())
+                self.assertNotIn(release.LATEST, self.store.objects)
 
     def test_incomplete_platform_set_cannot_activate(self):
         manifest = self.manifest(omit="windows-amd64")
@@ -391,6 +666,7 @@ class S3AdapterTests(unittest.TestCase):
             lock.write_bytes(b'{ "original": "lock" }\n')
             claim.write_bytes(b'{ "original": "claim" }\n')
             args = ["publish", "resume", "--manifest", str(manifest), "--verifier", "/tmp/update-release",
+                    "--provider", "cos",
                     "--endpoint-url", "https://cos.ap-guangzhou.myqcloud.com", "--lock-document", str(lock),
                     "--claim-document", str(claim), "--confirm-no-inflight-put", "--confirm-writers-frozen", "--confirm-no-unlock-attempt"]
             with patch.object(release.sys, "argv", args), patch.object(release, "storage_config") as factory, patch.object(release, "Publisher") as publisher, patch("builtins.print"):
@@ -400,7 +676,8 @@ class S3AdapterTests(unittest.TestCase):
                     self.assertEqual(lock_bytes, lock.read_bytes())
                     self.assertEqual(claim_bytes, claim.read_bytes())
                     self.assertEqual(confirmations, dict(confirm_no_inflight=True, confirm_writers_frozen=True,
-                                                         confirm_no_unlock_attempt=True, installer_dir=None))
+                                                         confirm_no_unlock_attempt=True, installer_dir=None,
+                                                         require_active_source=False))
                     return "v1.5.7"
                 publisher.return_value.resume.side_effect = resume
                 self.assertEqual(release.main(), 0)
@@ -409,6 +686,7 @@ class S3AdapterTests(unittest.TestCase):
 
     def test_cli_resume_requires_original_documents_and_confirmation_before_cloud_probe(self):
         base = ["publish", "resume", "--manifest", "/tmp/not-read", "--verifier", "/tmp/not-called",
+                "--provider", "cos",
                 "--endpoint-url", "https://cos.ap-guangzhou.myqcloud.com"]
         documents = ["--lock-document", "/tmp/lock", "--claim-document", "/tmp/claim"]
         confirmations = ["--confirm-no-inflight-put", "--confirm-writers-frozen", "--confirm-no-unlock-attempt"]
@@ -434,6 +712,51 @@ class S3AdapterTests(unittest.TestCase):
         store = release.storage_config("cos", endpoint, region, bucket, public)
         self.assertEqual(store.http.host, f"{bucket}.cos.{region}.myqcloud.com")
         self.assertEqual(store.http.region, region)
+
+    def test_bridge_cli_rejects_wrong_provider_installers_and_receipts_before_cloud_probe(self):
+        base = ["publish", "bridge-cos", "--manifest", "/tmp/not-read", "--verifier", "/tmp/not-called"]
+        cos = ["--provider", "cos", "--endpoint-url", "https://cos.ap-guangzhou.myqcloud.com"]
+        invalid = [
+            ["--endpoint-url", "https://" + "a" * 32 + ".r2.cloudflarestorage.com"],
+            cos + ["--with-installers"],
+            cos + ["--verification-receipt", "/tmp/not-read"],
+        ]
+        for flags in invalid:
+            with self.subTest(flags=flags), patch.object(release.sys, "argv", base + flags), \
+                    patch.object(release, "storage_config") as factory, redirect_stderr(io.StringIO()):
+                self.assertEqual(release.main(), 1)
+                factory.return_value.check_conditions.assert_not_called()
+
+    def test_bridge_cli_uses_r2_assets_and_original_cos_feed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "manifest"
+            manifest.write_bytes(b"original signed envelope")
+            args = ["publish", "bridge-cos", "--manifest", str(manifest), "--verifier", "/tmp/update-release",
+                    "--provider", "cos", "--endpoint-url", "https://cos.ap-guangzhou.myqcloud.com"]
+            with patch.object(release.sys, "argv", args), patch.object(release, "storage_config"), \
+                    patch.object(release, "Publisher") as publisher, patch("builtins.print"):
+                publisher.return_value.activate.return_value = "v1.5.7"
+                self.assertEqual(release.main(), 0)
+                self.assertEqual(publisher.call_args.args[3], release.R2_PUBLIC_BASE)
+                self.assertEqual(publisher.call_args.kwargs['feed_public_base'], release.COS_PUBLIC_BASE)
+                self.assertEqual(publisher.return_value.activate.call_args.kwargs, {'require_active_source': True})
+
+    def test_bridge_resume_cli_preserves_recovery_documents_and_requires_r2_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest, lock, claim = (Path(directory) / name for name in ("manifest", "lock", "claim"))
+            for path in (manifest, lock, claim):
+                path.write_bytes(path.name.encode())
+            args = ["publish", "resume-cos-bridge", "--manifest", str(manifest), "--verifier", "/tmp/update-release",
+                    "--provider", "cos", "--endpoint-url", "https://cos.ap-guangzhou.myqcloud.com",
+                    "--lock-document", str(lock), "--claim-document", str(claim),
+                    "--confirm-no-inflight-put", "--confirm-writers-frozen", "--confirm-no-unlock-attempt"]
+            with patch.object(release.sys, "argv", args), patch.object(release, "storage_config"), \
+                    patch.object(release, "Publisher") as publisher, patch("builtins.print"):
+                self.assertEqual(release.main(), 0)
+                self.assertEqual(publisher.call_args.args[3], release.R2_PUBLIC_BASE)
+                self.assertEqual(publisher.call_args.kwargs['feed_public_base'], release.COS_PUBLIC_BASE)
+                self.assertEqual(publisher.return_value.resume.call_args.args[1:], (b"lock", b"claim"))
+                self.assertTrue(publisher.return_value.resume.call_args.kwargs['require_active_source'])
 
     def test_legacy_r2_configuration_still_requires_account_endpoint_and_auto_region(self):
         store = release.storage_config("r2", "https://" + "a" * 32 + ".r2.cloudflarestorage.com",
