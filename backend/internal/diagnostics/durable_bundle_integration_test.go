@@ -45,6 +45,15 @@ func TestDurableModelResponseInterruptionsSurviveOfflineBundleWithoutInventingTu
 			if err != nil {
 				t.Fatal(err)
 			}
+			sqlDB, err := db.DB()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := sqlDB.Close(); err != nil {
+					t.Errorf("close diagnostic workspace database: %v", err)
+				}
+			})
 			if err := db.AutoMigrate(&model.Task{}, &model.TaskLog{}, &model.ApiCallLog{}, &model.CanvasProject{}, &model.AssistantTurn{}); err != nil {
 				t.Fatal(err)
 			}
