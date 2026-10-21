@@ -94,7 +94,7 @@ func TestSnapshotTimeWindowIncludesBothBounds(t *testing.T) {
 	// Wall clocks need not increase between consecutive SDK span ends. Fixed
 	// timestamps test the export boundaries independently of OS clock precision.
 	for i := 0; i < 5; i++ {
-		r.record(Event{Fields: Fields{UserID: "owner-window"}, ID: fmt.Sprintf("event-%d", i), Timestamp: base.Add(time.Duration(i) * time.Second), Name: "resource.saved", Phase: "event"}, false)
+		r.record(Event{Fields: Fields{UserID: "owner-window"}, ID: fmt.Sprintf("event-%d", i), Timestamp: base.Add(time.Duration(i) * time.Second), Name: "resource.saved", Phase: "event", LaunchID: r.launchID}, false)
 	}
 	window, err := r.Snapshot("owner-window", base.Add(time.Second), base.Add(3*time.Second))
 	if err != nil || len(window.Events) != 3 {
