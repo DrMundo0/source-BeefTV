@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-var identifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`)
+var identifier = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9_.:-]{0,127}$`)
 var machineName = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,95}$`)
 
 func safeValue(value string, machine bool) string {

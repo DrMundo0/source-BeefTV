@@ -119,11 +119,20 @@ func (s *Service) beginGenerationDownload(userID, identity string, timeout time.
 		s.deliveryDeadlines[identity] = deadline
 	}
 	ctx, cancel := context.WithDeadline(parent, deadline)
+	ctx, finishTrace := s.SupportTrace().Start(taskSupportContext(ctx, *task), "generation.download", taskSupportFields(*task))
 	if s.deliveryCancels == nil {
 		s.deliveryCancels = map[string]context.CancelFunc{}
 	}
 	s.deliveryCancels[identity] = cancel
 	return ctx, func(completed bool) {
+		reason := ""
+		if !completed {
+			reason = supportFailureReason(ctx.Err())
+			if reason == "" {
+				reason = "delivery_incomplete"
+			}
+		}
+		defer finishTrace(reason)
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			_, _ = s.pauseGenerationDownload(*task, "delivery_timed_out")
 		}

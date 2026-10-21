@@ -436,3 +436,12 @@ func TestLossOutsideRequestedWindowDoesNotMarkHealthyWindowPartial(t *testing.T)
 		t.Fatalf("loss time bounds were forgotten: %+v %v", older, err)
 	}
 }
+
+func TestCanvasNanoIDsMayBeginWithUnderscoreOrDash(t *testing.T) {
+	r := newRecorder(t, t.TempDir())
+	r.Event(nil, "canvas.bind", Fields{UserID: "owner-a", CanvasID: "_canvas-1", NodeID: "-node-1"})
+	result := snapshot(t, r, "owner-a")
+	if len(result.Events) != 1 || result.Events[0].CanvasID != "_canvas-1" || result.Events[0].NodeID != "-node-1" || result.Coverage.Status != "complete" {
+		t.Fatalf("valid NanoID rejected: %+v", result)
+	}
+}
