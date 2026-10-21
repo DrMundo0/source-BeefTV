@@ -429,10 +429,17 @@ func (r *Runtime) Close(ctx context.Context) error {
 	r.closeOnce.Do(func() {
 		r.closed.Store(true)
 		r.status.beginDrain()
+		var failures []error
+		// Durable must release its invocations while Go authorization and ops
+		// are still reachable; closing HTTP first turns Quit into fetch errors.
+		if r.assistantHost != nil {
+			if err := r.assistantHost.StopContext(ctx); err != nil {
+				failures = append(failures, err)
+			}
+		}
 		if r.beefAPI != nil {
 			r.beefAPI.Close()
 		}
-		var failures []error
 		if err := r.DepthComponents().CloseComponents(ctx); err != nil {
 			failures = append(failures, fmt.Errorf("暂停组件下载：%w", err))
 		}
@@ -470,13 +477,6 @@ func (r *Runtime) Close(ctx context.Context) error {
 				case <-ctx.Done():
 					failures = append(failures, fmt.Errorf("等待初始化任务退出：%w", ctx.Err()))
 				}
-			}
-		}
-		// 本进程启动的内置宿主子进程必须跟着一起退出：否则后端重启后旧宿主会占着端口，
-		// 让状态查询显示「可用」但其实是上一个进程的实例。只清理本进程启动过的 PID。
-		if r.assistantHost != nil {
-			if err := r.assistantHost.StopContext(ctx); err != nil {
-				failures = append(failures, err)
 			}
 		}
 		var serviceErr error
