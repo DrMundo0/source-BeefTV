@@ -205,6 +205,129 @@ test('v2.0.0 published package receipts require actual source-bound archives, up
   }
 });
 
+const postchecksV200Bytes = readFileSync(new URL('../docs/release-evidence/v2.0.0-owner-postchecks-snapshot.json', import.meta.url));
+const postchecksV200 = JSON.parse(postchecksV200Bytes);
+function makePostchecksV200() {
+  const value = makeTargetedV200();
+  value.ownerException = { ...value.ownerException, scope: 'v2.0.0-owner-release-with-postchecks-20261021', ...postchecksV200.ownerAuthorization };
+  value.postchecksSnapshotSHA256 = createHash('sha256').update(postchecksV200Bytes).digest('hex');
+  value.additionalPaidTestsStopped = true;
+  value.acceptanceComplete = false;
+  value.throughLedger = structuredClone(postchecksV200.throughLedger);
+  value.agentAcceptanceStatus = 'incomplete_owner_deferred';
+  value.agentChecks = structuredClone(postchecksV200.agentChecks);
+  value.postReleaseChecks = structuredClone(postchecksV200.postReleaseChecks);
+  value.billingAttempts.pop();
+  for (const item of value.billingAttempts.filter(x => x.originalHold?.settledCNY === null)) {
+    item.billing = 'pending'; item.costCNY = null; item.settlementEvidenceSHA256 = null;
+    item.heldCNY = Number(item.originalHold.amount) / 1000000;
+  }
+  value.billingAttempts.push(...structuredClone(postchecksV200.additionalBillingAttempts), structuredClone(postchecksV200.externalCash));
+  refreshPostchecksCash(value);
+  return value;
+}
+function refreshPostchecksCash(value) {
+  value.spentCNY = Number(value.billingAttempts.reduce((s,x) => s+(x.costCNY ?? 0),0).toFixed(6));
+  const pending = value.billingAttempts.filter(x => x.billing === 'pending');
+  value.pendingCNY = Number(pending.reduce((s,x) => s+x.heldCNY,0).toFixed(6));
+  value.postReleaseBilling = pending.map(x => ({ id: x.id, requestId: x.requestId, heldCNY: x.heldCNY, costCNY: null,
+    status: 'pending', owner: 'Ender', nextAction: 'Read final supplier bill; preserve unknown until verified.', evidence: x.evidence }));
+}
+const postchecksV200Proof = { ...syntheticV200Proof, unchangedProductSourceDigest: postchecksV200.unchangedProductSourceDigest };
+const validatePostchecksV200 = (value, options = {}) => validateV200(value, { postchecksBytes: postchecksV200Bytes, sourceProof: postchecksV200Proof, ...options });
+
+test('v2.0.0 owner postchecks preserves exact 16/3/4, original 120 plus 33 costs and six full pending holds', () => {
+  const value = makePostchecksV200();
+  assert.deepEqual(validatePostchecksV200(value), { retainedCases: 12, retainedChecks: 12, retainedProductChecks: 4, postReleaseChecks: 7, pendingBills: 6 });
+  assert.equal(value.spentCNY,42.796765); assert.equal(value.pendingCNY,3.506822);
+  assert.equal(value.billingAttempts.length,161);
+  assert.equal(value.agentChecks.native_audio.status,'failed');
+  assert.equal(value.agentChecks.native_audio.earlierPass.status,'passed');
+  assert.equal(value.agentChecks.native_audio.earlierPass.sourceDigest,postchecksV200.executedSourceDigest);
+  assert.equal(value.billingAttempts.filter(x=>x.executionSourceStatus==='unknown_historical').length,116);
+  assert.equal(value.agentChecks.session_history.sourceDigest,null);
+});
+
+test('v2.0.0 owner postchecks rejects concealed failures, costs, authorization or final-source gates', async t => {
+  const mutations = {
+    'future version': r=>{r.version='v2.0.1';},
+    'generic skip scope': r=>{r.ownerException.scope='release-with-postchecks';},
+    'different owner quote': r=>{r.ownerException.instruction='直接发布吧';},
+    'old owner only': r=>{r.ownerException.authorizationSHA256=r.ownerException.previousAuthorizationSHA256;},
+    'snapshot changed': r=>{r.postchecksSnapshotSHA256='a'.repeat(64);},
+    'live ledger cutoff relabeled': r=>{r.throughLedger.prefixBytes++;},
+    'additional paid calls allowed': r=>{r.additionalPaidTestsStopped=false;},
+    'acceptance complete': r=>{r.acceptanceComplete=true;},
+    'checks all claimed passed': r=>{r.agentAcceptanceStatus='passed_with_retained_original_checks';},
+    'real audio failure hidden': r=>{r.agentChecks.native_audio.status='passed';},
+    'earlier audio pass deleted': r=>{delete r.agentChecks.native_audio.earlierPass;},
+    'video failure changed to pending': r=>{r.agentChecks.native_video.status='pending';},
+    'pending source invented': r=>{r.agentChecks.skill_files.sourceDigest=r.sourceDigest;},
+    '667 pass resigned': r=>{r.agentChecks.canvas_read.sourceDigest=r.sourceDigest;},
+    'old 3d check resigned': r=>{r.agentChecks.cancel.sourceDigest=r.sourceDigest;},
+    'postcheck omitted': r=>{r.postReleaseChecks.pop();},
+    'postcheck marked passed': r=>{r.postReleaseChecks[0].status='passed';},
+    'postcheck reason hidden': r=>{r.postReleaseChecks[0].reason='';},
+    'original task omitted': r=>{r.cases.pop();},
+    'original task resigned': r=>{r.cases[0].executedSourceDigest=r.sourceDigest;},
+    'original failed cost omitted': r=>{r.billingAttempts.splice(r.billingAttempts.findIndex(x=>x.originalHoldId&&x.costCNY===0),1);refreshPostchecksCash(r);},
+    'new settled cost omitted': r=>{r.billingAttempts.splice(r.billingAttempts.findIndex(x=>!x.originalHoldId&&x.costCNY>0),1);refreshPostchecksCash(r);},
+    'new pending cost omitted': r=>{r.billingAttempts.splice(r.billingAttempts.findIndex(x=>!x.originalHoldId&&x.billing==='pending'),1);refreshPostchecksCash(r);},
+    'new settled amount altered': r=>{r.billingAttempts.find(x=>!x.originalHoldId&&x.costCNY>0).costCNY=0;refreshPostchecksCash(r);},
+    'new source resigned': r=>{r.billingAttempts.find(x=>x.executionSourceStatus==='current').executedSourceDigest=r.sourceDigest;},
+    'direct executor invented': r=>{r.billingAttempts.find(x=>x.executionSourceStatus==='not_app_execution').executorSHA256='a'.repeat(64);},
+    'new unknown cost outside frozen index': r=>{r.billingAttempts.push({...r.billingAttempts.at(-2),id:'extra'});refreshPostchecksCash(r);},
+    'pending reported zero cash': r=>{r.billingAttempts.find(x=>x.billing==='pending').costCNY=0;},
+    'pending hold reduced': r=>{r.billingAttempts.find(x=>x.billing==='pending').heldCNY=0.01;refreshPostchecksCash(r);},
+    'pending marked settled without bill': r=>{const x=r.billingAttempts.find(x=>x.billing==='pending');x.billing='settled';x.costCNY=0;refreshPostchecksCash(r);},
+    'settled changed to pending': r=>{const x=r.billingAttempts.find(x=>x.costCNY>0);x.billing='pending';x.costCNY=null;x.settlementEvidenceSHA256=null;refreshPostchecksCash(r);},
+    'postrelease bill omitted': r=>{r.postReleaseBilling.pop();},
+    'postrelease bill has no owner': r=>{r.postReleaseBilling[0].owner='';},
+    'pending total hidden': r=>{r.pendingCNY=0;},
+    'budget raised': r=>{r.budgetCNY=51;},
+    'current review resigned old': r=>{r.review.sourceDigest=postchecksV200.executedSourceDigest;},
+    'CI skipped': r=>{r.verification.ci.status='pending';},
+    'upgrade removed': r=>{delete r.upgrade;},
+    'four platform dropped': r=>{r.packages.platforms.pop();},
+    'rollback waived': r=>{r.packages.windowsReleasedUpgradeAndRollbackBeforeUpload=false;},
+    'signature waived': r=>{r.packages.signedManifestBeforePublish=false;},
+    'public readback waived': r=>{r.packages.publicReadbackAfterPublish=false;},
+    'published without archives': r=>{r.releasePublished=true;r.releaseComplete=true;},
+  };
+  for(const [name,mutate] of Object.entries(mutations)) await t.test(name,()=>{
+    const invalid=makePostchecksV200();mutate(invalid);assert.throws(()=>validatePostchecksV200(invalid));
+  });
+  assert.throws(()=>validatePostchecksV200(makePostchecksV200(),{postchecksBytes:Buffer.from('{}')}),/frozen postchecks/);
+  assert.throws(()=>validatePostchecksV200(makePostchecksV200(),{sourceProof:{...postchecksV200Proof,unchangedProductSourceDigest:'a'.repeat(64)}}),/unchanged product/);
+});
+
+test('v2.0.0 pending billing may become final only with final cash evidence, original hold retained and cap enforced', () => {
+  const value=makePostchecksV200();
+  const item=value.billingAttempts.find(x=>!x.originalHoldId&&x.billing==='pending');
+  const original=structuredClone(item);
+  item.billing='settled';item.costCNY=0.1;item.settlementEvidenceSHA256='d'.repeat(64);refreshPostchecksCash(value);
+  assert.equal(validatePostchecksV200(value).pendingBills,5);
+  assert.equal(item.heldCNY,original.heldCNY);assert.equal(item.requestId,original.requestId);
+  item.costCNY=10;refreshPostchecksCash(value);assert.throws(()=>validatePostchecksV200(value),/CNY 50/);
+  item.costCNY=-1;refreshPostchecksCash(value);assert.throws(()=>validatePostchecksV200(value));
+});
+
+test('v2.0.0 postchecks product proof excludes only the three acceptance scripts and needs no old git objects', () => {
+  const {dir,git}=setupRepo('v2.0.0');
+  try {
+    assert.throws(()=>git('cat-file','-e',postchecksV200.executedCommit));
+    const tree=()=>git('ls-tree','-r','HEAD','--','scripts','VERSION','backend').toString();
+    const before=targetedV200SourceProof(tree());
+    writeFileSync(join(dir,'scripts/verify-real-generation-release.mjs'),'synthetic acceptance only\n');
+    git('add','.');git('-c','user.name=Test','-c','user.email=test@example.invalid','commit','-m','acceptance');
+    assert.equal(targetedV200SourceProof(tree()).unchangedProductSourceDigest,before.unchangedProductSourceDigest);
+    mkdirSync(join(dir,'backend/internal/app'),{recursive:true});
+    writeFileSync(join(dir,'backend/internal/app/operations_media_review.go'),'synthetic product change\n');
+    git('add','.');git('-c','user.name=Test','-c','user.email=test@example.invalid','commit','-m','product');
+    assert.notEqual(targetedV200SourceProof(tree()).unchangedProductSourceDigest,before.unchangedProductSourceDigest);
+  } finally {rmSync(dir,{recursive:true,force:true});}
+});
+
 test('v1.7.25 defers #176 and keeps source-bound checks, financial uncertainty and package gates', () => {
   const { dir, run, save, commitVersion } = setupRepo('v1.7.25');
   try {

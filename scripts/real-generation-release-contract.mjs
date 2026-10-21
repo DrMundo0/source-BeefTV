@@ -121,12 +121,13 @@ export function targetedV200SourceProof(sourceTree) {
   const all = new Map(entries);
   const unchanged = entries.filter(([path]) => !TARGETED_V200_SOURCE_PATHS.includes(path)).map(([path, entry]) => `${entry}\t${path}\n`).join('');
   return { unchangedSourceDigest: createHash('sha256').update(unchanged).digest('hex'),
+    unchangedProductSourceDigest: createHash('sha256').update(entries.filter(([path]) => !TARGETED_V200_SOURCE_PATHS.slice(6).includes(path)).map(([path, entry]) => `${entry}\t${path}\n`).join('')).digest('hex'),
     allowedEntries: Object.fromEntries(TARGETED_V200_SOURCE_PATHS.map(path => [path, all.get(path) ?? null])) };
 }
 
 // Ender's v2.0.0 decision retains exact old executions, not new-source passes.
 // Keep this beside the existing one-release contract, not a generic waiver API.
-export function validateTargetedV200(receipt, sourceDigest, { originalBytes, sourceProof } = {}) {
+export function validateTargetedV200(receipt, sourceDigest, { originalBytes, sourceProof, postchecksBytes } = {}) {
   const fail = message => { throw new Error(`v2.0.0 targeted acceptance: ${message}`); };
   const nonempty = value => typeof value === 'string' && value.trim() !== '';
   const hash = value => /^[a-f0-9]{64}$/.test(value || '');
@@ -140,10 +141,24 @@ export function validateTargetedV200(receipt, sourceDigest, { originalBytes, sou
   if (!originalBytes || createHash('sha256').update(originalBytes).digest('hex') !== originalSHA) fail('frozen original execution evidence changed');
   const original = JSON.parse(String(originalBytes));
   const owner = receipt.ownerException;
+  const deferred = owner?.scope === 'v2.0.0-owner-release-with-postchecks-20261021';
+  let snapshot;
+  if (deferred) {
+    const snapshotSHA = 'c5d4721a9abb2d84a16baa85104eeb1463b3900e51b178ae773164d879ae4520';
+    if (!postchecksBytes || createHash('sha256').update(postchecksBytes).digest('hex') !== snapshotSHA
+      || receipt.postchecksSnapshotSHA256 !== snapshotSHA) fail('frozen postchecks and complete cost index required');
+    snapshot = JSON.parse(String(postchecksBytes));
+    if (owner.authorizationSHA256 !== snapshot.ownerAuthorization.authorizationSHA256
+      || owner.instruction !== snapshot.ownerAuthorization.instruction || owner.previousAuthorizationSHA256 !== ownerSHA
+      || receipt.additionalPaidTestsStopped !== true || receipt.acceptanceComplete !== false
+      || !same(receipt.throughLedger, snapshot.throughLedger)
+      || sourceProof?.unchangedProductSourceDigest !== snapshot.unchangedProductSourceDigest) fail('exact owner release decision and unchanged product source required');
+  }
   if (receipt.version !== 'v2.0.0' || receipt.contractVersion !== 3 || receipt.sourceDigest !== sourceDigest
     || !hash(sourceDigest) || sourceDigest === oldSource
-    || owner?.scope !== 'v2.0.0-wand-audio-targeted-retest-20261021' || owner.approvedBy !== 'Ender'
-    || owner.instruction !== original.ownerAuthorization.answer || owner.authorizationSHA256 !== ownerSHA || !bound(owner)
+    || (!deferred && (owner?.scope !== 'v2.0.0-wand-audio-targeted-retest-20261021'
+      || owner.instruction !== original.ownerAuthorization.answer || owner.authorizationSHA256 !== ownerSHA))
+    || owner?.approvedBy !== 'Ender' || !bound(owner)
     || receipt.originalExecutionSHA256 !== originalSHA || receipt.originalExecutionSourceDigest !== oldSource
     || receipt.liveTestWaiver || receipt.financialEvidenceException) fail('exact single-version authorization and original source required');
   const allowedChanges = TARGETED_V200_SOURCE_PATHS;
@@ -155,14 +170,16 @@ export function validateTargetedV200(receipt, sourceDigest, { originalBytes, sou
   if (impact?.result !== 'approved' || impact.independent !== true || !nonempty(impact.reviewer) || !bound(impact)
     || !exact(impact.changedSourcePaths, allowedChanges)) fail('current independent impact review required');
   if (receipt.budgetCNY !== 50 || !Number.isFinite(receipt.spentCNY) || receipt.spentCNY < original.originalSpentCNY
-    || receipt.spentCNY > 50 || receipt.pendingCNY !== 0 || receipt.financialUncertainty?.status === 'unresolved') fail('all cash must reconcile within the original CNY 50');
+    || !Number.isFinite(receipt.pendingCNY) || receipt.pendingCNY < 0 || receipt.spentCNY + receipt.pendingCNY > 50
+    || (!deferred && (receipt.pendingCNY !== 0 || receipt.financialUncertainty?.status === 'unresolved'))) fail('all cash and full unresolved holds must fit the original CNY 50');
   const cases = receipt.cases;
   if (!Array.isArray(cases) || cases.length !== 12 || new Set(cases.map(x => x.taskId)).size !== 12) fail('exact twelve original cases required');
   for (const previous of original.originalCases) {
     const item = cases.find(x => x.taskId === previous.taskId);
     if (!item || Object.entries(previous).some(([key, value]) => !same(item[key], value))) fail('original case source, task, parameters or evidence was relabeled');
   }
-  if (receipt.liveMatrixStatus !== 'retained_original_execution' || receipt.agentAcceptanceStatus !== 'passed_with_retained_original_checks') fail('retained executions must not be called current-source matrix passes');
+  if (receipt.liveMatrixStatus !== 'retained_original_execution'
+    || receipt.agentAcceptanceStatus !== (deferred ? 'incomplete_owner_deferred' : 'passed_with_retained_original_checks')) fail('retained executions must not be called current-source matrix passes');
   const inspected = inspectFixtureManifest(receipt.scenario?.fixtures, 3);
   if (!same(receipt.scenario, original.originalScenario) || !inspected.ok || cases.some(x => x.fixtureDigest !== inspected.digest)
     || !nonempty(receipt.scenario?.id) || !nonempty(receipt.scenario.title)
@@ -171,6 +188,11 @@ export function validateTargetedV200(receipt, sourceDigest, { originalBytes, sou
   if (!checks || !exact(Object.keys(checks), releaseAgentChecks('v2.0.0'))) fail('all 23 checks required');
   for (const id of releaseAgentChecks('v2.0.0')) {
     const check = checks[id], previous = original.retainedAgentChecks[id];
+    if (deferred) {
+      if (!same(check, snapshot.agentChecks[id])) fail(`frozen check status, source and prior evidence must remain: ${id}`);
+      if (check.sourceDigest === oldSource) reused.push(id);
+      continue;
+    }
     if (check?.status !== 'passed' || !evidence(check.evidence) || !['native', 'deterministic'].includes(check.method)
       || (check.method === 'deterministic' && !releaseDeterministicChecks('v2.0.0').includes(id))) fail(`missing real acceptance: ${id}`);
     if (check.sourceDigest === oldSource) {
@@ -179,17 +201,31 @@ export function validateTargetedV200(receipt, sourceDigest, { originalBytes, sou
     } else if (!bound(check) || (previous && same(check.evidence, previous.evidence))) fail(`check ${id} requires new current-source evidence, not relabeled originals`);
   }
   if (!exact(impact.retainedCheckIds, reused)) fail('impact review must enumerate the exact retained checks');
-  for (const id of ['native_audio', 'native_video', 'media_film_review']) {
+  if (deferred && !same(receipt.postReleaseChecks, snapshot.postReleaseChecks)) fail('all seven failed or pending post-release checks must remain explicit');
+  for (const id of deferred ? [] : ['native_audio', 'native_video', 'media_film_review']) {
     if (!bound(checks[id]) || checks[id].method !== 'native') fail(`current native ${id} required`);
   }
   const attempts = receipt.billingAttempts;
   if (!Array.isArray(attempts) || !attempts.length || new Set(attempts.map(x => x.id)).size !== attempts.length) fail('all distinct billing attempts required');
   const holds = new Map(original.originalBillingHolds.map(x => [x.id, x]));
+  const additional = new Map((snapshot?.additionalBillingAttempts || []).map(x => [x.id, x]));
   const groups = new Map();
   for (const item of attempts) {
-    if (!nonempty(item.id) || !['media', 'chat', 'other'].includes(item.kind) || !['settled', 'refunded'].includes(item.billing)
-      || !Number.isFinite(item.costCNY) || item.costCNY < 0 || !evidence(item.evidence) || !hash(item.settlementEvidenceSHA256)) fail('invalid or unresolved final cash attempt');
     const previous = holds.get(item.originalHoldId);
+    const frozen = additional.get(item.id);
+    const pending = deferred && item.billing === 'pending';
+    if (!nonempty(item.id) || !['media', 'chat', 'other'].includes(item.kind) || !evidence(item.evidence)
+      || (pending ? (item.costCNY !== null || item.settlementEvidenceSHA256 !== null
+        || item.heldCNY !== (previous?.settledCNY === null ? Number(previous.amount) / 1000000 : frozen?.heldCNY)
+        || !Number.isFinite(item.heldCNY) || item.heldCNY <= 0 || (previous ? previous.settledCNY !== null : frozen?.billing !== 'pending'))
+        : (!['settled', 'refunded'].includes(item.billing) || !Number.isFinite(item.costCNY) || item.costCNY < 0 || !hash(item.settlementEvidenceSHA256)))) fail('invalid cash or omitted full pending hold');
+    if (deferred && frozen) {
+      // A later final bill may settle a frozen pending cost; it cannot change
+      // the original request, source, full hold, result or cost-only provenance.
+      const settlementFields = frozen.billing === 'pending' ? ['billing', 'costCNY', 'settlementEvidenceSHA256'] : [];
+      if (Object.entries(frozen).some(([key, value]) => !settlementFields.includes(key) && !same(item[key], value))) fail('new cost source or frozen receipt was rewritten');
+    }
+    if (deferred && !previous && !frozen && !same(item, snapshot.externalCash)) fail('cost must belong to the complete frozen ledger index');
     if (item.originalHoldId && !previous) fail('unknown original hold');
     if (previous) {
       if (item.kind !== previous.kind || !same(item.originalHold, previous)) fail('original hold/request/time/bill evidence must be preserved');
@@ -210,8 +246,20 @@ export function validateTargetedV200(receipt, sourceDigest, { originalBytes, sou
     } else if (item.executionSourceStatus === 'superseded_candidate') {
       if (item.kind === 'media' || item.executedSourceDigest !== oldSource || item.acceptanceCredit !== false
         || !hash(item.executionSourceEvidenceSHA256)) fail('additional old-candidate cost needs exact original source proof and no current acceptance credit');
-    } else if (item.executedSourceDigest !== sourceDigest || item.executionSourceStatus !== 'current') fail('new app attempts require current execution source');
+    } else if (item.executedSourceDigest !== (deferred ? snapshot.executedSourceDigest : sourceDigest)
+      || item.executionSourceStatus !== 'current') fail('new app attempts require their actual execution source');
     if (!previous && item.kind === 'media') fail('owner authorized no repeated paid media matrix');
+  }
+  if (deferred) {
+    if ([...additional.keys()].some(id => !attempts.some(x => x.id === id))) fail('a post-original billing attempt was omitted');
+    const pending = attempts.filter(x => x.billing === 'pending');
+    if (Math.abs(pending.reduce((sum, x) => sum + x.heldCNY, 0) - receipt.pendingCNY) > 0.000001
+      || !Array.isArray(receipt.postReleaseBilling) || !exact(receipt.postReleaseBilling.map(x => x.id), pending.map(x => x.id))
+      || receipt.postReleaseBilling.some(x => {
+        const item = pending.find(y => y.id === x.id);
+        return x.requestId !== item.requestId || x.heldCNY !== item.heldCNY || x.costCNY !== null
+          || x.status !== 'pending' || !nonempty(x.owner) || !nonempty(x.nextAction) || !evidence(x.evidence);
+      })) fail('every unresolved bill needs its full held amount and post-release owner');
   }
   for (const previous of holds.values()) {
     const group = groups.get(previous.id);
@@ -243,7 +291,8 @@ export function validateTargetedV200(receipt, sourceDigest, { originalBytes, sou
       if (packages[id]?.status !== 'passed' || !bound(packages[id])) fail(`published release requires current ${id}`);
     }
   }
-  return { retainedCases: 12, retainedChecks: reused.length, currentChecks: 23 - reused.length };
+  return deferred ? { retainedCases: 12, retainedChecks: reused.length, retainedProductChecks: 4, postReleaseChecks: 7, pendingBills: attempts.filter(x => x.billing === 'pending').length }
+    : { retainedCases: 12, retainedChecks: reused.length, currentChecks: 23 - reused.length };
 }
 
 // One owner-authorized release ordering exception. It records missing tests,
