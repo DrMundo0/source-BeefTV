@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"infinite-canvas/backend/internal/diagnostics"
 	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/supporttrace"
 )
 
 func TestGenerationDownloadCanPauseAndResumeWithoutRegenerating(t *testing.T) {
@@ -281,6 +283,50 @@ func TestDownloadShutdownDoesNotWaitForDiagnosticCheckpoint(t *testing.T) {
 	unblock()
 	if err := <-started; !errors.Is(err, context.Canceled) {
 		t.Fatalf("download admitted after shutdown: %v", err)
+	}
+}
+
+func TestRefusedDownloadAdmissionIsNotFailureOrRecoveryInActualBundle(t *testing.T) {
+	svc, db := newGenerationDeliveryMediaService(t, filepath.Join(t.TempDir(), "delivery.db"), t.TempDir())
+	defer closeDB(t, db)
+	defer svc.closeSupportTrace()
+	task := seedSucceededTaskAt(t, db, "admission-stopped", `{}`, time.Now())
+	_, finish := svc.SupportTrace().Start(context.Background(), "generation.download", supporttrace.Fields{UserID: task.UserID, TaskID: task.ID})
+	finish("upstream_download_failed")
+	var queries atomic.Int32
+	if err := db.Callback().Query().After("gorm:query").Register("test:stop-admission-after-checkpoint", func(tx *gorm.DB) {
+		if tx.Statement.Table == "tasks" && queries.Add(1) == 2 {
+			svc.deliveryClosed = true
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Callback().Query().Remove("test:stop-admission-after-checkpoint")
+	if _, _, err := svc.beginGenerationDownload(task.UserID, task.ID+":0", time.Minute); !errors.Is(err, context.Canceled) {
+		t.Fatalf("admitted after shutdown: %v", err)
+	}
+	bundle, err := svc.ExportDiagnosticBundle(task.UserID, DiagnosticExportRequest{TaskID: task.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	findings, err := diagnostics.AnalyzeBundle(bundle.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmed, stopped := 0, false
+	for _, finding := range findings {
+		if finding.Stage == "result_download" && finding.Status == "confirmed" {
+			confirmed++
+			if finding.Reason != "upstream_download_failed" {
+				t.Fatalf("refused admission became failure: %+v", finding)
+			}
+		}
+		if finding.Reason == "download_not_started" && finding.Status == "inconclusive" {
+			stopped = true
+		}
+	}
+	if confirmed != 1 || !stopped {
+		t.Fatalf("original failure lost or admission misreported: %+v", findings)
 	}
 }
 

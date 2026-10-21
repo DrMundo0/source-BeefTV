@@ -122,7 +122,7 @@ func (s *Service) beginGenerationDownload(userID, identity string, timeout time.
 		if readErr == nil {
 			readErr = context.Canceled
 		}
-		finishTrace(supportFailureReason(readErr))
+		finishTrace("download_not_started")
 		return nil, nil, readErr
 	}
 	if s.deliveryDeadlines == nil {

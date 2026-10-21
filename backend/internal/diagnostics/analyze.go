@@ -160,6 +160,10 @@ func analyze(c *collection) []Finding {
 		if event.Phase != "end" || event.Status != "error" || event.Reason == "" {
 			continue
 		}
+		if event.Name == "generation.download" && event.Reason == "download_not_started" {
+			add("inconclusive", "result_download", "download_not_started", "本次取回在开始前停止，不能据此判断下载失败，也不能把先前失败标为已恢复。", []string{recordRef("backend/events.jsonl", event.ID)}, nil)
+			continue
+		}
 		stage := ""
 		switch event.Name {
 		case "generation.download":
