@@ -70,19 +70,20 @@ type AssistantTurnEvidence struct {
 }
 
 type AssistantRuntimeEvidence struct {
-	ID          string    `json:"id"`
-	SessionID   string    `json:"sessionId,omitempty"`
-	TurnID      string    `json:"turnId"`
-	CanvasID    string    `json:"canvasId"`
-	Kind        string    `json:"kind"`
-	Name        string    `json:"name,omitempty"`
-	Status      string    `json:"status,omitempty"`
-	Reason      string    `json:"reason,omitempty"`
-	OperationID string    `json:"operationId,omitempty"`
-	RequestID   string    `json:"requestId,omitempty"`
-	Model       string    `json:"model,omitempty"`
-	Timestamp   time.Time `json:"timestamp"`
-	DurationMs  int64     `json:"durationMs,omitempty"`
+	ID            string    `json:"id"`
+	SessionID     string    `json:"sessionId,omitempty"`
+	TurnID        string    `json:"turnId"`
+	CanvasID      string    `json:"canvasId"`
+	Kind          string    `json:"kind"`
+	Name          string    `json:"name,omitempty"`
+	Status        string    `json:"status,omitempty"`
+	Reason        string    `json:"reason,omitempty"`
+	FailureReason string    `json:"failureReason,omitempty"`
+	OperationID   string    `json:"operationId,omitempty"`
+	RequestID     string    `json:"requestId,omitempty"`
+	Model         string    `json:"model,omitempty"`
+	Timestamp     time.Time `json:"timestamp"`
+	DurationMs    int64     `json:"durationMs,omitempty"`
 }
 
 type assistantTurnStore interface {

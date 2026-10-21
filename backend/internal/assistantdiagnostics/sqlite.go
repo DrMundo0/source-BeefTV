@@ -52,27 +52,39 @@ func readSession(file string, session ownedSession, from, to time.Time, out *dia
 	if db.QueryRowContext(ctx, "SELECT version FROM durable_schema WHERE singleton = 1").Scan(&schema) != nil || schema != 1 {
 		return errors.New("runtime_schema_unsupported")
 	}
+	reasonCodes := diagnostics.AssistantFailureReasonCodes()
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(reasonCodes)), ",")
+	args := make([]any, 0, len(reasonCodes)+2)
+	for _, code := range reasonCodes {
+		args = append(args, code)
+	}
+	args = append(args, from.UnixMilli(), to.UnixMilli())
+	// Compare exact known codes inside SQLite. Raw errorMessage/content values
+	// never cross the query boundary, even when they contain private text.
 	rows, err := db.QueryContext(ctx, `SELECT e.id, m.key,
  COALESCE(json_extract(m.value,'$.role'),''), COALESCE(json_extract(m.value,'$.timestamp'),0),
  COALESCE(json_extract(m.value,'$.model'),''), COALESCE(json_extract(m.value,'$.stopReason'),''),
  COALESCE(json_extract(m.value,'$.durationMs'),0), COALESCE(json_extract(m.value,'$.toolName'),''),
- COALESCE(json_extract(m.value,'$.toolCallId'),''), COALESCE(json_extract(m.value,'$.isError'),0)
+ COALESCE(json_extract(m.value,'$.toolCallId'),''), COALESCE(json_extract(m.value,'$.isError'),0),
+ CASE WHEN (json_extract(m.value,'$.stopReason') = 'error' OR
+ (json_extract(m.value,'$.role') = 'toolResult' AND json_extract(m.value,'$.isError') = 1))
+ AND json_extract(m.value,'$.errorMessage') IN (`+placeholders+`) THEN json_extract(m.value,'$.errorMessage') ELSE '' END
  FROM entries e, json_each(e.record,'$.model') m
  WHERE json_extract(m.value,'$.role') IN ('assistant','toolResult')
  AND json_extract(m.value,'$.timestamp') BETWEEN ? AND ?
- ORDER BY e.commit_seq, m.key LIMIT 2001`, from.UnixMilli(), to.UnixMilli())
+ ORDER BY e.commit_seq, m.key LIMIT 2001`, args...)
 	if err != nil {
 		return errors.New("runtime_metadata_unavailable")
 	}
 	for rows.Next() {
 		var id, index, stamp, duration int64
-		var role, model, stop, tool, toolID string
+		var role, model, stop, tool, toolID, failureReason string
 		var isError bool
-		if rows.Scan(&id, &index, &role, &stamp, &model, &stop, &duration, &tool, &toolID, &isError) != nil {
+		if rows.Scan(&id, &index, &role, &stamp, &model, &stop, &duration, &tool, &toolID, &isError, &failureReason) != nil {
 			rows.Close()
 			return errors.New("runtime_metadata_invalid")
 		}
-		record := diagnostics.AssistantRuntimeEvidence{ID: fmt.Sprintf("durable:%s:entry:%d:%d", strings.TrimPrefix(session.sessionID, "durable:"), id, index), SessionID: session.sessionID, CanvasID: session.canvasID, Kind: "model_call", Name: "model.response", Status: stop, Reason: "turn_link_not_recorded", Model: model, Timestamp: time.UnixMilli(stamp).UTC(), DurationMs: duration}
+		record := diagnostics.AssistantRuntimeEvidence{ID: fmt.Sprintf("durable:%s:entry:%d:%d", strings.TrimPrefix(session.sessionID, "durable:"), id, index), SessionID: session.sessionID, CanvasID: session.canvasID, Kind: "model_call", Name: "model.response", Status: stop, Reason: "turn_link_not_recorded", FailureReason: failureReason, Model: model, Timestamp: time.UnixMilli(stamp).UTC(), DurationMs: duration}
 		if role == "toolResult" {
 			record.Kind = "tool"
 			record.Name = tool

@@ -198,6 +198,30 @@ func analyze(c *collection) []Finding {
 		}
 	}
 	for _, evidence := range c.AssistantEvidence {
+		if ownedSessions[evidence.SessionID+"|"+evidence.CanvasID] {
+			stage, reason, explanation, missingReason := "", "", "", ""
+			switch {
+			case evidence.Kind == "tool" && evidence.Status == "failed":
+				stage, reason, missingReason = "assistant_tool", "assistant_tool_failed", "tool_failure_reason"
+				explanation = "所属助手会话的工具记录确认这次操作失败；不能把其他操作随后成功当作这次操作已恢复，也不能据此认定完整故障原因。"
+			case evidence.Kind == "model_call" && evidence.Name == "model.response" && evidence.Status == "error":
+				stage, reason, missingReason = "assistant_model", "model_attempt_failed", "model_failure_reason"
+				explanation = "所属助手会话的模型响应记录确认这次尝试失败；这不证明进程崩溃或重开后无法操作。"
+			}
+			if stage != "" {
+				missing := []string{}
+				if evidence.TurnID == "" {
+					missing = append(missing, "assistant_turn_link")
+					explanation += "历史记录缺少确切轮次关联。"
+				}
+				if code := sanitizeAssistantFailureReason(evidence.FailureReason); code != "" {
+					reason = code
+				} else {
+					missing = append(missing, missingReason)
+				}
+				add("confirmed", stage, reason, explanation, []string{recordRef("backend/assistant-runtime.jsonl", evidence.ID)}, missing)
+			}
+		}
 		if ownedSessions[evidence.SessionID+"|"+evidence.CanvasID] && evidence.Kind == "model_call" && evidence.Name == "model.response" && (evidence.Status == "aborted" || evidence.Status == "interrupted") {
 			add("confirmed", "assistant_model", "model_attempt_interrupted", "所属助手会话的模型响应记录确认这次模型尝试已中断；不能据此确定进程崩溃、未关联的业务轮次或重开后的操作状态。", []string{recordRef("backend/assistant-runtime.jsonl", evidence.ID)}, nil)
 		}

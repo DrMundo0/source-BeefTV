@@ -146,3 +146,58 @@ func TestBrokenDispatchLedgerWithoutOwnedSessionsRemainsPartial(t *testing.T) {
 		t.Fatalf("read failure hidden: %+v %v", result.Coverage, err)
 	}
 }
+
+func TestRuntimeFailureReasonProjectionAcceptsOnlyExactKnownMachineCodes(t *testing.T) {
+	dir, turn, stamp := fixture(t)
+	hash := sha256.Sum256([]byte(turn.CanvasID))
+	file := filepath.Join(dir, "sessions", hex.EncodeToString(hash[:])[:24], "durable", strings.TrimPrefix(turn.SessionID, "durable:")+".sqlite")
+	db, err := sql.Open("sqlite3", file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := []any{
+		map[string]any{"role": "assistant", "timestamp": stamp.UnixMilli(), "stopReason": "error", "errorMessage": "skill_context_unavailable", "content": "PRIVATE_MODEL_BODY"},
+		map[string]any{"role": "assistant", "timestamp": stamp.UnixMilli(), "stopReason": "error", "errorMessage": "skill_context_unavailable token=PRIVATE_SECRET", "content": "PRIVATE_MODEL_BODY"},
+		map[string]any{"role": "assistant", "timestamp": stamp.UnixMilli(), "stopReason": "error", "errorMessage": "PRIVATE_UNKNOWN_ERROR", "content": "PRIVATE_MODEL_BODY"},
+		map[string]any{"role": "toolResult", "timestamp": stamp.UnixMilli(), "toolName": "plan_update", "toolCallId": "call_failed", "isError": true, "errorMessage": "skill_context_unavailable", "content": "PRIVATE_TOOL_RESULT"},
+		map[string]any{"role": "assistant", "timestamp": stamp.UnixMilli(), "stopReason": "toolUse", "errorMessage": "skill_context_unavailable", "content": "PRIVATE_MODEL_BODY"},
+	}
+	entry, err := json.Marshal(map[string]any{"model": rows})
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO entries VALUES(2,2,?)", string(entry)); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	result, err := New(dir).DiagnosticAssistantEvidence("owner", stamp.Add(-time.Hour), stamp.Add(time.Hour), []diagnostics.AssistantTurnEvidence{turn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	known := 0
+	for _, record := range result.Records {
+		if record.FailureReason != "" {
+			known++
+			if record.FailureReason != "skill_context_unavailable" {
+				t.Fatalf("unapproved error exposed: %+v", record)
+			}
+		}
+		if record.Reason != "turn_link_not_recorded" || record.TurnID != "" {
+			t.Fatal("failure reason replaced missing-turn evidence")
+		}
+	}
+	if known != 2 {
+		t.Fatalf("machine failure codes = %d", known)
+	}
+	body, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "PRIVATE_") || strings.Contains(string(body), "errorMessage") {
+		t.Fatalf("raw error or result exported: %s", body)
+	}
+}

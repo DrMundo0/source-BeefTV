@@ -64,7 +64,7 @@ func (s *Service) collectAssistantEvidence(userID string, c *collection) {
 		}
 		c.AssistantEvidence = append(c.AssistantEvidence, AssistantRuntimeEvidence{
 			ID: sanitizeIdentifier(record.ID), SessionID: turn.SessionID, TurnID: turn.ID, CanvasID: turn.CanvasID, Kind: record.Kind,
-			Name: sanitizeIdentifier(record.Name), Status: sanitizeIdentifier(record.Status), Reason: sanitizeIdentifier(record.Reason), OperationID: sanitizeOperationID(record.OperationID),
+			Name: sanitizeIdentifier(record.Name), Status: sanitizeIdentifier(record.Status), Reason: sanitizeIdentifier(record.Reason), FailureReason: sanitizeAssistantFailureReason(record.FailureReason), OperationID: sanitizeOperationID(record.OperationID),
 			RequestID: sanitizeIdentifier(record.RequestID), Model: redactText(record.Model, 160), Timestamp: record.Timestamp, DurationMs: boundedInt64(record.DurationMs, 0, 86400000),
 		})
 	}
@@ -74,18 +74,34 @@ func (s *Service) collectAssistantEvidence(userID string, c *collection) {
 		c.AssistantEvidence = c.AssistantEvidence[:2000]
 	}
 	if snapshot.Coverage.Status != "complete" && coverage.Status != "truncated" {
-		coverage.Status, coverage.Reason = "partial", "runtime_history_partial"
-		if snapshot.Coverage.Status == "unavailable" || snapshot.Coverage.Status == "failed" {
+		coverage.Status, coverage.Reason = "partial", sanitizeIdentifier(snapshot.Coverage.Reason)
+		switch snapshot.Coverage.Status {
+		case "unavailable", "failed":
 			coverage.Status = snapshot.Coverage.Status
+		}
+		if coverage.Reason == "" {
+			switch coverage.Status {
+			case "unavailable":
+				coverage.Reason = "runtime_history_unavailable"
+			case "failed":
+				coverage.Reason = "runtime_history_failed"
+			default:
+				coverage.Reason = "runtime_history_partial"
+			}
 		}
 	}
 	coverage.OmittedAtLeast += max(snapshot.Coverage.OmittedAtLeast, 0)
 	if rejected > 0 {
-		coverage.Status, coverage.Reason = "partial", "unscoped_records_rejected"
+		if coverage.Status != "truncated" {
+			coverage.Status, coverage.Reason = "partial", "unscoped_records_rejected"
+		}
 		coverage.OmittedAtLeast += int64(rejected)
 	}
 	if snapshot.Coverage.Status == "truncated" {
-		coverage.Status, coverage.Reason = "truncated", "runtime_history_limit"
+		coverage.Status, coverage.Reason = "truncated", sanitizeIdentifier(snapshot.Coverage.Reason)
+		if coverage.Reason == "" {
+			coverage.Reason = "runtime_history_limit"
+		}
 		c.Truncated = true
 	}
 	c.Collectors["assistantRuntime"] = coverage
