@@ -2281,7 +2281,12 @@
         "canvasId": {
           "type": "string"
         },
+        "marketSkillId": {
+          "description": "仅 existing 时填写用户已发布的市场技能编号；不得复制本机 skillId。new 时省略。",
+          "type": "string"
+        },
         "metadata": {
+          "additionalProperties": false,
           "properties": {
             "description": {
               "type": "string"
@@ -2317,9 +2322,6 @@
               },
               "type": "array"
             },
-            "skillId": {
-              "type": "string"
-            },
             "sourceUrl": {
               "type": "string"
             },
@@ -2337,13 +2339,23 @@
           "description": "调用方生成的稳定幂等键；重试同一操作必须复用同一个值，服务端据此回读原结果",
           "type": "string"
         },
+        "publicationTarget": {
+          "description": "新投稿使用 new。只有用户明确要求为其已发布的市场技能更新版本才使用 existing；改写他人技能仍为 new。",
+          "enum": [
+            "new",
+            "existing"
+          ],
+          "type": "string"
+        },
         "skillId": {
+          "description": "本机技能编号，仅用于选取原文件。不是市场编号。",
           "type": "string"
         }
       },
       "required": [
         "canvasId",
         "skillId",
+        "publicationTarget",
         "metadata",
         "operationId"
       ],

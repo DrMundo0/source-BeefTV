@@ -11,3 +11,10 @@ export function publicationStatus(status: string) {
 export function canSubmitPublication(plan: { status: string; preview?: unknown }, confirmed: boolean) {
     return confirmed && plan.status === "awaiting_submit_confirmation" && Boolean(plan.preview);
 }
+import type { PublishPlan } from "@/services/api/skill-market";
+
+export function needsPublicationTargetCorrection(plan: Pick<PublishPlan, "submissionId" | "publicationTarget" | "marketSkillId" | "skillId" | "metadata">) {
+    if (plan.submissionId) return false;
+    if (plan.publicationTarget === "existing") return !plan.marketSkillId || plan.marketSkillId === plan.skillId || plan.metadata.skillId !== plan.marketSkillId;
+    return Boolean(plan.metadata.skillId || plan.marketSkillId);
+}

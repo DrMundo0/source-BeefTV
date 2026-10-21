@@ -128,7 +128,7 @@ func TestPublicationRequiresTwoSpecificUserConfirmations(t *testing.T) {
 	if e := writeMarketJSON(filepath.Join(s.marketUserDir("owner"), "authorization.json"), marketAuth{Endpoint: server.URL, AccessToken: "btvpub_test_fixture_only", ExpiresAt: time.Now().Add(time.Hour)}); e != nil {
 		t.Fatal(e)
 	}
-	plan, e := s.PublishPrepareInCanvas("owner", pin.SkillID, "canvas-one", skillhub.Metadata{License: "CC0-1.0"})
+	plan, e := s.PublishPrepareInCanvas("owner", pin.SkillID, "canvas-one", skillhub.Metadata{License: "CC0-1.0"}, PublicationTarget{})
 	if e != nil {
 		t.Fatal(e)
 	}

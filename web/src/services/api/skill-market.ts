@@ -6,7 +6,8 @@ export type SkillReviewSummary = { reviewedAt: string; revision: number; content
 export type MarketRelease = SkillMetadata & { skillId: string; releaseId: string; author: string; archiveBytes: number; contentHash: string; archiveSha256: string; files: SkillPackageFile[]; publishedAt: string; review?: SkillReviewSummary };
 export type MarketItem = SkillMetadata & { skillId: string; releaseId: string; author: string; compatibility: { status: string; reasons: string[] }; verification: string };
 export type PublishPreview = { revision: number; previewDigest: string; author: string; metadata: SkillMetadata; files: SkillPackageFile[]; warnings: string[] };
-export type PublishPlan = { planId: string; skillId: string; versionId: string; canvasId?: string; archiveSha256: string; instruction: string; metadata: SkillMetadata; files: SkillPackageFile[]; status: string; submissionId?: string; revision?: number; preview?: PublishPreview; reviewReason?: string; createdAt: string };
+export type PublicationTarget = { publicationTarget: "new" | "existing"; marketSkillId?: string };
+export type PublishPlan = { planId: string; skillId: string; versionId: string; canvasId?: string; publicationTarget?: PublicationTarget["publicationTarget"]; marketSkillId?: string; archiveSha256: string; instruction: string; metadata: SkillMetadata; files: SkillPackageFile[]; status: string; submissionId?: string; revision?: number; preview?: PublishPreview; reviewReason?: string; createdAt: string };
 export type MarketAuthorization = { connected?: boolean; pending?: boolean; userCode?: string; verificationUrl?: string; websiteUrl?: string; interval?: number; expiresIn?: number };
 export type InstalledVersion = { id: string; versionLabel: string; contentHash: string; createdAt: string };
 const root = "/skills/market";
@@ -24,7 +25,7 @@ export const getMarketAuthorization = () => http.get<MarketAuthorization>(`${roo
 export const startMarketAuthorization = () => http.post<MarketAuthorization>(`${root}/authorization/start`);
 export const disconnectMarketAuthorization = () => http.delete<MarketAuthorization>(`${root}/authorization`);
 export const listPublishPlans = () => http.get<{ items: PublishPlan[] }>(`${root}/publish-plans`);
-export const preparePublication = (skillId: string, metadata: SkillMetadata, sourcePlanId?: string) => http.post<PublishPlan>(`${root}/publish-plans`, { skillId, metadata, sourcePlanId });
+export const preparePublication = (skillId: string, metadata: SkillMetadata, target: PublicationTarget, sourcePlanId?: string) => http.post<PublishPlan>(`${root}/publish-plans`, { skillId, metadata, ...target, sourcePlanId });
 export const refreshPublication = (planId: string) => http.post<PublishPlan>(`${root}/publish-plans/${id(planId)}/refresh`);
 // These two calls are used only by user confirmation controls, never by the model tool surface.
 export const uploadPublication = (plan: PublishPlan) => http.post<PublishPlan>(`${root}/publish-plans/${id(plan.planId)}/upload`, { confirmed: true, archiveSha256: plan.archiveSha256 });

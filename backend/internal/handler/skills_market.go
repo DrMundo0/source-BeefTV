@@ -134,6 +134,7 @@ func registerSkillMarketRoutes(r *gin.RouterGroup, svc *app.Service) {
 	})
 	m.POST("/publish-plans", func(c *gin.Context) {
 		var a struct {
+			skills.PublicationTarget
 			SkillID      string            `json:"skillId"`
 			SourcePlanID string            `json:"sourcePlanId"`
 			Metadata     skillhub.Metadata `json:"metadata"`
@@ -145,9 +146,9 @@ func registerSkillMarketRoutes(r *gin.RouterGroup, svc *app.Service) {
 		var v *skills.PublishPlan
 		var e error
 		if a.SourcePlanID != "" {
-			v, e = svc.SkillsDomain().PublishReprepare(owner(c), a.SourcePlanID, a.Metadata)
+			v, e = svc.SkillsDomain().PublishReprepare(owner(c), a.SourcePlanID, a.Metadata, a.PublicationTarget)
 		} else {
-			v, e = svc.SkillsDomain().PublishPrepare(owner(c), a.SkillID, a.Metadata)
+			v, e = svc.SkillsDomain().PublishPrepare(owner(c), a.SkillID, a.Metadata, a.PublicationTarget)
 		}
 		marketReply(c, v, e)
 	})

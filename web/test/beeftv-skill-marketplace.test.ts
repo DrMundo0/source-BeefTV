@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { canSubmitPublication, requirementLabel, publicationStatus, unsupportedRequirements } from "../src/pages/skills/market-copy";
+import { canSubmitPublication, needsPublicationTargetCorrection, requirementLabel, publicationStatus, unsupportedRequirements } from "../src/pages/skills/market-copy";
 
 async function source(path: string) {
     return Bun.file(new URL(path, import.meta.url)).text();
@@ -38,4 +38,14 @@ test("legacy publication requirements stay visible until the author explicitly r
     expect(original).toEqual(["text", "model.audio", "future"]);
     expect(unsupportedRequirements([])).toEqual([]);
     expect(unsupportedRequirements(["beeftv.canvas", "model.image", "model.video", "model.audio"])).toEqual([]);
+});
+
+test("ambiguous legacy publication IDs require explicit correction before upload", () => {
+    const base = { skillId: "local-one", metadata: { name: "text", description: "text", versionLabel: "1.0.0", license: "MIT", sourceUrl: "", requirements: [], showcase: [] } };
+    expect(needsPublicationTargetCorrection(base)).toBe(false);
+    expect(needsPublicationTargetCorrection({ ...base, metadata: { ...base.metadata, skillId: "local-one" } })).toBe(true);
+    expect(needsPublicationTargetCorrection({ ...base, metadata: { ...base.metadata, skillId: "real-cloud-one" } })).toBe(true);
+    expect(needsPublicationTargetCorrection({ ...base, publicationTarget: "existing", marketSkillId: "real-cloud-one", metadata: { ...base.metadata, skillId: "real-cloud-one" } })).toBe(false);
+    expect(needsPublicationTargetCorrection({ ...base, publicationTarget: "existing", marketSkillId: "local-one", metadata: { ...base.metadata, skillId: "local-one" } })).toBe(true);
+    expect(needsPublicationTargetCorrection({ ...base, publicationTarget: "new", submissionId: "draft-one", metadata: { ...base.metadata, skillId: "assigned-cloud-one" } })).toBe(false);
 });

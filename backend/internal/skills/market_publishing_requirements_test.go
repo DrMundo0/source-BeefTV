@@ -22,7 +22,7 @@ func TestPublicationRequirementsRejectUnknownBeforeSavingOrUploading(t *testing.
 	defer server.Close()
 	t.Setenv("BEEFTV_SKILLHUB_URL", server.URL)
 	for _, requirement := range []string{"text", "wand", "model.future", " model.audio"} {
-		_, err := s.PublishPrepareInCanvas("owner", pin.SkillID, "canvas", skillhub.Metadata{License: "MIT", Requirements: []string{requirement}})
+		_, err := s.PublishPrepareInCanvas("owner", pin.SkillID, "canvas", skillhub.Metadata{License: "MIT", Requirements: []string{requirement}}, PublicationTarget{})
 		var invalid *kernel.AppError
 		if !errors.As(err, &invalid) || invalid.Reason != "invalid_skill_requirements" || !strings.Contains(invalid.Message, "[]") {
 			t.Fatalf("unknown value was normalized or not recoverable: %q %v", requirement, err)
@@ -32,7 +32,7 @@ func TestPublicationRequirementsRejectUnknownBeforeSavingOrUploading(t *testing.
 	if err != nil || len(plans) != 0 || calls != 0 {
 		t.Fatalf("invalid preparation wrote a plan or called upstream: %d %d %v", len(plans), calls, err)
 	}
-	valid, err := s.PublishPrepare("owner", pin.SkillID, skillhub.Metadata{License: "MIT", Requirements: []string{}})
+	valid, err := s.PublishPrepare("owner", pin.SkillID, skillhub.Metadata{License: "MIT", Requirements: []string{}}, PublicationTarget{})
 	if err != nil || len(valid.Metadata.Requirements) != 0 {
 		t.Fatal("plain text preparation failed", err)
 	}
@@ -55,7 +55,7 @@ func TestPublicationRepreparePreservesOriginalFilesAndRequiresNewConfirmation(t 
 		t.Fatal(err)
 	}
 	pin = Pin{SkillID: fork.SkillID, VersionID: fork.VersionID, ContentHash: fork.ContentHash}
-	old, err := s.PublishPrepareInCanvas("owner", pin.SkillID, "canvas-original", skillhub.Metadata{License: "MIT"})
+	old, err := s.PublishPrepareInCanvas("owner", pin.SkillID, "canvas-original", skillhub.Metadata{License: "MIT"}, PublicationTarget{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestPublicationRepreparePreservesOriginalFilesAndRequiresNewConfirmation(t 
 	archive, _ := os.ReadFile(strings.TrimSuffix(file, ".json") + ".zip")
 	metadata := old.Metadata
 	metadata.Requirements = []string{}
-	fresh, err := s.PublishReprepare("owner", old.ID, metadata)
+	fresh, err := s.PublishReprepare("owner", old.ID, metadata, PublicationTarget{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,13 +81,13 @@ func TestPublicationRepreparePreservesOriginalFilesAndRequiresNewConfirmation(t 
 	if fresh.Status != "awaiting_upload_confirmation" || fresh.SubmissionID != "" || fresh.Preview != nil || len(fresh.Metadata.Requirements) != 0 {
 		t.Fatal("repreparing reused authorization or did not preserve explicit correction")
 	}
-	if _, err := s.PublishReprepare("other", old.ID, metadata); err == nil {
+	if _, err := s.PublishReprepare("other", old.ID, metadata, PublicationTarget{}); err == nil {
 		t.Fatal("repreparing bypassed ownership")
 	}
 	if _, err := s.UpdateSkill("owner", pin.SkillID, SkillMutationRequest{SkillName: "Changed", Description: "Changed", Instruction: "Changed source", IsPrivate: true, Tag: "others"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.PublishReprepare("owner", old.ID, metadata); err == nil {
+	if _, err := s.PublishReprepare("owner", old.ID, metadata, PublicationTarget{}); err == nil {
 		t.Fatal("repreparing silently replaced the old source version")
 	}
 }
