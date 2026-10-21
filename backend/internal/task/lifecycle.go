@@ -38,9 +38,6 @@ func (s *Service) retry(userID, id string, refresh *retryCredentialRefresh) (*mo
 	if err != nil {
 		return nil, err
 	}
-	if task.Type == "media_upscale" {
-		return nil, kernel.BadAuthRequest("请核对 fal 原任务后从素材重新确认；超分不会自动重复提交")
-	}
 	if task.CreationSubmissionID != nil {
 		return nil, kernel.NewAppError(kernel.CodeConflict, CreationRetryConflictMessage)
 	}

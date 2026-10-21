@@ -170,7 +170,8 @@ func routeFailureInfo(err error) modelcatalog.FailureInfo {
 		info.RetryAfter = upstream.RetryAfter
 	}
 	info.ImageThrottle = definiteImageThrottle(err)
-	info.ExplicitRejection = definiteMidjourneyCountRejection(err)
+	var rejection generation.SubmissionRejectedError
+	info.ExplicitRejection = definiteMidjourneyCountRejection(err) || errors.As(err, &rejection)
 	if definiteVODImageParameterFailure(err) {
 		// The gateway includes this marker only for an actual supplier task.
 		info.TerminalProviderFailure = strings.Contains(upstream.Body, "upstream_task_id:")

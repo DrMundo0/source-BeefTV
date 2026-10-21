@@ -95,11 +95,15 @@ export async function executeImageGeneration({
     const rootId = reuseSourceNode ? nodeId : nanoid();
     const childIds = count > 1 ? Array.from({ length: count }, () => nanoid()) : [];
     const targetIds = count > 1 ? childIds : [rootId];
+    const baseOperationId = clientOperationId || retryContext?.clientOperationId;
+    const submissionSize = nativeOutputCount || 1;
+    const submissions = Array.from({ length: Math.ceil(targetIds.length / submissionSize) }, (_, index) => ({
+        operationId: baseOperationId ? (targetIds.length > submissionSize ? `${baseOperationId}:${index}` : baseOperationId) : undefined,
+        outputNodeIds: targetIds.slice(index * submissionSize, (index + 1) * submissionSize),
+    }));
     if (onSubmissionPlan) {
         if (!clientOperationId) throw new Error("生成提交缺少确认标识");
-        await onSubmissionPlan({ sourceNodeId: nodeId, submissions: nativeOutputCount
-            ? [{ operationId: clientOperationId, outputNodeIds: targetIds }]
-            : targetIds.map((id, index) => ({ operationId: count > 1 ? `${clientOperationId}:${index}` : clientOperationId, outputNodeIds: [id] })) });
+        await onSubmissionPlan({ sourceNodeId: nodeId, submissions: submissions.map(submission => ({ ...submission, operationId: submission.operationId! })) });
         assertUserScope(expectedScope);
         controller.signal.throwIfAborted();
         canvasNodes = nodesRef?.current || canvasNodes;
@@ -229,9 +233,7 @@ export async function executeImageGeneration({
             try {
                 if (!isCurrent()) return false;
                 const batchIndex = nativeOutputCount ? Math.floor(index / nativeOutputCount) : index;
-                const batchTargets = nativeOutputCount ? targetIds.slice(batchIndex * nativeOutputCount, (batchIndex + 1) * nativeOutputCount) : [targetId];
-                const baseOperationId = clientOperationId || retryContext?.clientOperationId;
-                const operationId = baseOperationId ? (count > (nativeOutputCount || 1) ? `${baseOperationId}:${batchIndex}` : baseOperationId) : undefined;
+                const { outputNodeIds: batchTargets, operationId } = submissions[batchIndex];
                 if (nativeOutputCount) {
                     // One paid task owns all candidates. Keep its identity on every
                     // placeholder so a reload retrieves that task instead of creating it again.

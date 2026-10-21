@@ -1213,14 +1213,14 @@ function InfiniteCanvasPage() {
     });
     const createUpscaleProcessingNode = useCallback((source: CanvasNodeData) => {
         if (!source.metadata?.content && !source.metadata?.storageKey) {
-            if (source.metadata?.taskType === "media_upscale") void recoverAIUpscale(source).catch(error => message.error(generationErrorMessage(error)));
+            if (source.metadata?.workflowOperation?.id.endsWith(".ai-upscale")) void recoverAIUpscale(source).catch(error => message.error(generationErrorMessage(error)));
             else message.warning("请先选择可读取的图片或视频");
             return;
         }
         const selectedSources = selectedNodeIdsRef.current.has(source.id)
             ? nodesRef.current.filter(node => selectedNodeIdsRef.current.has(node.id) && (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video) && (node.metadata?.content || node.metadata?.storageKey))
             : [source];
-        const settings = createDefaultUpscaleSettings(effectiveConfig.channels.find(channel => channel.enabled !== false && (channel.id === "fal-topaz-upscale" || channel.models.some(model => model.replace(/^\//, "").startsWith("topaz/upscale/"))))?.id || "");
+        const settings = createDefaultUpscaleSettings();
         const position = findAvailableGenerationGroupPosition(nodesRef.current, { x: source.position.x + source.width + 120, y: source.position.y }, { width: 420, height: 1000 });
         const processor = createCanvasNode(CanvasNodeType.Upscale, { x: position.x + 210, y: position.y + 120 }, { upscale: settings, status: "idle" });
         const nextConnections = [...connectionsRef.current, ...selectedSources.map(node => ({ id: nanoid(), fromNodeId: node.id, toNodeId: processor.id }))];
@@ -1230,7 +1230,7 @@ function InfiniteCanvasPage() {
         setSelectedNodeIds(new Set([processor.id]));
         setDialogNodeId(null);
         setToolbarNodeId(null);
-    }, [effectiveConfig.channels, message, recoverAIUpscale, setConnections, setNodes]);
+    }, [message, recoverAIUpscale, setConnections, setNodes]);
 
     useEffect(() => {
         if (!projectLoaded) return;

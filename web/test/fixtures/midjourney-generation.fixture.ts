@@ -13,6 +13,7 @@ const total = Number(process.env.MJ_OUTPUTS || 4);
 let scenario = "success";
 let submissions = 0;
 let operationIds: string[] = [];
+let registeredOperations: { operationId: string; outputNodeIds: string[] }[] = [];
 let outputIds: string[] = [];
 let activeController: AbortController;
 mock.module("@/lib/canvas/canvas-project-generation", () => ({
@@ -46,6 +47,7 @@ const { executeImageGeneration } = await import("@/pages/canvas/canvas-image-gen
 for (scenario of ["success", "bind-failed", "unknown", "cancel-after-accept", "cancel-before-accept", "cancel-text-after-accept"]) {
     submissions = 0;
     operationIds = [];
+    registeredOperations = [];
     outputIds = [];
     const source: CanvasNodeData = { id: "source", type: scenario === "cancel-text-after-accept" ? CanvasNodeType.Text : CanvasNodeType.Image, title: "MJ", position: { x: 0, y: 0 }, width: 320, height: 320, metadata: {} };
     const project = { id: "canvas", title: "MJ fixture", nodes: [source], connections: [], chatSessions: [], activeChatId: null, directorScenes: [], viewport: { x: 0, y: 0, k: 1 }, backgroundMode: "grid", showImageInfo: false, createdAt: "2026-10-17", updatedAt: "2026-10-17" } as CanvasProject;
@@ -62,6 +64,7 @@ for (scenario of ["success", "bind-failed", "unknown", "cancel-after-accept", "c
     const input: any = {
         sourceNode: source, nodeId: source.id, canvasNodes: project.nodes, canvasConnections: [], prompt: "red cube", effectivePrompt: "red cube",
         clientOperationId: "confirmed-operation", projectId: project.id, generationConfig: config, generationContext: { referenceImages: [], referenceVideos: [], referenceAudios: [] }, controller: activeController, nodesRef, setNodes,
+        onSubmissionPlan: async (manifest: any) => { registeredOperations = manifest.submissions; },
         setConnections() {}, setSelectedNodeIds() {}, setSelectedConnectionId() {}, setDialogNodeId() {}, registerPendingNodeIds() {},
         startGenerationRequest() {}, finishGenerationRequest() {}, styleMetadata: {}, skillMetadata: {}, showError() {},
         bindGenerationTask: (id: string, task: any) => setNodes(canvasGenerationTaskNodes(nodesRef.current, id, task)),
@@ -79,6 +82,11 @@ for (scenario of ["success", "bind-failed", "unknown", "cancel-after-accept", "c
         },
     };
     await executeImageGeneration(input);
+    if (scenario === "success") {
+        assert.deepEqual(registeredOperations.map(item => item.operationId), operationIds);
+        assert.deepEqual(registeredOperations.flatMap(item => item.outputNodeIds), outputIds);
+        assert.ok(registeredOperations.every(item => item.outputNodeIds.length === 4));
+    }
     assert.equal(submissions, scenario.includes("cancel") ? 1 : total / 4);
     assert.equal(new Set(operationIds).size, submissions, "each native batch must own a distinct submission operation");
     assert.equal(new Set(outputIds).size, submissions * 4, "native batches must not share output targets");

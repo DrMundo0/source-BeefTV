@@ -1,12 +1,14 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "playwright";
+import { existsSync } from "node:fs";
 
 let browser: Browser;
 const source = await Bun.file(import.meta.dir + "/../src/styles/globals.css").text();
 const styles = source.replace(/^@import .*$/gm, "");
 
 beforeAll(async () => {
-    browser = await chromium.launch({ headless: true, executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" });
+    const executablePath = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"].find((path): path is string => Boolean(path && existsSync(path)));
+    browser = await chromium.launch({ headless: true, executablePath });
 });
 afterAll(async () => { await browser?.close(); });
 

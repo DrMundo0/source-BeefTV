@@ -82,13 +82,13 @@ MiniMax speech 的 OpenAI 音频兼容目录通过 `audioOptions` 提供官方�
 
 ### Topaz 图片与视频超分
 
-`GET /media-upscale/capabilities` 返回图片和视频支持的模式、模型、倍率和格式。`POST /media-upscale/estimate` 接收 `resourceId,channelId,mode,model,scale,outputFormat?,enhancementStrength?`，返回源与输出规格、美元费用估计及不可估价原因。视频费用未取得可靠计算规则时返回空值，不视为免费。
+`GET /media-upscale/capabilities` 返回图片和视频支持的模式、模型、倍率和格式。`POST /media-upscale/estimate` 接收 `resourceId,channelId,mode,model,scale,outputFormat?,enhancementStrength?`，通过官方算力返回源与输出规格及人民币预留费用 `reservation,currency=CNY,generationSubmitted=false`。估价不提交生成；未取得有效报价时禁止提交。
 
-`POST /media-upscale/tasks` 增加 `clientOperationId,projectId?,nodeId?` 创建标准 `media_upscale` 任务。素材必须属于当前用户且已就绪；视频最长五分钟。模式为 `precision|generative|transparent`，透明图片固定四倍，其余一至四倍；图片重建强度为 `low|medium|high`。
+`POST /media-upscale/tasks` 增加 `clientOperationId,projectId?,nodeId?`，创建标准 `canvas_image` 或 `canvas_video` 任务。`channelId` 固定为 `beefapi`；图片支持 Standard V2、Wonder 3.5，视频支持 Proteus、Starlight Fast 2，分别映射到四个 `topaz-*` 官方模型。倍率为一至四的整数，图片输出 PNG 或 JPEG。素材必须属于当前用户且已就绪；视频最长五分钟。
 
-凭据在执行时从本地加密渠道读取，不进入任务输入。源素材会上传至 fal。任务持久化提交意图和云端回执，重启后查询原任务；提交结果不确定时禁止自动重提，以免重复计费。结果保存为用户自有资源并通过标准任务输出回填新节点，保留原素材。取消不保证云端停止或退款；普通生成接口不接受这些专用端点。
+复用已连接的官方算力账号，客户端无需配置供应商 Key；任务输入中的凭据由现有密钥保护层加密。素材上传、估价、生成和结果查询均经 BeefAPI。任务复用标准生成队列、稳定操作 ID 与回执恢复；提交状态不确定时禁止自动重提。结果保存为用户自有资源并回填新节点，保留原素材。取消不保证云端停止或退款；普通生成接口拒绝直接供应商端点。
 
-`POST /media-upscale/tasks/:id/recover` 仅恢复当前用户已失败且持有有效 fal 回执的原任务：查询云端状态、取回结果并保存素材，不重新发起推理。没有回执的提交不确定任务、其他任务类型或其他用户的任务会被拒绝。源视频有音轨而云端结果缺失时，落库前尝试无重编码补回；不能安全保留则明确失败。
+`POST /media-upscale/tasks/:id/recover` 校验归属和官方超分模型，优先取回原任务结果。已失败且有回执的任务只查询原云端任务；没有回执的任务仅在现有队列能证明尚未受理时允许沿用原操作 ID 重试，不确定提交仍被阻止。已取消任务要求先核对状态。源视频有音轨而云端结果缺失时，落库前尝试无重编码补回；不能安全保留则明确失败。
 
 ### 画布可复用工作流
 

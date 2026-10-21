@@ -118,9 +118,10 @@ func (s *Service) canvasWorkflowChannelID(input map[string]any, logical string) 
 	body, _ := json.Marshal(snapshot)
 	model := stringValue(config["model"])
 	base := strings.TrimRight(stringValue(config["baseUrl"]), "/")
+	selected := stringValue(config["channelId"])
 	ids := map[string]bool{}
 	for _, candidate := range modelcatalog.ParseLocalChannelModels(body) {
-		if candidate.Model == model && strings.TrimRight(candidate.BaseURL, "/") == base && candidate.Enabled {
+		if candidate.Model == model && strings.TrimRight(candidate.BaseURL, "/") == base && candidate.Enabled && (selected == "" || candidate.ChannelID == selected) {
 			ids[candidate.ChannelID] = true
 		}
 	}

@@ -1,4 +1,4 @@
-import { upscaleObservationFailureMetadata, UPSCALE_OBSERVATION_TIMEOUT_MS } from "@/lib/canvas/canvas-ai-upscale-task";
+import { isAIUpscaleTask, upscaleObservationFailureMetadata, UPSCALE_OBSERVATION_TIMEOUT_MS } from "@/lib/canvas/canvas-ai-upscale-task";
 import { recoverUpscaleTask } from "@/services/api/media-upscale";
 import { bindBackendCanvasGenerationResult } from "@/services/canvas-generation-consumer";
 import { waitForGenerationTask } from "@/services/api/task-center";
@@ -277,7 +277,7 @@ export function useCanvasMediaTools({
         if (!taskId) throw new Error("找不到原超分任务");
         const expectedScope = captureUserScope();
         const original = await queryGenerationTask(taskId, { expectedScope });
-        if (original.type !== "media_upscale") throw new Error("该任务不是超分任务");
+        if (!isAIUpscaleTask(original)) throw new Error("该任务不是超分任务");
         const task = original.status === "failed" ? await recoverUpscaleTask(taskId, expectedScope) : original;
         assertUserScope(expectedScope);
         if (projectIdRef.current !== projectId) return;

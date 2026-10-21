@@ -26,17 +26,9 @@ func workflowRevision(n int) int {
 func (s *Service) CanvasWorkflowOperations() []cw.Operation {
 	operations := cw.Operations()
 	if snapshot, err := s.canvasWorkflowProviderConfig(); err == nil {
-		channels, _ := snapshot["channels"].([]any)
 		upscaleChannels := []cw.FieldOption{}
-		for _, raw := range channels {
-			channel, _ := raw.(map[string]any)
-			if enabled, ok := channel["enabled"].(bool); ok && !enabled {
-				continue
-			}
-			if strings.TrimRight(stringValue(channel["baseUrl"]), "/") != "https://queue.fal.run" {
-				continue
-			}
-			upscaleChannels = append(upscaleChannels, cw.FieldOption{Label: stringValue(channel["name"]), Value: stringValue(channel["id"])})
+		if _, err := s.upscaleConfig(""); err == nil {
+			upscaleChannels = append(upscaleChannels, cw.FieldOption{Label: "官方算力", Value: "beefapi"})
 		}
 		textModels := []cw.FieldOption{}
 		for _, model := range workflowDescribeModels(snapshot) {
@@ -177,12 +169,15 @@ func workflowEditorDefinition(d cw.Definition, recipes workflowRecipes) cw.Defin
 		d.Nodes[i] = n
 	}
 	for i, edge := range d.Edges {
+		bindings := []workflowBinding{}
 		for _, binding := range recipes[edge.To].Bindings {
 			if binding.NodeID == edge.From && !workflowPromptBinding(binding.Field) {
-				edge.ToPort = binding.Field
-				edge.Order = binding.Index
-				d.Edges[i] = edge
+				bindings = append(bindings, binding)
 			}
+		}
+		if len(bindings) == 1 {
+			edge.ToPort, edge.Order = bindings[0].Field, bindings[0].Index
+			d.Edges[i] = edge
 		}
 	}
 	// Reference identity belongs to the private recipe. Reusable inputs and

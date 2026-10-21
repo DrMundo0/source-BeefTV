@@ -1,6 +1,7 @@
 package task
 
 import (
+	localasset "infinite-canvas/backend/internal/asset"
 	cw "infinite-canvas/backend/internal/canvasworkflow"
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
@@ -26,7 +27,7 @@ func (s *Service) CreateCanvasMediaTask(user string, node cw.Node, resourceID, o
 		return nil, kernel.BadAuthRequest("输入素材不存在或未就绪")
 	}
 	op := cw.OperationByID(node.OperationID)
-	if resource.Kind != op.Inputs[0].MediaType {
+	if localasset.NormalizeKind(resource.Kind, resource.MimeType) != op.Inputs[0].MediaType {
 		return nil, kernel.BadAuthRequest("输入素材类型不匹配")
 	}
 	if node.OperationID == "video.frame" {

@@ -10,6 +10,7 @@ func TestCanvasMediaAdmissionIsLocalOwnedAndIdempotent(t *testing.T) {
 	svc, _, media, _ := newSpecializedMem(nil)
 	source := readyVideo("source")
 	source.Kind = "video"
+	source.MimeType = "video/mp4"
 	source.Width = 1280
 	source.Height = 720
 	media.put("owner", source)
@@ -31,5 +32,22 @@ func TestCanvasMediaAdmissionIsLocalOwnedAndIdempotent(t *testing.T) {
 	node.Config["seconds"] = 43200.0
 	if _, err = svc.CreateCanvasMediaTask("owner", node, "source", "invalid"); err == nil {
 		t.Fatal("out of range frame accepted")
+	}
+}
+
+func TestCanvasMediaAdmissionNormalizesHistoricalMediaKind(t *testing.T) {
+	svc, _, media, _ := newSpecializedMem(nil)
+	source := readyVideo("historical")
+	source.Kind, source.MimeType = "media", "video/mp4"
+	source.Width, source.Height = 1280, 720
+	media.put("owner", source)
+	node := cw.Node{ID: "frame", Role: "operation", OperationID: "video.frame", OperationVersion: 1, MediaType: "image", Config: map[string]any{"seconds": 0.0}}
+	if _, err := svc.CreateCanvasMediaTask("owner", node, source.ID, "historical-frame"); err != nil {
+		t.Fatal(err)
+	}
+	source.MimeType = "audio/wav"
+	media.put("owner", source)
+	if _, err := svc.CreateCanvasMediaTask("owner", node, source.ID, "wrong-kind"); err == nil {
+		t.Fatal("audio accepted as a video")
 	}
 }

@@ -12,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 	cw "infinite-canvas/backend/internal/canvasworkflow"
+	"infinite-canvas/backend/internal/generation"
 	"infinite-canvas/backend/internal/model"
 	localtask "infinite-canvas/backend/internal/task"
 )
@@ -206,22 +207,27 @@ func workflowOperation(run, node string) string {
 
 func (s *Service) advanceCanvasWorkflow(row *model.CanvasWorkflowRun) {
 	run, e := workflowRun(*row)
+	fail := func(message string) {
+		run.Status, run.Error = "failed", message
+		_ = s.saveCanvasWorkflowRun(row, run)
+	}
 	if e != nil {
+		fail("工作流运行记录无法读取，请检查运行记录")
 		return
 	}
 	var d cw.Definition
 	if json.Unmarshal([]byte(row.DefinitionJSON), &d) != nil {
+		fail("工作流定义无法读取，请重新保存模板")
 		return
 	}
 	plain, e := s.decryptSettingSecret(row.RecipeCipher)
 	if e != nil {
-		run.Status = "failed"
-		run.Error = "无法读取工作流配方，请重新保存模板"
-		_ = s.saveCanvasWorkflowRun(row, run)
+		fail("无法读取工作流配方，请重新保存模板")
 		return
 	}
 	var recipes workflowRecipes
 	if json.Unmarshal([]byte(plain), &recipes) != nil {
+		fail("工作流配方无法读取，请重新保存模板")
 		return
 	}
 	nodes := map[string]cw.Node{}
@@ -533,17 +539,24 @@ func (s *Service) RetryCanvasWorkflow(user, id string) (cw.Run, error) {
 				return cw.Run{}, e
 			}
 			if task.Status != model.TaskStatusQueued && task.Status != model.TaskStatusRunning {
-				input, prepareErr := s.prepareCanvasWorkflowRetryCredentials(row, step.NodeID, task)
-				if prepareErr != nil {
-					return cw.Run{}, prepareErr
-				}
-				if input != "" {
-					task, e = s.taskDomain().RetryWithCredentialRefresh(user, step.TaskID, task.InputJSON, input)
+				if generation.UpscaleMediaType(task.Model) != "" {
+					task, e = s.RecoverMediaUpscale(context.Background(), user, step.TaskID)
+					if e != nil {
+						return cw.Run{}, e
+					}
 				} else {
-					task, e = s.RetryTask(user, step.TaskID)
-				}
-				if e != nil {
-					return cw.Run{}, e
+					input, prepareErr := s.prepareCanvasWorkflowRetryCredentials(row, step.NodeID, task)
+					if prepareErr != nil {
+						return cw.Run{}, prepareErr
+					}
+					if input != "" {
+						task, e = s.taskDomain().RetryWithCredentialRefresh(user, step.TaskID, task.InputJSON, input)
+					} else {
+						task, e = s.RetryTask(user, step.TaskID)
+					}
+					if e != nil {
+						return cw.Run{}, e
+					}
 				}
 			}
 			step.TaskID = task.ID
@@ -577,6 +590,15 @@ func (s *Service) CancelCanvasWorkflow(ctx context.Context, user, id string) (cw
 	for i := range run.Steps {
 		step := &run.Steps[i]
 		if step.Status == "pending" || step.Status == "running" || step.Status == "waiting_selection" {
+			if step.TaskID == "" {
+				task, lookupErr := s.repo.TaskByClientOperation(user, workflowOperation(row.ID, step.NodeID))
+				if lookupErr != nil {
+					return cw.Run{}, lookupErr
+				}
+				if task != nil {
+					step.TaskID = task.ID
+				}
+			}
 			if step.TaskID != "" {
 				if _, e = s.CancelTask(ctx, user, step.TaskID); e != nil {
 					step.Error = "已停止后续步骤；当前上游任务无法立即取消，请在任务列表查看"

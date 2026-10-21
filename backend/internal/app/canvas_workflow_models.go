@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"infinite-canvas/backend/internal/beefapi"
 	cw "infinite-canvas/backend/internal/canvasworkflow"
 	"infinite-canvas/backend/internal/modelcatalog"
 )
@@ -25,6 +26,10 @@ func (s *Service) selectWorkflowModel(n cw.Node, recipe *workflowRecipe) (bool, 
 			continue
 		}
 		old, _ := recipe.Request.Input["config"].(map[string]any)
+		recipe.ChannelID = candidate.ChannelID
+		if beefapi.IsManagedChannel(candidate.ChannelID, "", candidate.BaseURL) {
+			recipe.ChannelID = "@beefapi"
+		}
 		if stringValue(old["model"]) == candidate.Model && stringValue(old["interfaceType"]) == candidate.Protocol && strings.TrimRight(stringValue(old["baseUrl"]), "/") == strings.TrimRight(candidate.BaseURL, "/") {
 			return false, nil
 		}

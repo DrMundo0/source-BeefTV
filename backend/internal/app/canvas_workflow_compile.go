@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"infinite-canvas/backend/internal/assets"
@@ -11,6 +12,7 @@ import (
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/modelcatalog"
 	localtask "infinite-canvas/backend/internal/task"
+	"infinite-canvas/backend/internal/topaz"
 )
 
 type workflowBinding struct {
@@ -21,6 +23,7 @@ type workflowBinding struct {
 	ReferenceLabel string
 }
 type workflowRecipe struct {
+	OutputCount               int
 	Request                   CreateTaskRequest
 	Bindings                  []workflowBinding
 	ChannelID                 string
@@ -115,7 +118,7 @@ func (s *Service) compileCanvasWorkflow(user string, d cw.Definition, existing .
 				if err != nil {
 					return nil, nil, err
 				}
-				if _, err = s.topazKey(request.ChannelID); err != nil {
+				if _, err = s.upscaleConfig(topaz.ModelID(request.Model)); err != nil {
 					return nil, nil, err
 				}
 			}
@@ -143,15 +146,9 @@ func (s *Service) compileCanvasWorkflow(user string, d cw.Definition, existing .
 		if e != nil || task.Status != model.TaskStatusSucceeded {
 			return nil, nil, workflowBad("生成步骤 " + n.Title + " 的原任务不存在或尚未成功")
 		}
-		if len(localtask.CanonicalOutputs(task.ResultJSON, task.Type)) > 1 {
-			if n.MediaType != "image" {
-				return nil, nil, workflowBad("此类多结果任务暂不支持封装，请使用单结果生成任务")
-			}
-			for _, edge := range d.Edges {
-				if edge.From == n.ID && nodes[edge.To].OperationID != "image.select" {
-					return nil, nil, workflowBad("多张生成图片请先连接「选择图片结果」，再连接处理步骤")
-				}
-			}
+		outputCount := len(localtask.CanonicalOutputs(task.ResultJSON, task.Type))
+		if outputCount > 1 && n.MediaType != "image" {
+			return nil, nil, workflowBad("此类多结果任务暂不支持封装，请使用单结果生成任务")
 		}
 		if input == nil {
 			input, e = s.canvasWorkflowSourceInput(task)
@@ -186,6 +183,29 @@ func (s *Service) compileCanvasWorkflow(user string, d cw.Definition, existing .
 		modelEdited, modelErr := s.selectWorkflowModel(n, &recipe)
 		if modelErr != nil {
 			return nil, nil, modelErr
+		}
+		if reusing && !modelEdited {
+			outputCount = max(outputCount, previous[n.ID].OutputCount)
+		}
+		if n.MediaType == "image" {
+			var generationInput canvasGenerationInput
+			encoded, _ := json.Marshal(input)
+			if err := json.Unmarshal(encoded, &generationInput); err != nil {
+				return nil, nil, workflowBad("图片生成配方无法读取")
+			}
+			count, _ := strconv.Atoi(generationInput.Config.Count)
+			profile := modelcatalog.DefaultImageCapabilityConfig(generationInput.Config.InterfaceType, generationInput.Config.Model)
+			if generationInput.Config.CapabilityConfig != nil && generationInput.Config.CapabilityConfig.Image != nil {
+				profile = generationInput.Config.CapabilityConfig.Image
+			}
+			recipe.OutputCount = max(outputCount, count, profile.FixedOutputs)
+			if recipe.OutputCount > 1 {
+				for _, edge := range d.Edges {
+					if edge.From == n.ID && nodes[edge.To].OperationID != "image.select" {
+						return nil, nil, workflowBad("多张生成图片请先连接「选择图片结果」，再连接处理步骤")
+					}
+				}
+			}
 		}
 		if n.VideoDurationSourceNodeID != "" {
 			config, _ := input["config"].(map[string]any)
@@ -225,9 +245,11 @@ func (s *Service) compileCanvasWorkflow(user string, d cw.Definition, existing .
 				}
 			}
 		}
-		recipe.ChannelID, e = s.canvasWorkflowChannelID(input, recipe.Request.LogicalModelID)
-		if e != nil {
-			return nil, nil, e
+		if recipe.ChannelID == "" {
+			recipe.ChannelID, e = s.canvasWorkflowChannelID(input, recipe.Request.LogicalModelID)
+			if e != nil {
+				return nil, nil, e
+			}
 		}
 		for _, field := range []string{"referenceImages", "referenceVideos", "referenceAudios"} {
 			items, _ := input[field].([]any)

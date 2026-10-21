@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"infinite-canvas/backend/internal/generation"
 	"strings"
 	"time"
 
@@ -92,9 +93,6 @@ func (w *taskWorkerCoordinator) executeClaimed(session taskruntime.Session) task
 	}
 	if task.Type == model.TaskTypeDepthCapture {
 		return w.specialTaskOutcome(session, w.processDepthCapture)
-	}
-	if task.Type == "media_upscale" {
-		return w.processTopaz(session)
 	}
 	if task.Type == model.TaskTypeCanvasMediaTransform {
 		return w.specialTaskOutcome(session, w.processCanvasMedia)
@@ -316,7 +314,7 @@ func taskExecutionTimeoutWithPolicy(taskType string, policy RuntimeTaskPolicy) t
 
 func (s *Service) shouldDeferVideoProviderTask(task model.Task, decryptedInput string, err error) bool {
 	providerRequestID := strings.TrimSpace(task.ProviderRequestID)
-	if providerRequestID == "" || (!strings.HasPrefix(task.Type, "canvas_video") && !strings.HasPrefix(task.Type, "video_")) {
+	if providerRequestID == "" || (!strings.HasPrefix(task.Type, "canvas_video") && !strings.HasPrefix(task.Type, "video_") && generation.UpscaleMediaType(task.Model) == "") {
 		return false
 	}
 	deferSignal := errors.Is(err, context.DeadlineExceeded)

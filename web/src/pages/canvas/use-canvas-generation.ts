@@ -407,7 +407,7 @@ export function useCanvasGeneration({ projectId, domainProjectId, projectLoaded,
                           if (!isCurrentProject()) throw error;
                           return [];
                       })
-                  ).filter((task) => task.projectId === startedProjectId && (task.type.startsWith("canvas_") || task.type === "media_upscale"))
+                  ).filter((task) => task.projectId === startedProjectId && task.type.startsWith("canvas_"))
                 : [];
             if (!isCurrentProject()) return;
             await Promise.all(

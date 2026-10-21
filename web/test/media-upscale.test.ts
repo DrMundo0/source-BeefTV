@@ -1,6 +1,6 @@
 import { apiClient } from "../src/services/api/request";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
-import { canRecoverUpscaleNode, hasPendingUpscaleTask, upscaleObservationFailureMetadata, UPSCALE_OBSERVATION_TIMEOUT_MS } from "../src/lib/canvas/canvas-ai-upscale-task";
+import { canRecoverUpscaleNode, hasPendingUpscaleTask, isAIUpscaleTask, upscaleObservationFailureMetadata, UPSCALE_OBSERVATION_TIMEOUT_MS } from "../src/lib/canvas/canvas-ai-upscale-task";
 import { createModelChannel, modelOptionsFromChannels } from "../src/stores/use-config-store";
 import { describe, expect, test } from "bun:test";
 import { recoverUpscaleTask, validUpscaleScale } from "../src/services/api/media-upscale";
@@ -8,8 +8,14 @@ import { parseBackendGenerationResult } from "../src/services/api/generation-tas
 import { generationTaskMode } from "../src/lib/canvas/canvas-generation-task-sync";
 import type { GenerationTask } from "../src/services/api/task-center";
 
-const task = (patch: Partial<GenerationTask>): GenerationTask => ({ id: "topaz", type: "media_upscale", status: "succeeded", prompt: "", attempts: 1, createdAt: "", updatedAt: "", ...patch });
+const task = (patch: Partial<GenerationTask>): GenerationTask => ({ id: "topaz", type: "canvas_image", model: "topaz-standard-v2", status: "succeeded", prompt: "", attempts: 1, createdAt: "", updatedAt: "", ...patch });
 describe("Topaz upscale contract", () => {
+    test("recovery recognizes the four official models with matching task types", () => {
+        for (const model of ["topaz-standard-v2", "topaz-wonder-3.5"]) expect(isAIUpscaleTask(task({ model }))).toBe(true);
+        for (const model of ["topaz-proteus", "topaz-starlight-fast-2"]) expect(isAIUpscaleTask(task({ type: "canvas_video", model }))).toBe(true);
+        expect(isAIUpscaleTask(task({ model: "topaz-proteus" }))).toBe(false);
+        expect(isAIUpscaleTask(task({ model: "gpt-image-2" }))).toBe(false);
+    });
     test("failed upscale placeholder exposes recovery even without source media", () => {
         const node: CanvasNodeData = { id: "result", type: CanvasNodeType.Image, position: { x: 0, y: 0 }, width: 100, height: 100, metadata: { taskId: "original", taskStatus: "failed", status: "error", workflowOperation: { id: "image.ai-upscale", version: 1, config: {}, inputs: [] } } };
         expect(canRecoverUpscaleNode(node)).toBe(true);
@@ -47,7 +53,7 @@ describe("Topaz upscale contract", () => {
             const metadata = upscaleObservationFailureMetadata({ id: "topaz", status }, "终态");
             expect(metadata.status).toBe("error");
             expect(hasPendingUpscaleTask(metadata)).toBe(true);
-            expect(metadata.errorDetails).toContain("fal 控制台");
+            expect(metadata.errorDetails).toContain("任务详情");
         }
         expect(hasPendingUpscaleTask({ taskClientOperationId: "not-submitted", taskStatus: "failed", generationSubmissionState: "rejected" })).toBe(false);
         expect(hasPendingUpscaleTask({ taskId: "paid-task", taskClientOperationId: "submitted", taskStatus: "failed", generationSubmissionState: "rejected" })).toBe(true);
@@ -62,20 +68,20 @@ describe("Topaz upscale contract", () => {
         expect(modelOptionsFromChannels([channel])).toEqual(["fal::fal-ai/flux/dev"]);
         expect(channel.models).toEqual([...endpoints, "fal-ai/flux/dev"]);
     });
-    test("custom scale bounds and transparent fixed scale", () => {
-        expect(validUpscaleScale(1.5)).toBe(true);
-        for (const value of [0, 4.1, NaN, Infinity]) expect(validUpscaleScale(value)).toBe(false);
+    test("official upscale uses integer scale bounds", () => {
+        for (const value of [1, 2, 3, 4]) expect(validUpscaleScale(value)).toBe(true);
+        for (const value of [0, 1.5, 4.1, NaN, Infinity]) expect(validUpscaleScale(value)).toBe(false);
         expect(validUpscaleScale(2, 4)).toBe(false);
         expect(validUpscaleScale(4, 4)).toBe(true);
     });
     test("owned image result is recoverable without remote URL", () => {
-        const result = parseBackendGenerationResult(task({ resultJson: JSON.stringify({ image: { resourceId: "image1", width: 200, height: 100 } }) }));
+        const result = parseBackendGenerationResult(task({ resultJson: JSON.stringify({ mode: "image", images: [{ storageKey: "resource:image1", width: 200, height: 100 }] }) }));
         expect(result.images?.[0].storageKey).toContain("image1");
         expect(result.images?.[0].width).toBe(200);
     });
     test("video recovery does not default to image", () => {
-        expect(generationTaskMode(task({ inputJson: JSON.stringify({ mediaType: "video", mode: "precision" }) }))).toBe("video");
-        const result = parseBackendGenerationResult(task({ resultJson: JSON.stringify({ video: { resourceId: "video1", width: 200, height: 100, durationMs: 1000 } }) }));
+        expect(generationTaskMode(task({ type: "canvas_video", model: "topaz-proteus", inputJson: JSON.stringify({ mode: "video" }) }))).toBe("video");
+        const result = parseBackendGenerationResult(task({ type: "canvas_video", model: "topaz-proteus", resultJson: JSON.stringify({ mode: "video", video: { storageKey: "resource:video1", width: 200, height: 100, durationMs: 1000 } }) }));
         expect(result.video?.durationMs).toBe(1000);
     });
 });

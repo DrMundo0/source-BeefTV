@@ -23,7 +23,6 @@ export function UpscaleNodeContent({ node, theme }: { node: CanvasNodeData; them
     const videoCount = inputs.length - imageCount;
     const config = useEffectiveConfig();
     const officialConnected = config.channels.some(channel => channel.enabled !== false && isBuiltinBeefAPIChannel(channel) && channelHasGenerationCredential(channel));
-    const channels = config.channels.filter(channel => channel.enabled !== false && (channel.id === "fal-topaz-upscale" || channel.models.some(model => model.includes("topaz/upscale"))));
     const savedSettings = node.metadata?.upscale || createDefaultUpscaleSettings();
     const settings = savedSettings.image.mode === "transparent"
         ? { ...savedSettings, image: { ...savedSettings.image, mode: "precision" as const, model: createDefaultUpscaleSettings().image.model } }
@@ -41,7 +40,7 @@ export function UpscaleNodeContent({ node, theme }: { node: CanvasNodeData; them
         : batchState.succeeded === batchState.total ? "开始新批次"
         : batch.items.some(item => item.status === "rejected" && !item.taskId) ? "重试未提交项"
         : "查询原批次";
-    const channelId = officialConnected ? (settings.channelId || channels[0]?.id || "") : "";
+    const channelId = officialConnected ? "beefapi" : "";
     const patch = (change: Partial<typeof settings>) => actions.updateMetadata?.(node.id, { upscale: { ...settings, channelId, ...change } });
     useEffect(() => {
         let active = true;
@@ -73,8 +72,8 @@ export function UpscaleNodeContent({ node, theme }: { node: CanvasNodeData; them
         // Inputs are identified by their stable media references rather than the graph array identity.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [inputKey, estimateKey, capabilities]);
-    const imageCost = useMemo(() => Object.values(estimates).filter(item => item.mediaType === "image").reduce((sum, item) => sum + (item.estimatedCostUSD || 0), 0), [estimates]);
-    const estimatedImages = Object.values(estimates).filter(item => item.mediaType === "image" && item.estimatedCostUSD !== null).length;
+    const reservation = useMemo(() => Object.values(estimates).reduce((sum, item) => sum + item.reservation, 0), [estimates]);
+    const quotedCount = Object.keys(estimates).length;
     const run = async (result?: CanvasNodeData) => {
         if (busyRef.current) return;
         busyRef.current = true; setBusy(true); setNotice("");
@@ -115,14 +114,14 @@ export function UpscaleNodeContent({ node, theme }: { node: CanvasNodeData; them
 
         </div>
         <div className="absolute inset-x-0 top-full z-20 mt-3 w-full space-y-5 rounded-[var(--r-lg)] border p-4 text-[var(--fs-tiny)] shadow-lg" style={{ background: theme.node.panel, borderColor: theme.node.edge }} data-canvas-no-drag data-canvas-no-zoom onPointerDown={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()} onWheel={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}>
-            <div className="flex items-center justify-between gap-3"><span>超分倍率</span><InputNumber aria-label="超分倍率" min={1} max={4} step={0.1} value={settings.scale} onChange={value => patch({ scale: value || 2 })} /></div>
+            <div className="flex items-center justify-between gap-3"><span>超分倍率</span><InputNumber aria-label="超分倍率" min={1} max={4} step={1} precision={0} value={settings.scale} onChange={value => patch({ scale: value || 2 })} /></div>
             {imageCount > 0 || !videoCount ? renderMediaSettings("image") : null}
             {videoCount > 0 ? renderMediaSettings("video") : null}
-            {imageCount > 0 ? <div style={{ color: theme.node.muted }}>{estimating ? <span className="inline-flex items-center gap-1"><LoaderCircle className="size-3 animate-spin" />估价中</span> : `图片预计 ${estimatedImages ? `$${imageCost.toFixed(4)} USD${estimatedImages < imageCount ? "（部分素材）" : ""}` : "提交前预检"}`}</div> : null}
+            {inputs.length > 0 ? <div style={{ color: theme.node.muted }}>{estimating ? <span className="inline-flex items-center gap-1"><LoaderCircle className="size-3 animate-spin" />估价中</span> : quotedCount ? `预计预留 ¥${reservation.toFixed(2)}${quotedCount < inputs.length ? "（部分素材）" : ""}` : "提交前获取费用"}</div> : null}
             {Object.keys(estimates).length ? <details><summary className="cursor-pointer" style={{ color: theme.node.muted }}>超分后的分辨率</summary><div className="mt-2 space-y-1">{inputs.map(input => { const estimate = estimates[input.id]; return estimate ? <div key={input.id} className="flex gap-2"><span className="min-w-0 flex-1 truncate">{input.title}</span><span className="shrink-0 tabular-nums">{estimate.output.width} × {estimate.output.height}</span></div> : null; })}</div></details> : null}
             <div className="space-y-3">
-                <Select getPopupContainer={trigger => trigger.parentElement || document.body} className="w-full" aria-label="超分模型" placeholder="暂无可用超分模型" disabled={!officialConnected || !channels.length} value={channelId || undefined} options={officialConnected ? channels.map(channel => ({ label: "BeefTV超分模型", value: channel.id })) : []} onChange={channelId => patch({ channelId })} />
-                {!officialConnected ? <p role="status" style={{ color: theme.node.muted }}>暂无可用超分模型，请连接 BeefTV 内置的官方算力。<a href="#/settings?section=channels" className="ml-1 underline">连接官方算力</a></p> : !channels.length ? <p role="status" style={{ color: theme.node.muted }}>暂无可用超分模型</p> : null}
+                <Select getPopupContainer={trigger => trigger.parentElement || document.body} className="w-full" aria-label="超分模型" placeholder="暂无可用超分模型" disabled={!officialConnected} value={channelId || undefined} options={officialConnected ? [{ label: "BeefTV超分模型", value: "beefapi" }] : []} onChange={channelId => patch({ channelId })} />
+                {!officialConnected ? <p role="status" style={{ color: theme.node.muted }}>暂无可用超分模型，请连接 BeefTV 内置的官方算力。<a href="#/settings?section=channels" className="ml-1 underline">连接官方算力</a></p> : null}
             </div>
             {notice ? <p role="alert" className="break-words" style={{ color: "var(--status-error)" }}>{notice}</p> : null}
             <Button type="primary" block loading={busy} disabled={!inputs.length || !channelId || !capabilities || !actions.startUpscaleBatch} onClick={() => void run()}>{batchButtonLabel}</Button>

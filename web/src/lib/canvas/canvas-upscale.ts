@@ -12,11 +12,12 @@ export type CanvasUpscaleBatchItem = {
     outputNodeId: string; clientOperationId: string;
     status: "waiting" | "submitting" | "accepted" | "rejected" | "unknown";
     taskId?: string; error?: string;
+    reservation?: number; quotedAt?: number;
     /** Frozen request: resuming a waiting item must not adopt edited settings. */
     params?: UpscaleParams;
 };
 export type CanvasUpscaleBatch = { id: string; createdAt: number; items: CanvasUpscaleBatchItem[] };
-export function createDefaultUpscaleSettings(channelId = ""): CanvasUpscaleSettings {
+export function createDefaultUpscaleSettings(channelId = "beefapi"): CanvasUpscaleSettings {
     return { channelId, scale: 2, image: { mode: "precision", model: "Standard V2", outputFormat: "png" }, video: { mode: "precision", model: "Proteus" } };
 }
 export function getUpscaleInputNodes(processorId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): CanvasNodeData[] {
