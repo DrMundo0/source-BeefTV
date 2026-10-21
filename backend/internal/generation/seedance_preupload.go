@@ -370,21 +370,7 @@ func CompleteBeefAPISeedanceUpload(ctx context.Context, config Config, session B
 	if session.Multipart != nil {
 		return completeBeefAPISeedanceMultipart(ctx, config, session, data)
 	}
-	if err := PutBeefAPISeedanceBytes(ctx, session, data); err != nil {
-		return BeefAPISeedanceUploadComplete{}, MapBeefAPISeedanceUploadError(err, false)
-	}
-	var uploaded BeefAPISeedanceUploadComplete
-	ctx = referenceUploadStage(ctx, "complete")
-	if err := PostJSON(ctx, config, beefAPISeedanceUploadCompletePath, map[string]string{"ticket": session.Ticket}, &uploaded); err != nil {
-		return BeefAPISeedanceUploadComplete{}, referenceUploadError(ctx, err)
-	}
-	if strings.TrimSpace(uploaded.URL) == "" {
-		return BeefAPISeedanceUploadComplete{}, errBeefAPISeedanceUploadIncomplete
-	}
-	if err := ValidateBeefAPISeedanceSecureURL(ctx, uploaded.URL); err != nil {
-		return BeefAPISeedanceUploadComplete{}, errBeefAPISeedanceUploadUnavailable
-	}
-	return uploaded, nil
+	return completeBeefAPISeedanceSingle(ctx, config, session, data)
 }
 
 func BeefAPISeedancePutTimeout(ctx context.Context) time.Duration {
@@ -401,9 +387,6 @@ func PutBeefAPISeedanceBytes(ctx context.Context, session BeefAPISeedanceUploadS
 	ctx = referenceUploadStage(ctx, "put")
 	if err := ctx.Err(); err != nil {
 		return err
-	}
-	if err := ValidateBeefAPISeedanceSecureURL(ctx, session.UploadURL); err != nil {
-		return referenceUploadAddressError(ctx, err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, strings.TrimSpace(session.UploadURL), referenceUploadReader(ctx, bytes.NewReader(data)))
 	if err != nil {
@@ -425,6 +408,10 @@ func PutBeefAPISeedanceBytes(ctx context.Context, session BeefAPISeedanceUploadS
 	outbound.ApplyDefaultOutboundHeaders(req)
 	observation := TransportObservation{Request: req, StartedAt: time.Now(), ResponseLimitBytes: beefAPISeedanceUploadResponseLimit}
 	defer func() {
+		var upload *ReferenceUploadError
+		if errors.As(resultErr, &upload) {
+			upload.Dispatched, upload.TransportPhase = observation.Dispatched, observation.TransportPhase
+		}
 		observation.Err = resultErr
 		// A storage error body can echo signed headers and credentials. Only the
 		// typed, allowlisted code and scrubbed summary reach persisted receipts.
@@ -432,6 +419,13 @@ func PutBeefAPISeedanceBytes(ctx context.Context, session BeefAPISeedanceUploadS
 			runtime.Receipts.Observe(observation)
 		}
 	}()
+	if err := ValidateBeefAPISeedanceSecureURL(ctx, session.UploadURL); err != nil {
+		upload := referenceUploadAddressError(ctx, err)
+		if upload.Code == "upload_transport_error" {
+			observation.TransportPhase = "dns"
+		}
+		return upload
+	}
 	client := outbound.OutboundHTTPClient(BeefAPISeedancePutTimeout(ctx))
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return errBeefAPISeedanceUploadRedirect
