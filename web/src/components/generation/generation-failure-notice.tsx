@@ -12,9 +12,10 @@ type GenerationFailureNoticeProps = {
     retryLabel?: string;
     onOpenDetails?: () => void;
     retryDisabled?: boolean;
+    summaryOnly?: boolean;
 };
 
-export function GenerationFailureNotice({ explanation, context, compact, onRetry, retryLabel, onOpenDetails, retryDisabled }: GenerationFailureNoticeProps) {
+export function GenerationFailureNotice({ explanation, context, compact, onRetry, retryLabel, onOpenDetails, retryDisabled, summaryOnly }: GenerationFailureNoticeProps) {
     const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
     const diagnostics = formatGenerationDiagnostics(explanation, { ...context, traceId: context?.traceId || getDiagnosticTraceId(context?.taskId || explanation.taskId) });
     const showRetry = Boolean(onRetry) && !explanation.blockManualRetry && !retryDisabled;
@@ -36,7 +37,7 @@ export function GenerationFailureNotice({ explanation, context, compact, onRetry
     return (
         <div className={`generation-failure-notice${compact ? " is-compact" : ""}`}>
             <p className="generation-failure-reason">{explanation.reason}</p>
-            {explanation.action ? <p className="generation-failure-action">{explanation.action}</p> : null}
+            {!summaryOnly && explanation.action ? <p className="generation-failure-action">{explanation.action}</p> : null}
             <div className="generation-failure-actions">
                 {onOpenDetails ? (
                     <button
@@ -52,7 +53,7 @@ export function GenerationFailureNotice({ explanation, context, compact, onRetry
                         {explanation.uncertain ? "查看原任务" : "查看详情"}
                     </button>
                 ) : null}
-                {diagnostics ? (
+                {!summaryOnly && diagnostics ? (
                     <button
                         type="button"
                         className="generation-failure-button"
