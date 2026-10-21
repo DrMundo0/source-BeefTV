@@ -132,11 +132,13 @@ func (r *Reader) DiagnosticAssistantEvidence(userID string, from, to time.Time, 
 	}
 	sort.SliceStable(out.Records, func(i, j int) bool { return out.Records[i].Timestamp.Before(out.Records[j].Timestamp) })
 	out.Coverage.Records = len(out.Records)
-	if len(keys) == 0 {
+	if len(keys) == 0 && out.Coverage.Status == "complete" {
 		out.Coverage.Status = "unavailable"
 		out.Coverage.Reason = "no_owned_durable_sessions"
-	} else if out.Coverage.Status != "complete" {
+	} else if out.Coverage.Status == "partial" && out.Coverage.Reason == "" {
 		out.Coverage.Reason = "runtime_history_partial"
+	} else if out.Coverage.Status == "truncated" && out.Coverage.Reason == "" {
+		out.Coverage.Reason = "runtime_history_limit"
 	}
 	return out, nil
 }

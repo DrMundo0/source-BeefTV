@@ -187,6 +187,7 @@ const durable = createDurableSessionStore({
       entry.budget.sessionId=entry.sessionId; entry.budget.nativeHistory=entry.nativeHistory;
     entry.budget.generation = entry.generation;
       entry.budget.turnId = entry.turn.turnId; entry.budget.canvasId = entry.canvasId;
+      entry.budget.requestId = entry.input?.requestId;
       return turnBudgetContext.run(entry.budget,()=>fn.call(provider,...args));
     };
     models.setProvider({...provider,stream:budgeted(provider.stream),streamSimple:budgeted(provider.streamSimple)});
@@ -216,6 +217,7 @@ const durable = createDurableSessionStore({
     entry.budget.sessionId=entry.sessionId; entry.budget.nativeHistory=entry.nativeHistory;
     entry.budget.generation = entry.generation;
     entry.budget.turnId = entry.turn.turnId; entry.budget.canvasId = entry.canvasId;
+    entry.budget.requestId = entry.input?.requestId;
     return turnBudgetContext.run(entry.budget, fn);
   },
 });

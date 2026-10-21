@@ -134,3 +134,15 @@ func TestUnmatchedManifestIsNotReadAndMissingDatabaseIsNotCreated(t *testing.T) 
 		t.Fatal("foreign manifest accepted")
 	}
 }
+
+func TestBrokenDispatchLedgerWithoutOwnedSessionsRemainsPartial(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "agent-requests.jsonl"), []byte("{broken\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	result, err := New(dir).DiagnosticAssistantEvidence("owner", now.Add(-time.Hour), now.Add(time.Hour), nil)
+	if err != nil || result.Coverage.Status != "partial" || result.Coverage.Reason == "no_owned_durable_sessions" {
+		t.Fatalf("read failure hidden: %+v %v", result.Coverage, err)
+	}
+}

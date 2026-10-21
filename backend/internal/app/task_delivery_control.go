@@ -89,12 +89,13 @@ func (s *Service) resumeGenerationDownload(task model.Task) (*model.Task, error)
 	return &task, nil
 }
 
-func (s *Service) beginGenerationDownload(userID, identity string, timeout time.Duration) (context.Context, func(bool), error) {
+func (s *Service) beginGenerationDownload(userID, identity string, timeout time.Duration) (context.Context, func(error), error) {
 	s.deliveryControlMu.Lock()
-	defer s.deliveryControlMu.Unlock()
 	if s.deliveryClosed || s.IsDraining() {
+		s.deliveryControlMu.Unlock()
 		return nil, nil, context.Canceled
 	}
+	s.deliveryControlMu.Unlock()
 	taskID, _, ok := strings.Cut(identity, ":")
 	if !ok {
 		return nil, nil, errors.New("generation delivery identity is invalid")
@@ -113,6 +114,17 @@ func (s *Service) beginGenerationDownload(userID, identity string, timeout time.
 	// Persist the start checkpoint before opening the download's time budget.
 	// Diagnostic I/O must not consume a new delivery deadline before work begins.
 	parent, finishTrace := s.SupportTrace().Start(taskSupportContext(parent, *task), "generation.download", taskSupportFields(*task))
+	s.deliveryControlMu.Lock()
+	// A pause or shutdown may have happened while the checkpoint was saved.
+	current, readErr := s.repo.TaskForUser(userID, taskID)
+	if readErr != nil || s.deliveryClosed || s.IsDraining() || current.Status != model.TaskStatusSucceeded || deliveryPaused(current.Stage) {
+		s.deliveryControlMu.Unlock()
+		if readErr == nil {
+			readErr = context.Canceled
+		}
+		finishTrace(supportFailureReason(readErr))
+		return nil, nil, readErr
+	}
 	if s.deliveryDeadlines == nil {
 		s.deliveryDeadlines = map[string]time.Time{}
 	}
@@ -126,13 +138,11 @@ func (s *Service) beginGenerationDownload(userID, identity string, timeout time.
 		s.deliveryCancels = map[string]context.CancelFunc{}
 	}
 	s.deliveryCancels[identity] = cancel
-	return ctx, func(completed bool) {
-		reason := ""
-		if !completed {
+	s.deliveryControlMu.Unlock()
+	return ctx, func(downloadErr error) {
+		reason := supportFailureReason(downloadErr)
+		if downloadErr != nil && ctx.Err() != nil {
 			reason = supportFailureReason(ctx.Err())
-			if reason == "" {
-				reason = "delivery_incomplete"
-			}
 		}
 		defer finishTrace(reason)
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -141,7 +151,7 @@ func (s *Service) beginGenerationDownload(userID, identity string, timeout time.
 		cancel()
 		s.deliveryControlMu.Lock()
 		delete(s.deliveryCancels, identity)
-		if completed {
+		if downloadErr == nil {
 			delete(s.deliveryDeadlines, identity)
 		}
 		s.deliveryControlMu.Unlock()

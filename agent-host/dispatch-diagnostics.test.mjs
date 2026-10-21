@@ -9,11 +9,12 @@ test('dispatch evidence survives reopen with exact identities and no request pay
   const dir = fs.mkdtempSync(path.join(os.tmpdir(),'dispatch-evidence-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   const file=path.join(dir,'agent-requests.jsonl');
   const first=createDispatchDiagnostics(file,'launch-1');
-  assert.equal(first.record({turnId:'1122334455667788',canvasId:'canvas-123',sessionId:'durable:11111111-2222-3333-4444-555555555555',model:'model-1',origin:'https://private.example',path:'/secret',apiKey:'PRIVATE',body:'prompt PRIVATE'}),true);
+  assert.equal(first.record({requestId:'request-admitted-1',turnId:'1122334455667788',canvasId:'canvas-123',sessionId:'durable:11111111-2222-3333-4444-555555555555',model:'model-1',origin:'https://private.example',path:'/secret',apiKey:'PRIVATE',body:'prompt PRIVATE'}),true);
   createDispatchDiagnostics(file,'launch-2').record({turnId:'2233445566778899',canvasId:'canvas-123',model:'model-1'});
   const rows=fs.readFileSync(file,'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(rows.length,2);assert.equal(rows[0].launchId,'launch-1');assert.equal(rows[1].launchId,'launch-2');
   assert.equal(rows[0].sessionId,'durable:11111111-2222-3333-4444-555555555555');
+  assert.equal(rows[0].requestId,'request-admitted-1');
   assert.equal(new Set(rows.map(x=>x.id)).size,2);
   assert.equal(/PRIVATE|private\.example|apiKey|prompt|origin/.test(JSON.stringify(rows)),false);
 });
