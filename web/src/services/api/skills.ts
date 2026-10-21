@@ -171,7 +171,7 @@ async function readAddedSkillsWithRetry() {
     }
 }
 
-function invalidateAddedSkillsCache() {
+export function invalidateAddedSkillsCache() {
     addedSkillsCache = null;
     if (typeof window !== "undefined") window.dispatchEvent(new Event("canvas-skills-changed"));
 }

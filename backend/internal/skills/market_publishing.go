@@ -20,6 +20,7 @@ import (
 )
 
 type PublishPlan struct {
+	ReviewReason  string            `json:"reviewReason,omitempty"`
 	Source        *skillhub.Release `json:"source,omitempty"`
 	Instruction   string            `json:"instruction"`
 	CanvasID      string            `json:"canvasId,omitempty"`
@@ -93,6 +94,9 @@ func (s *Service) PublishPrepareInCanvas(user, id, canvas string, meta skillhub.
 		}
 		if meta.Requirements == nil {
 			meta.Requirements = source.Requirements
+		}
+		if meta.RequirementNotes == "" {
+			meta.RequirementNotes = source.RequirementNotes
 		}
 		if meta.MinClientVersion == "" {
 			meta.MinClientVersion = source.MinClientVersion

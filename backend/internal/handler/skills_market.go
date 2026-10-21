@@ -63,6 +63,15 @@ func registerSkillMarketRoutes(r *gin.RouterGroup, svc *app.Service) {
 		v, e := svc.SkillsDomain().MarketRelease(c.Request.Context(), c.Param("skillId"), c.Param("releaseId"))
 		marketReply(c, v, e)
 	})
+	m.GET("/releases/:skillId/:releaseId/file", func(c *gin.Context) {
+		offset, err := strconv.Atoi(c.DefaultQuery("offset", "0"))
+		if err != nil {
+			marketReply(c, nil, app.BadAuthRequest("文件读取范围无效"))
+			return
+		}
+		value, err := svc.SkillsDomain().MarketFile(c.Request.Context(), c.Param("skillId"), c.Param("releaseId"), c.Query("path"), offset, 32<<10)
+		marketReply(c, value, err)
+	})
 	m.POST("/install", func(c *gin.Context) {
 		var a struct {
 			SkillID   string `json:"skillId"`
