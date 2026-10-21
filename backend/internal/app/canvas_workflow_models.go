@@ -6,6 +6,7 @@ import (
 
 	"infinite-canvas/backend/internal/beefapi"
 	cw "infinite-canvas/backend/internal/canvasworkflow"
+	"infinite-canvas/backend/internal/generation"
 	"infinite-canvas/backend/internal/modelcatalog"
 )
 
@@ -22,7 +23,7 @@ func (s *Service) selectWorkflowModel(n cw.Node, recipe *workflowRecipe) (bool, 
 	}
 	raw, _ := json.Marshal(snapshot)
 	for _, candidate := range modelcatalog.ParseLocalChannelModels(raw) {
-		if !candidate.Enabled || candidate.Capability != n.MediaType || candidate.Protocol == "" || candidate.ChannelID+"::"+candidate.Model != option {
+		if !candidate.Enabled || generation.UpscaleMediaType(candidate.Model) != "" || candidate.Capability != n.MediaType || candidate.Protocol == "" || candidate.ChannelID+"::"+candidate.Model != option {
 			continue
 		}
 		old, _ := recipe.Request.Input["config"].(map[string]any)

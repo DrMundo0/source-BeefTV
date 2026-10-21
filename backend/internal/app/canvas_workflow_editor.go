@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	cw "infinite-canvas/backend/internal/canvasworkflow"
+	"infinite-canvas/backend/internal/generation"
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/mediatools"
 	"infinite-canvas/backend/internal/model"
@@ -42,7 +43,7 @@ func (s *Service) CanvasWorkflowOperations() []cw.Operation {
 				if strings.HasPrefix(operations[i].ID, "generate.") && field.Key == "modelOption" {
 					raw, _ := json.Marshal(snapshot)
 					for _, candidate := range modelcatalog.ParseLocalChannelModels(raw) {
-						if candidate.Enabled && candidate.Capability == operations[i].OutputType && candidate.Protocol != "" {
+						if candidate.Enabled && generation.UpscaleMediaType(candidate.Model) == "" && candidate.Capability == operations[i].OutputType && candidate.Protocol != "" {
 							field.Options = append(field.Options, cw.FieldOption{Label: candidate.DisplayName + " · " + candidate.ChannelID, Value: candidate.ChannelID + "::" + candidate.Model, Capabilities: candidate.CapabilityConfig})
 						}
 					}

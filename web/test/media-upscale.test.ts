@@ -63,7 +63,7 @@ describe("Topaz upscale contract", () => {
         expect(hasPendingUpscaleTask({ ...succeeded, content: "resource-result" })).toBe(false);
     });
     test("processing models stay in settings but leave normal generation selectors", () => {
-        const endpoints = ["topaz/upscale/image/precision", "topaz/upscale/image/generative", "topaz/upscale/image/transparent", "topaz/upscale/video/precision", "topaz/upscale/video/generative", "/topaz/upscale/image/precision"];
+        const endpoints = ["topaz/upscale/image/precision", "topaz/upscale/image/generative", "topaz/upscale/image/transparent", "topaz/upscale/video/precision", "topaz/upscale/video/generative", "/topaz/upscale/image/precision", "topaz-standard-v2", "topaz-wonder-3.5", "topaz-proteus", "topaz-starlight-fast-2"];
         const channel = createModelChannel({ id: "fal", models: [...endpoints, "fal-ai/flux/dev"] });
         expect(modelOptionsFromChannels([channel])).toEqual(["fal::fal-ai/flux/dev"]);
         expect(channel.models).toEqual([...endpoints, "fal-ai/flux/dev"]);
