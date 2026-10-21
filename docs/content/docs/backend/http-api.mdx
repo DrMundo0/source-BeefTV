@@ -235,6 +235,8 @@ Windows 的运行地址描述文件位于用户目录的 `.beeftv/runtime/`，�
 
 `GET /media-upscale/capabilities` 查询官方算力支持的模型；`POST /media-upscale/estimate` 准备一个所属用户的素材并获取人民币预留费用，不提交生成。最终费用按实际用量结算，预留金额不是最终价格或费用上限。客户端不接收 fal 密钥，也不提供供应商直连配置。
 
+生成完成后即可下载和回填，供应商账单暂不可读不会阻止结果交付；最终费用待账单可读后结算。`topaz-starlight-fast-2` 的实际输出分辨率可能高于所选倍数，客户端按结果文件的真实尺寸保存。
+
 执行使用现有 `POST /tasks`，图片类型为 `canvas_image`，视频类型为 `canvas_video`。`input.config` 只需 `credentialRef=beefapi-enterprise`、所选公开模型 ID 和 `interfaceType=newapi`；凭据由后端解析和加密。`input.upscale` 包含整数 `factor`（1–4，界面默认 2）与图片 `outputFormat`（png/jpeg）。`referenceImages` 或 `referenceVideos` 仅包含一个 `storageKey=resource:<id>` 的源素材。批处理由画布逐素材创建，每个素材各有操作编号、任务和结果节点。
 
 图片保真使用 `topaz-standard-v2`，细节重建使用 `topaz-wonder-3.5`。默认不增强人脸，Wonder 使用低强度。视频保真使用 `topaz-proteus`，细节重建使用 `topaz-starlight-fast-2`，输出 MP4/H.264，不补帧，原视频不超过 5 分钟。结果缺少音轨时后端从原素材补回，校验完成后才入库。原素材与结果作为不同资源保存。

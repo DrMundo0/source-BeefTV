@@ -99,7 +99,7 @@ export function CanvasNodeAIUpscaleDialog({
                 <div className="space-y-2">
                     <div className="text-sm font-medium">放大倍数</div>
                     <Segmented block value={params.factor} options={[1, 2, 3, 4].map((value) => ({ value, label: `${value}×` }))} onChange={(factor) => setParams({ ...params, factor: Number(factor) })} />
-                    <p className="text-xs text-muted-foreground">宽和高分别放大，不改变原始比例。</p>
+                    <p className="text-xs text-muted-foreground">{hasVideos && params.variant === "generative" ? "保持原始比例。视频结果的分辨率可能高于所选倍数。" : "宽和高分别放大，不改变原始比例。"}</p>
                 </div>
                 {hasImages ? (
                     <div className="space-y-2">
