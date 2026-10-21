@@ -80,14 +80,29 @@ func TestW3CTracePersistenceAndOwnerIsolation(t *testing.T) {
 	if len(a.Events) != 5 || len(b.Events) != 1 || a.Events[0].LaunchID == b.Events[0].LaunchID {
 		t.Fatalf("reopen/isolation failed: a=%+v b=%+v", a, b)
 	}
-	window, err := reopened.Snapshot("owner-a", a.Events[1].Timestamp, a.Events[3].Timestamp)
-	if err != nil || len(window.Events) != 3 {
-		t.Fatalf("window filter: %+v %v", window, err)
-	}
 	for _, path := range []string{reopened.journal.path, reopened.journal.statePath} {
 		info, err := os.Stat(path)
 		if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
 			t.Fatalf("private file mode: %v %v", info, err)
+		}
+	}
+}
+
+func TestSnapshotTimeWindowIncludesBothBounds(t *testing.T) {
+	r := newRecorder(t, t.TempDir())
+	base := time.Now().UTC().Truncate(time.Second).Add(-time.Minute)
+	// Wall clocks need not increase between consecutive SDK span ends. Fixed
+	// timestamps test the export boundaries independently of OS clock precision.
+	for i := 0; i < 5; i++ {
+		r.record(Event{Fields: Fields{UserID: "owner-window"}, ID: fmt.Sprintf("event-%d", i), Timestamp: base.Add(time.Duration(i) * time.Second), Name: "resource.saved", Phase: "event"}, false)
+	}
+	window, err := r.Snapshot("owner-window", base.Add(time.Second), base.Add(3*time.Second))
+	if err != nil || len(window.Events) != 3 {
+		t.Fatalf("window filter: %+v %v", window, err)
+	}
+	for i, event := range window.Events {
+		if event.ID != fmt.Sprintf("event-%d", i+1) {
+			t.Fatalf("unexpected window event: %+v", event)
 		}
 	}
 }
