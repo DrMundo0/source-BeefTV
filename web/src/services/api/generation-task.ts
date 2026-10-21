@@ -593,5 +593,10 @@ export function parseBackendGenerationResult(task: GenerationTask): BackendGener
     if (!task.resultJson) throw new Error("后端任务没有返回结果");
     const result = JSON.parse(task.resultJson) as BackendGenerationResult;
     if (!result || typeof result !== "object") throw new Error("后端任务结果格式错误");
+    if (task.type === "media_upscale") {
+        const media = JSON.parse(task.resultJson) as { image?: { resourceId: string; width: number; height: number; mimeType?: string }; video?: { resourceId: string; width: number; height: number; durationMs?: number; mimeType?: string } };
+        if (media.image?.resourceId) return { mode: "image", images: [{ ...media.image, dataUrl: "", storageKey: resourceStorageKey(media.image.resourceId) }] };
+        if (media.video?.resourceId) return { mode: "video", video: { ...media.video, dataUrl: "", storageKey: resourceStorageKey(media.video.resourceId) } };
+    }
     return result;
 }

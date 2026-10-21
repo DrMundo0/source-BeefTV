@@ -96,7 +96,7 @@ func (e *taskRouteExecutor) execute(ctx context.Context, task *model.Task, attem
 		if execution.err == nil {
 			break
 		}
-		if task.Type == "canvas_image" && attempt != nil && attempt.DispatchState == "submission_unknown" && !isImageRecoveryError(execution.err) {
+		if task.Type == "canvas_image" && attempt != nil && attempt.DispatchState == "submission_unknown" && !isImageRecoveryError(execution.err) && !definiteVODImageParameterFailure(execution.err) {
 			execution.err = imageRecoveryError{execution.err}
 		}
 		var upstream providerHTTPError

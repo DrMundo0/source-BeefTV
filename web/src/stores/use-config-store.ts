@@ -1046,6 +1046,7 @@ export function modelOptionsFromChannels(channels: ModelChannel[]) {
             channel.models
                 .map(normalizeRawModelName)
                 .filter(Boolean)
+                .filter((model) => !model.replace(/^\/+/, "").startsWith("topaz/upscale/"))
                 .filter((model) => channel.scope !== "system" || hasSystemModelProfile(channel, model))
                 .map((model) => encodeChannelModel(channel.id, model)),
         ),

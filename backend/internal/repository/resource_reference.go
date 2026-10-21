@@ -97,6 +97,15 @@ func (r *Repository) ResourceReferenceSnapshot(userID string, excludingAssetID s
 		return snapshot, err
 	}
 	snapshot.Direct = append(snapshot.Direct, exports...)
+	if r.db.Migrator().HasTable(&model.CanvasWorkflowResource{}) {
+		var refs []model.CanvasWorkflowResource
+		if err := r.db.Where("user_id = ? AND resource_id IN ?", userID, resourceIDs).Find(&refs).Error; err != nil {
+			return snapshot, err
+		}
+		for _, ref := range refs {
+			snapshot.Direct = append(snapshot.Direct, ResourceDirectReference{Kind: "可复用工作流", ID: ref.OwnerID, Title: "工作流模板或运行结果", ResourceID: ref.ResourceID})
+		}
+	}
 
 	var assets []model.Asset
 	assetQuery := r.db.Where("user_id = ? AND id <> ?", userID, excludingAssetID)

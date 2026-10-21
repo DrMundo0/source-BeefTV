@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"infinite-canvas/backend/internal/topaz"
 	"strings"
 	"time"
 
@@ -103,7 +105,13 @@ func (s *Service) beginGenerationDownload(userID, identity string, timeout time.
 	if err != nil {
 		return nil, nil, err
 	}
-	if task.Status != model.TaskStatusSucceeded || deliveryPaused(task.Stage) {
+	// Topaz commits its owned artifact before marking the task succeeded.
+	runningUpscale := false
+	if task.Type == "media_upscale" && task.Status == model.TaskStatusRunning {
+		var state topazState
+		runningUpscale = json.Unmarshal([]byte(task.InputJSON), &state) == nil && state.Submitted && state.Receipt.RequestID != "" && state.Receipt.RequestID == task.ProviderRequestID && topaz.QueueURL(state.Receipt.StatusURL) && topaz.QueueURL(state.Receipt.ResponseURL)
+	}
+	if (task.Status != model.TaskStatusSucceeded && !runningUpscale) || deliveryPaused(task.Stage) {
 		return nil, nil, context.Canceled
 	}
 	parent := s.backgroundWorkers().Context()

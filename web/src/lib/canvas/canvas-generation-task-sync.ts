@@ -21,6 +21,10 @@ export { generationTaskInput, generationTaskNodeId } from "@/lib/canvas/canvas-g
 export function generationTaskMode(task: GenerationTask, fallback?: CanvasGenerationMode): CanvasGenerationMode {
     const inputMode = generationTaskInput(task)?.mode;
     if (inputMode === "text" || inputMode === "image" || inputMode === "video" || inputMode === "audio") return inputMode;
+    if (task.type === "media_upscale") {
+        try { const input = JSON.parse(task.inputJson || "{}") as { mediaType?: string }; if (input.mediaType === "video") return "video"; } catch { /* Fall back to node type. */ }
+        return fallback || "image";
+    }
     if (task.type === "canvas_text") return "text";
     if (task.type === "canvas_video") return "video";
     if (task.type === "canvas_audio") return "audio";

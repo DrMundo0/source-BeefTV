@@ -71,6 +71,11 @@ type taskCatalogAdapter struct{ s *Service }
 
 func (a taskCatalogAdapter) Select(userID string, req localtask.SelectRequest) (localtask.SelectResult, error) {
 	input := req.Input
+	if config, ok := input["config"].(map[string]any); ok {
+		if strings.HasPrefix(strings.TrimSpace(fmt.Sprint(config["model"])), "topaz/upscale/") || config["channelId"] == "fal-topaz-upscale" {
+			return localtask.SelectResult{}, BadAuthRequest("Topaz 请使用素材节点的 AI 超分入口")
+		}
+	}
 	if modelcatalog.TaskInputUsesWorkflowProvider(input) {
 		config, _ := input["config"].(map[string]any)
 		if err := a.s.RequireWorkflowPluginForUser(userID, strings.TrimSpace(fmt.Sprint(config["interfaceType"]))); err != nil {

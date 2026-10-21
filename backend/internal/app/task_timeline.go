@@ -87,6 +87,9 @@ func (w *taskWorkerCoordinator) failTimelineTask(task *model.Task, stage string,
 		return fmt.Errorf("时间线任务状态或租约已变化：%w", repository.ErrTaskStateConflict)
 	}
 	label := "时间线转写失败"
+	if task.Type == "media_upscale" {
+		label = "Topaz 超分失败"
+	}
 	if task.Type == model.TaskTypeDepthCapture {
 		label = "深度处理失败"
 	}

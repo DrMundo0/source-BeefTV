@@ -58,6 +58,9 @@ func (s *Service) requestProviderCancellation(ctx context.Context, task *model.T
 	if task == nil || task.ID == "" {
 		return errors.New("任务取消状态无效")
 	}
+	if task.Type == "media_upscale" {
+		return s.cancelTopaz(ctx, task)
+	}
 	s.hydrateTaskProviderRequestID(task)
 	if task.ProviderRequestID != "" {
 		if err := s.repo.UpdateTaskProviderState(task.ID, task.ProviderRequestID, task.PollStage, task.NextPollAt); err != nil {
@@ -95,6 +98,9 @@ func (s *Service) requestProviderCancellation(ctx context.Context, task *model.T
 }
 
 func (s *Service) reconcileProviderCancellation(ctx context.Context, task *model.Task) error {
+	if task.Type == "media_upscale" {
+		return s.reconcileTopazCancellation(ctx, task)
+	}
 	if task.ProviderCancelAttempts >= providerCancellationMaxAttempts {
 		return s.markProviderCancellationUncertain(task, providerCancellationUncertainMessage("上游取消状态长时间未确认"))
 	}
