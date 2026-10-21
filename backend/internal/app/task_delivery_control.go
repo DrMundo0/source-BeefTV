@@ -110,6 +110,9 @@ func (s *Service) beginGenerationDownload(userID, identity string, timeout time.
 	if parent == nil {
 		parent = context.Background()
 	}
+	// Persist the start checkpoint before opening the download's time budget.
+	// Diagnostic I/O must not consume a new delivery deadline before work begins.
+	parent, finishTrace := s.SupportTrace().Start(taskSupportContext(parent, *task), "generation.download", taskSupportFields(*task))
 	if s.deliveryDeadlines == nil {
 		s.deliveryDeadlines = map[string]time.Time{}
 	}
@@ -119,7 +122,6 @@ func (s *Service) beginGenerationDownload(userID, identity string, timeout time.
 		s.deliveryDeadlines[identity] = deadline
 	}
 	ctx, cancel := context.WithDeadline(parent, deadline)
-	ctx, finishTrace := s.SupportTrace().Start(taskSupportContext(ctx, *task), "generation.download", taskSupportFields(*task))
 	if s.deliveryCancels == nil {
 		s.deliveryCancels = map[string]context.CancelFunc{}
 	}
