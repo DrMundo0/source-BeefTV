@@ -7,6 +7,7 @@ import (
 	"infinite-canvas/backend/internal/buildinfo"
 	"infinite-canvas/backend/internal/environment"
 	"infinite-canvas/backend/internal/supporttrace"
+	"slices"
 	"strings"
 	"time"
 
@@ -186,6 +187,11 @@ func (s *Service) collect(userID string, req ExportRequest) (*collection, error)
 	if len(apiCalls) > 1000 {
 		apiCalls = apiCalls[:1000]
 	}
+	// Queries retain the newest page; export oldest-to-newest so byte-budget
+	// reduction removes older bulk evidence first.
+	slices.Reverse(tasks)
+	slices.Reverse(taskLogs)
+	slices.Reverse(apiCalls)
 	if taskID != "" {
 		for _, name := range []string{"tasks", "taskLogs", "upstreamCalls"} {
 			coverage := collected.Collectors[name]

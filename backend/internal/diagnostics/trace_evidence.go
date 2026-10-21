@@ -8,10 +8,9 @@ func (s *Service) collectTraceEvidence(userID string, c *collection) {
 		return
 	}
 	snapshot, err := s.traceSource.Snapshot(userID, c.Window.From, c.Window.To)
-	if err != nil {
-		c.setCoverage("backendEvents", 0, 0, err)
-		return
-	}
+	// A reader can return valid records before encountering a damaged segment.
+	// Keep that evidence, while authentication failures still fail the export.
+	c.recordAuthError(err)
 	traceCoverage := snapshot.Coverage
 	switch traceCoverage.Status {
 	case "complete", "partial", "unavailable", "failed", "truncated":
@@ -50,6 +49,14 @@ func (s *Service) collectTraceEvidence(userID string, c *collection) {
 	if snapshot.Coverage.Status == "failed" || snapshot.Coverage.Status == "unavailable" {
 		coverage.Status = snapshot.Coverage.Status
 	}
+	if err != nil {
+		coverage.Status, coverage.Reason = "failed", "recorder_read_failed"
+		traceCoverage.Status = "failed"
+		if len(c.BackendEvents) > 0 {
+			coverage.Status, coverage.Reason = "partial", "recorder_read_partial"
+			traceCoverage.Status = "partial"
+		}
+	}
 	if snapshot.Coverage.Dropped > 0 {
 		coverage.Status, coverage.Reason = "truncated", "recorder_retention"
 		coverage.OmittedAtLeast += snapshot.Coverage.Dropped
@@ -60,7 +67,12 @@ func (s *Service) collectTraceEvidence(userID string, c *collection) {
 		c.Truncated = true
 	}
 	if snapshot.Coverage.WriteErrors > 0 {
-		coverage.Status, coverage.Reason = "partial", "recorder_write_errors"
+		if coverage.Status != "truncated" && coverage.Status != "failed" {
+			coverage.Status, coverage.Reason = "partial", "recorder_write_errors"
+		}
+	}
+	if err != nil && len(c.BackendEvents) == 0 {
+		coverage.Status, coverage.Reason = "failed", "recorder_read_failed"
 	}
 	c.Collectors["backendEvents"] = coverage
 }

@@ -1,5 +1,7 @@
 package diagnostics
 
+import "slices"
+
 func (s *Service) collectAssistantEvidence(userID string, c *collection) {
 	store, ok := s.store.(assistantTurnStore)
 	if !ok {
@@ -16,6 +18,7 @@ func (s *Service) collectAssistantEvidence(userID string, c *collection) {
 	if len(turns) > 100 {
 		turns = turns[:100]
 	}
+	slices.Reverse(turns)
 	for _, turn := range turns {
 		c.AssistantTurns = append(c.AssistantTurns, AssistantTurnEvidence{
 			ID: sanitizeIdentifier(turn.TurnID), SessionID: sanitizeIdentifier(turn.DurableSessionID), CanvasID: sanitizeIdentifier(turn.CanvasID),

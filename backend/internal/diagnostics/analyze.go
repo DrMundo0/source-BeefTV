@@ -187,7 +187,16 @@ func analyze(c *collection) []Finding {
 			add("confirmed", "local_resource", "ready_resource_file_missing", "资源被标记为可用，但导出时本地文件不存在或为空。", []string{recordRef("backend/resources.jsonl", resource.ID)}, nil)
 		}
 	}
+	ownedSessions := map[string]bool{}
+	for _, turn := range c.AssistantTurns {
+		if turn.SessionID != "" && turn.CanvasID != "" {
+			ownedSessions[turn.SessionID+"|"+turn.CanvasID] = true
+		}
+	}
 	for _, evidence := range c.AssistantEvidence {
+		if ownedSessions[evidence.SessionID+"|"+evidence.CanvasID] && evidence.Kind == "model_call" && evidence.Name == "model.response" && (evidence.Status == "aborted" || evidence.Status == "interrupted") {
+			add("confirmed", "assistant_model", "model_attempt_interrupted", "所属助手会话的模型响应记录确认这次模型尝试已中断；不能据此确定进程崩溃、未关联的业务轮次或重开后的操作状态。", []string{recordRef("backend/assistant-runtime.jsonl", evidence.ID)}, nil)
+		}
 		if evidence.TurnID != "" && evidence.Kind == "recovery" && (evidence.Status == "interrupted" || evidence.Status == "aborted" || evidence.Reason == "process_interrupted") {
 			add("confirmed", "assistant", "assistant_interrupted", "助手记录确认执行曾中断；这不证明重开后无法操作，也不代表工具操作已回滚。", []string{recordRef("backend/assistant-runtime.jsonl", evidence.ID)}, nil)
 		}

@@ -19,6 +19,6 @@ func (r *Repository) DiagnosticAssistantTurns(userID string, from, to time.Time,
 		// JSON membership avoids a substring match against unrelated task IDs.
 		query = query.Where("EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(associated_task_ids) THEN associated_task_ids ELSE '[]' END) WHERE value = ?)", taskID)
 	}
-	err := query.Order("created_at asc").Order("turn_id asc").Limit(101).Find(&turns).Error
+	err := query.Order("MAX(julianday(created_at), julianday(updated_at)) DESC").Order("turn_id DESC").Limit(101).Find(&turns).Error
 	return turns, err
 }
