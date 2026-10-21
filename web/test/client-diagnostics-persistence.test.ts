@@ -73,7 +73,7 @@ test("an unavailable driver cannot hang preview or export forever", async () => 
     store.setScope("owner"); store.record(event("kept", { timestamp: new Date().toISOString() }));
     const snapshot = await store.snapshot();
     expect(snapshot.events.length).toBe(1);
-    expect(snapshot.coverage).toMatchObject({ status: "partial", readErrorCount: 1, writeErrorCount: 1, persisted: false });
+    expect(snapshot.coverage).toMatchObject({ status: "partial", readErrorCount: 1, writeErrorCount: 0, persisted: false });
 });
 
 test("a late timed-out physical write cannot overwrite a newer snapshot", async () => {
@@ -89,4 +89,20 @@ test("a late timed-out physical write cannot overwrite a newer snapshot", async 
     expect(snapshot.coverage.persisted).toBe(true);
     expect(JSON.parse(persisted).events.map((item: ClientDiagnosticEvent) => item.id)).toEqual(["one", "two"]);
     expect(JSON.parse(persisted).writeErrorCount).toBe(1);
+});
+
+test("a late hydration merges original history before allowing any replacement write", async () => {
+    let complete!: (value: string) => void;
+    let writes = 0;
+    let persisted = "";
+    const store = createDiagnosticEventStore({ launchId: "new", sanitize: value => value, now: () => now, timeoutMs: 10, storage: () => ({ getItem: () => new Promise<string>(resolve => { complete = resolve; }), setItem: async (_name, value) => { writes++; persisted = value; } }) });
+    store.setScope("owner"); store.record(event("new"));
+    expect((await store.snapshot()).coverage).toMatchObject({ readErrorCount: 1, persisted: false });
+    expect(writes).toBe(0);
+    complete(JSON.stringify({ version: 1, events: [event("original")], droppedCount: 2, expiredCount: 0, readErrorCount: 0, writeErrorCount: 0 }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const snapshot = await store.snapshot();
+    expect(snapshot.events.map(item => item.id)).toEqual(["original", "new"]);
+    expect(snapshot.coverage).toMatchObject({ readErrorCount: 1, droppedCount: 2, persisted: true });
+    expect(JSON.parse(persisted).events.length).toBe(2);
 });

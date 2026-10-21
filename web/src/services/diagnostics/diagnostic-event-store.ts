@@ -20,7 +20,7 @@ export type ClientDiagnosticCoverage = {
 
 type SavedEvents = { version: 1; events: ClientDiagnosticEvent[]; droppedCount: number; expiredCount: number; writeErrorCount: number; readErrorCount: number };
 type Storage = { getItem(name: string): unknown; setItem(name: string, value: string): unknown };
-type ScopeState = SavedEvents & { ready: Promise<void>; writes: Promise<void>; persisted: boolean; revision: number; queued: boolean };
+type ScopeState = SavedEvents & { ready: Promise<void>; writes: Promise<void>; persisted: boolean; revision: number; queued: boolean; readPending: boolean };
 const key = "client-diagnostics-v3";
 const limits = { maxAgeHours: 24, maxEvents: 500, maxBytes: 512 * 1024 };
 
@@ -59,6 +59,9 @@ export function createDiagnosticEventStore(options: {
         state.queued = true;
         state.writes = state.writes.then(async () => {
             await state.ready;
+            // A timed-out read is still running. Export the partial in-memory
+            // evidence, but never replace history before that read can merge it.
+            if (state.readPending) { state.queued = false; return; }
             for (;;) {
                 trim(state);
                 const revision = state.revision;
@@ -87,9 +90,10 @@ export function createDiagnosticEventStore(options: {
             let state = scopes.get(scope);
             if (!state) {
                 const storage = options.storage(scope);
-                state = { version: 1, events: [], droppedCount: 0, expiredCount: 0, writeErrorCount: 0, readErrorCount: 0, ready: Promise.resolve(), writes: Promise.resolve(), persisted: false, revision: 0, queued: false };
+                state = { version: 1, events: [], droppedCount: 0, expiredCount: 0, writeErrorCount: 0, readErrorCount: 0, ready: Promise.resolve(), writes: Promise.resolve(), persisted: false, revision: 0, queued: false, readPending: true };
                 const captured = state;
-                captured.ready = bounded(Promise.resolve().then(() => storage.getItem(key))).then(raw => {
+                let readTimedOut = false;
+                const hydration = Promise.resolve().then(() => storage.getItem(key)).then(raw => {
                     if (!raw) { captured.persisted = captured.revision === 0; return; }
                     const saved = JSON.parse(String(raw)) as SavedEvents;
                     if (saved.version !== 1 || !Array.isArray(saved.events)) throw new Error("invalid_diagnostic_store");
@@ -98,7 +102,13 @@ export function createDiagnosticEventStore(options: {
                     captured.events = [...restored, ...captured.events].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
                     for (const field of ["droppedCount", "expiredCount", "writeErrorCount", "readErrorCount"] as const) captured[field] += Number.isSafeInteger(saved[field]) && saved[field] >= 0 ? saved[field] : 0;
                     captured.persisted = captured.revision === 0;
-                }).catch(() => { captured.readErrorCount += 1; }).then(() => { trim(captured); });
+                }).finally(() => { captured.readPending = false; });
+                captured.ready = bounded(hydration).catch(() => {
+                    readTimedOut = captured.readPending;
+                    captured.readErrorCount += 1;
+                }).then(() => { trim(captured); });
+                const finishLateRead = () => { if (readTimedOut) save(captured, storage); };
+                void hydration.then(finishLateRead, finishLateRead);
                 scopes.set(scope, captured);
             }
             current = state;
