@@ -101,7 +101,7 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
             autoIncludeWorkflowMedia || (promptOnly && hasConnectedMedia),
             connectedInputs,
         );
-        if (sourceNode?.type === CanvasNodeType.Image || sourceNode?.type === CanvasNodeType.Video) assertCanvasImageReferenceTable(context.prompt, context.referenceImages.map((image) => mentionInputs.find((input) => input.image?.id === image.id)?.title || image.name));
+        if (sourceNode?.type === CanvasNodeType.Image || sourceNode?.type === CanvasNodeType.Video) assertCanvasImageReferenceTable(context.prompt, generationImageTableReferences(context.referenceImages, mentionInputs));
         return context;
     }
 
@@ -118,7 +118,7 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
     const referenceAudios = connectedInputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
     const composedPrompt = promptOnly ? prompt : upstreamText ? `${basePrompt}\n\n${upstreamText}` : basePrompt;
-    if (sourceNode?.type === CanvasNodeType.Image || sourceNode?.type === CanvasNodeType.Video) assertCanvasImageReferenceTable(composedPrompt, referenceImages.map((image) => connectedInputs.find((input) => input.image?.id === image.id)?.title || image.name));
+    if (sourceNode?.type === CanvasNodeType.Image || sourceNode?.type === CanvasNodeType.Video) assertCanvasImageReferenceTable(composedPrompt, generationImageTableReferences(referenceImages, connectedInputs));
     return {
         prompt: composedPrompt,
         referenceImages,
@@ -367,6 +367,16 @@ function resolveGenerationMention(
     if (match[1] === "node") return nodeInputById.get(match[2]);
     if (match[1] === "asset") return assetInputById.get(match[2]);
     return undefined;
+}
+
+function generationImageTableReferences(images: ReferenceImage[], inputs: NodeGenerationInput[]) {
+    const inputsByImageId = new Map(inputs.filter((input) => input.image).map((input) => [input.image!.id, input]));
+    const counts = { image: 0, drawing: 0 };
+    return images.map((image) => {
+        const input = inputsByImageId.get(image.id);
+        const kind = input?.sourceKind === "drawing" ? "drawing" : "image";
+        return { title: input?.title || image.name, label: generationLabel(kind, counts[kind]++) };
+    });
 }
 
 function hasMentionBoundary(value: string, index: number) {

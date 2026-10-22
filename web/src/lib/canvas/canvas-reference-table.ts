@@ -1,16 +1,16 @@
 /** Check explicit IMAGE table bindings against the final submitted image order. */
-export function assertCanvasImageReferenceTable(prompt: string, imageTitles: readonly string[]) {
+export function assertCanvasImageReferenceTable(prompt: string, images: readonly { title: string; label: string }[]) {
+    const slotsByLabel = new Map(images.map((image, index) => [image.label, index + 1]));
     const slotsByName = new Map<string, number | null>();
-    imageTitles.forEach((name, index) => {
-        const title = name.trim();
+    images.forEach((image, index) => {
+        const title = image.title.trim();
         if (!title) return;
         slotsByName.set(title, slotsByName.has(title) ? null : index + 1);
     });
     for (const row of prompt.matchAll(/^\s*\|\s*IMAGE\s+(\d+)\s*\|\s*`?@([^\s`|]+)`?/gimu)) {
         const declaredSlot = Number(row[1]);
-        const numbered = /^图片(\d+)$/u.exec(row[2]);
-        const actualSlot = numbered ? Number(numbered[1]) : slotsByName.get(row[2]);
-        if (!actualSlot || actualSlot === declaredSlot || actualSlot > imageTitles.length) continue;
+        const actualSlot = slotsByLabel.get(row[2]) ?? slotsByName.get(row[2]);
+        if (!actualSlot || actualSlot === declaredSlot) continue;
         throw new Error(`素材表中的 IMAGE ${declaredSlot} 对应图片${actualSlot}，编号不一致。请统一素材顺序和提示词编号后再生成`);
     }
 }

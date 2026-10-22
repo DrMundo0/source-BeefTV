@@ -146,6 +146,20 @@ describe("canvas node generation video text references", () => {
         expect(() => buildNodeGenerationContext(target.id, nodes, connections, "| IMAGE 1 | `@图片2` |", [], true)).not.toThrow();
     });
 
+    test("checks drawing and image labels against their shared upload order", () => {
+        const target = targetNode();
+        const drawing = node("sketch", CanvasNodeType.Drawing, "");
+        drawing.metadata.drawingId = "drawing-id";
+        const photo = node("photo", CanvasNodeType.Image, "data:image/png;base64,a");
+        const nodes = [drawing, photo, target];
+        const connections = [connection(drawing.id), connection(photo.id)];
+        expect(() => buildNodeGenerationContext(target.id, nodes, connections, "| IMAGE 1 | @图片1 |", [], true)).toThrow("IMAGE 1 对应图片2");
+        const prompt = "| IMAGE 1 | @绘图1 |\n| IMAGE 2 | @图片1 |";
+        const context = buildNodeGenerationContext(target.id, nodes, connections, prompt, [], true);
+        expect(context.prompt).toBe(prompt);
+        expect(context.referenceImages.map((image) => image.id)).toEqual([drawing.id, photo.id]);
+    });
+
     test("视频 promptOnly 下显式 @文本 引用仍内联真实内容，图片保持结构化引用", () => {
         const target = targetNode();
         const image = node("image-a", CanvasNodeType.Image, "data:image/png;base64,a");
