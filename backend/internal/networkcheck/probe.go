@@ -19,37 +19,39 @@ import (
 )
 
 type Result struct {
-	Target        string    `json:"target"`
-	Host          string    `json:"host"`
-	Operation     string    `json:"operation"`
-	Route         string    `json:"route"`
-	Round         int       `json:"round"`
-	StartedAt     time.Time `json:"started_at"`
-	Finished      bool      `json:"finished"`
-	ProxyUsed     bool      `json:"proxy_used"`
-	DNSRole       string    `json:"dns_role"`
-	Phase         string    `json:"phase"`
-	ErrorCode     string    `json:"error_code,omitempty"`
-	HTTPStatus    int       `json:"http_status,omitempty"`
-	RequestID     string    `json:"request_id,omitempty"`
-	COSRequestID  string    `json:"cos_request_id,omitempty"`
-	DNSMS         int64     `json:"dns_ms"`
-	DNSCount      int       `json:"dns_address_count"`
-	DNSAddresses  []string  `json:"public_dns_addresses,omitempty"`
-	PeerIP        string    `json:"public_peer_ip,omitempty"`
-	PeerFamily    string    `json:"peer_family,omitempty"`
-	ConnectMS     int64     `json:"connect_ms"`
-	TLSMS         int64     `json:"tls_ms"`
-	TLSVersion    string    `json:"tls_version,omitempty"`
-	HTTPProtocol  string    `json:"http_protocol,omitempty"`
-	FirstByteMS   int64     `json:"first_byte_ms"`
-	TotalMS       int64     `json:"total_ms"`
-	BodyOffered   int64     `json:"body_bytes_consumed_by_transport"`
-	BodyRead      int64     `json:"body_bytes_read"`
-	BodyTruncated bool      `json:"body_truncated,omitempty"`
-	ExpectedBytes int64     `json:"expected_bytes,omitempty"`
-	ContentLength int64     `json:"response_content_length"`
-	SHA256Match   bool      `json:"sha256_match,omitempty"`
+	Target             string    `json:"target"`
+	Host               string    `json:"host"`
+	Operation          string    `json:"operation"`
+	Route              string    `json:"route"`
+	Round              int       `json:"round"`
+	StartedAt          time.Time `json:"started_at"`
+	Finished           bool      `json:"finished"`
+	ProxyUsed          bool      `json:"proxy_used"`
+	DNSRole            string    `json:"dns_role"`
+	Phase              string    `json:"phase"`
+	ErrorCode          string    `json:"error_code,omitempty"`
+	HTTPStatus         int       `json:"http_status,omitempty"`
+	RequestID          string    `json:"request_id,omitempty"`
+	RequestIDHeader    string    `json:"request_id_header,omitempty"`
+	COSRequestID       string    `json:"cos_request_id,omitempty"`
+	COSRequestIDHeader string    `json:"cos_request_id_header,omitempty"`
+	DNSMS              int64     `json:"dns_ms"`
+	DNSCount           int       `json:"dns_address_count"`
+	DNSAddresses       []string  `json:"public_dns_addresses,omitempty"`
+	PeerIP             string    `json:"public_peer_ip,omitempty"`
+	PeerFamily         string    `json:"peer_family,omitempty"`
+	ConnectMS          int64     `json:"connect_ms"`
+	TLSMS              int64     `json:"tls_ms"`
+	TLSVersion         string    `json:"tls_version,omitempty"`
+	HTTPProtocol       string    `json:"http_protocol,omitempty"`
+	FirstByteMS        int64     `json:"first_byte_ms"`
+	TotalMS            int64     `json:"total_ms"`
+	BodyOffered        int64     `json:"body_bytes_consumed_by_transport"`
+	BodyRead           int64     `json:"body_bytes_read"`
+	BodyTruncated      bool      `json:"body_truncated,omitempty"`
+	ExpectedBytes      int64     `json:"expected_bytes,omitempty"`
+	ContentLength      int64     `json:"response_content_length"`
+	SHA256Match        bool      `json:"sha256_match,omitempty"`
 }
 type proxyFunc func(*http.Request) (*url.URL, error)
 type probeRequest struct {
@@ -215,8 +217,8 @@ func (e probeEngine) probe(parent context.Context, p probeRequest, checkpoint fu
 	if resp != nil {
 		update(func() {
 			r.HTTPStatus = resp.StatusCode
-			r.RequestID = safeID(resp.Header.Get("X-Request-Id"))
-			r.COSRequestID = safeID(resp.Header.Get("X-Cos-Request-Id"))
+			r.RequestID, r.RequestIDHeader = responseID(resp.Header, "X-Oneapi-Request-Id", "X-Request-Id")
+			r.COSRequestID, r.COSRequestIDHeader = responseID(resp.Header, "X-Cos-Request-Id", "X-Amz-Request-Id")
 			r.HTTPProtocol = resp.Proto
 			r.ContentLength = resp.ContentLength
 			r.Phase = "read_response"
@@ -259,6 +261,15 @@ func (e probeEngine) probe(parent context.Context, p probeRequest, checkpoint fu
 }
 
 var errReadLimit = errors.New("response limit")
+
+func responseID(h http.Header, names ...string) (string, string) {
+	for _, name := range names {
+		if id := safeID(h.Get(name)); id != "" {
+			return id, name
+		}
+	}
+	return "", ""
+}
 
 func networkErrorCode(err error, phase string) string {
 	var dns *net.DNSError

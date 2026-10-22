@@ -21,13 +21,14 @@ func TestProbeConnectivityIDsTLSAndProxyPrivacy(t *testing.T) {
 			t.Error("unexpected authenticated/generation request")
 		}
 		w.Header().Set("X-Request-Id", "api-123")
+		w.Header().Set("X-Oneapi-Request-Id", "beefapi-123")
 		w.Header().Set("X-Cos-Request-Id", "NTg3NzRiMjVfYmRjMzVfMTViMl82ZGZmNw==")
 		w.WriteHeader(403)
 	}))
 	defer server.Close()
 	p := probeRequest{target: Target{Name: "COS", URL: server.URL}, method: "HEAD", route: "direct", operation: "https_connectivity", readLimit: 4096}
 	r, _ := (probeEngine{}).probe(context.Background(), p, nil)
-	if r.ErrorCode != "" || r.HTTPStatus != 403 || r.RequestID != "api-123" || r.COSRequestID != "NTg3NzRiMjVfYmRjMzVfMTViMl82ZGZmNw==" || r.Phase != "http_response" || !r.Finished {
+	if r.ErrorCode != "" || r.HTTPStatus != 403 || r.RequestID != "beefapi-123" || r.RequestIDHeader != "X-Oneapi-Request-Id" || r.COSRequestID != "NTg3NzRiMjVfYmRjMzVfMTViMl82ZGZmNw==" || r.Phase != "http_response" || !r.Finished {
 		t.Fatal(r)
 	}
 	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("untrusted certificate accepted") }))
@@ -60,6 +61,23 @@ func TestProbeConnectivityIDsTLSAndProxyPrivacy(t *testing.T) {
 	r, _ = (probeEngine{proxy: func(*http.Request) (*url.URL, error) { calls.Add(1); return proxyURL, nil }}).probe(ctx, p, nil)
 	if calls.Load() != 0 || r.ProxyUsed || r.ErrorCode == "" {
 		t.Fatal("direct consulted proxy")
+	}
+}
+
+func TestResponseIDCompatibility(t *testing.T) {
+	h := http.Header{}
+	h.Set("X-Amz-Request-Id", "NTg3NzRiMjVfYmRjMzVfMTViMl82ZGZmNw==")
+	id, source := responseID(h, "X-Cos-Request-Id", "X-Amz-Request-Id")
+	if id == "" || source != "X-Amz-Request-Id" {
+		t.Fatal("S3 compatible COS ID missing")
+	}
+	h.Set("X-Request-Id", "generic-123")
+	id, source = responseID(h, "X-Oneapi-Request-Id", "X-Request-Id")
+	if id != "generic-123" || source != "X-Request-Id" {
+		t.Fatal("generic ID missing")
+	}
+	if safeID("secret\r\nHeader: value") != "" || safeID(strings.Repeat("A", 161)) != "" {
+		t.Fatal("unsafe ID accepted")
 	}
 }
 func TestActualUnansweredDNSStaysDNSAndPreservesPartial(t *testing.T) {
