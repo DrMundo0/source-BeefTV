@@ -472,13 +472,6 @@ func ClassifyError(err error) Failure {
 		failure.Retryable = false
 		return failure
 	}
-	var dns *outbound.DNSResolutionError
-	if errors.As(err, &dns) {
-		failure := normalizeFailure(Failure{Category: CategoryNetwork, Reason: "模型服务域名解析失败", Action: "请检查网络；已提交的任务请继续查询原任务，不要重新生成"})
-		var networkError net.Error
-		failure.Retryable = errors.As(dns, &networkError) && (networkError.Timeout() || networkError.Temporary())
-		return failure
-	}
 	var notSent RequestNotSentError
 	if errors.As(err, &notSent) {
 		return normalizeFailure(Failure{Category: CategoryRequestNotSent})
@@ -535,6 +528,13 @@ func ClassifyError(err error) Failure {
 		failure.Reason = ""
 		failure.Action = ""
 		return normalizeFailure(failure)
+	}
+	var dns *outbound.DNSResolutionError
+	if errors.As(err, &dns) {
+		failure := normalizeFailure(Failure{Category: CategoryNetwork, Reason: "模型服务域名解析失败", Action: "请检查网络；已提交的任务请继续查询原任务，不要重新生成"})
+		var networkError net.Error
+		failure.Retryable = errors.As(dns, &networkError) && (networkError.Timeout() || networkError.Temporary())
+		return failure
 	}
 	var httpErr HTTPError
 	if errors.As(err, &httpErr) {

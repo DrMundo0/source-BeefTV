@@ -23,6 +23,8 @@ func (t *transportTrace) attach(req *http.Request) *http.Request {
 		DNSDone: func(info httptrace.DNSDoneInfo) {
 			if info.Err == nil {
 				t.phase.Store("connect")
+			} else {
+				t.phase.Store("dns")
 			}
 		},
 		ConnectStart:      func(string, string) { t.phase.Store("connect") },

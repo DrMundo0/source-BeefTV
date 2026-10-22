@@ -34,6 +34,9 @@ func controlledResolver(t *testing.T, code func() dnsmessage.RCode) {
 			if query.Unpack(buffer[:n]) != nil {
 				continue
 			}
+			if code == nil {
+				continue // A real DNS socket that never answers.
+			}
 			response := dnsmessage.Message{Header: dnsmessage.Header{ID: query.ID, Response: true, RecursionAvailable: true, RCode: code()}, Questions: query.Questions}
 			if response.RCode == dnsmessage.RCodeSuccess {
 				for _, q := range query.Questions {
@@ -53,6 +56,20 @@ func controlledResolver(t *testing.T, code func() dnsmessage.RCode) {
 		return (&net.Dialer{}).DialContext(ctx, "udp", conn.LocalAddr().String())
 	}}
 	t.Cleanup(func() { net.DefaultResolver = previous; _ = conn.Close(); <-done })
+}
+
+func TestDNSDeadlineKeepsDNSPhaseAfterResolverSocketConnect(t *testing.T) {
+	controlledResolver(t, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	receipts := &recordingReceipts{}
+	ctx = WithRuntime(ctx, Runtime{Receipts: receipts})
+	var response map[string]any
+	err := GetJSON(ctx, Config{BaseURL: "https://owned-dns-deadline.invalid", APIKey: "owned-test"}, "/videos/original", &response)
+	seen := receipts.snapshot()
+	if !errors.Is(err, context.DeadlineExceeded) || len(seen) != 1 || seen[0].Dispatched || seen[0].TransportPhase != "dns" {
+		t.Fatalf("DNS socket deadline lost phase: err=%T observations=%d", err, len(seen))
+	}
 }
 
 func TestVideoPollRecoversRealDNSFailureWithoutResubmission(t *testing.T) {
