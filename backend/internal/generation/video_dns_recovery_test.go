@@ -72,6 +72,20 @@ func TestDNSDeadlineKeepsDNSPhaseAfterResolverSocketConnect(t *testing.T) {
 	}
 }
 
+func TestVideoPollStageWriteFailureDoesNotInventProviderSyncFailure(t *testing.T) {
+	var stages []string
+	stageErr := errors.New("local stage write failed")
+	ctx := WithRuntime(context.Background(), Runtime{Stages: stageRecorder{events: &stages, err: stageErr}})
+	_, err := RunVideoPollLoop(ctx, "original", DefaultVideoPollPolicy(), func(context.Context) (VideoPollOutcome, error) {
+		t.Fatal("query started after stage persistence failed")
+		return VideoPollOutcome{}, nil
+	})
+	var pending StatePendingError
+	if !errors.Is(err, stageErr) || errors.As(err, &pending) {
+		t.Fatal("local persistence failure became an upstream synchronization failure")
+	}
+}
+
 func TestVideoPollRecoversRealDNSFailureWithoutResubmission(t *testing.T) {
 	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
 	t.Setenv("NO_PROXY", "*")

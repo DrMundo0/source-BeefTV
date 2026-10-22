@@ -86,7 +86,7 @@ func RunVideoPollLoop(ctx context.Context, taskID string, policy VideoPollPolicy
 	policy = NormalizeVideoPollPolicy(policy)
 	runtime, _ := RuntimeFromContext(ctx)
 	if err := setExecutionStage(ctx, runtime, policy.QueryStage); err != nil {
-		return nil, StatePendingError{TaskID: taskID, Cause: err}
+		return nil, err
 	}
 	deadline := PollingDeadline(ctx)
 	pollContext, cancel := context.WithDeadline(ctx, deadline)
