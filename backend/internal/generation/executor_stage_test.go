@@ -119,7 +119,7 @@ func TestVideoWithoutReferencesReportsSubmissionBeforeDispatch(t *testing.T) {
 	runtime := taskRuntime(func(r *Runtime) {
 		r.Stages = stageRecorder{events: &events, err: stageErr}
 	})
-	_, err := Execute(WithRuntime(context.Background(), runtime), Input{Mode: "video", Prompt: "owned fixture", Config: Config{BaseURL: "https://example.com", Model: "video"}})
+	_, err := Execute(WithRuntime(context.Background(), runtime), Input{Mode: "video", Prompt: "owned fixture", Config: Config{BaseURL: "https://example.com", APIKey: "owned-test", Model: "video"}})
 	if !errors.Is(err, stageErr) || !reflect.DeepEqual(events, []string{"正在提交生成任务"}) {
 		t.Fatalf("video dispatch began without a submission stage: %v / %v", events, err)
 	}
