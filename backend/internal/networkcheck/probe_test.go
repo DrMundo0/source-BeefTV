@@ -21,13 +21,13 @@ func TestProbeConnectivityIDsTLSAndProxyPrivacy(t *testing.T) {
 			t.Error("unexpected authenticated/generation request")
 		}
 		w.Header().Set("X-Request-Id", "api-123")
-		w.Header().Set("X-Cos-Request-Id", "cos-456")
+		w.Header().Set("X-Cos-Request-Id", "NTg3NzRiMjVfYmRjMzVfMTViMl82ZGZmNw==")
 		w.WriteHeader(403)
 	}))
 	defer server.Close()
 	p := probeRequest{target: Target{Name: "COS", URL: server.URL}, method: "HEAD", route: "direct", operation: "https_connectivity", readLimit: 4096}
 	r, _ := (probeEngine{}).probe(context.Background(), p, nil)
-	if r.ErrorCode != "" || r.HTTPStatus != 403 || r.RequestID != "api-123" || r.COSRequestID != "cos-456" || r.Phase != "http_response" || !r.Finished {
+	if r.ErrorCode != "" || r.HTTPStatus != 403 || r.RequestID != "api-123" || r.COSRequestID != "NTg3NzRiMjVfYmRjMzVfMTViMl82ZGZmNw==" || r.Phase != "http_response" || !r.Finished {
 		t.Fatal(r)
 	}
 	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("untrusted certificate accepted") }))

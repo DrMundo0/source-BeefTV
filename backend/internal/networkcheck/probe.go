@@ -93,7 +93,9 @@ func (e probeEngine) probe(parent context.Context, p probeRequest, checkpoint fu
 	update := func(fn func()) {
 		mu.Lock()
 		defer mu.Unlock()
-		if !active {return}
+		if !active {
+			return
+		}
 		fn()
 		snapshot := r
 		snapshot.DNSAddresses = append([]string(nil), r.DNSAddresses...)
