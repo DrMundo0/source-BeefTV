@@ -44,9 +44,6 @@ const (
 	officialSeedanceMinAudioSeconds = OfficialSeedanceMinAudioSeconds
 )
 
-// SeedanceVideoPromptMaxChars matches the ModelArk video tool's text schema.
-const SeedanceVideoPromptMaxChars = 32000
-
 func isSeedance2Family(protocol, modelName string) bool {
 	normalizedProtocol := strings.TrimSpace(protocol)
 	if normalizedProtocol != "newapi-channel-2" && normalizedProtocol != "newapi" && normalizedProtocol != "openai" && normalizedProtocol != "openai-videos" && !model.IsVolcengineArkVideoProtocol(model.ChannelInterfaceType(normalizedProtocol)) {

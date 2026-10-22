@@ -19,6 +19,7 @@ import type { ModelReferenceLimits } from "@/lib/model-selection";
 import type { Asset } from "@/stores/use-asset-store";
 import { resourceIdFromStorageKey } from "@/services/api/resources";
 import { assertCanvasImageReferenceTable } from "@/lib/canvas/canvas-reference-table";
+import { resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 
 export type CharacterGenerationReference = {
     nodeId: string;
@@ -41,6 +42,7 @@ export type ResolvedCharacterVoice = {
 
 export type NodeGenerationContext = {
     prompt: string;
+    characterReferenceBindings?: string;
     referenceImages: ReferenceImage[];
     referenceVideos: ReferenceVideo[];
     referenceAudios: ReferenceAudio[];
@@ -594,9 +596,26 @@ export async function hydrateNodeGenerationContext(context: NodeGenerationContex
     }));
     const referenceAudios = [...context.referenceAudios, ...characterVoiceAudios];
     const voiceBlocks = mode === "video" ? resolvedCharacterVoices.map(compileResolvedVoicePrompt) : [];
+    // 角色图可能被普通图片和其他角色的主图隔开；声音样本也可能已作为普通音频连接。
+    // 必须从最终发送数组取编号，不能用角色序号推算图片/音频序号。
+    const characterBindings = details.map((detail, index) => {
+        const reference = context.characterReferences[index]!;
+        const images = referenceImages.flatMap((image, imageIndex) => image.sourceNodeId === reference.nodeId ? [`@图片${imageIndex + 1}`] : []);
+        const sampleResourceId = stringField(detail.character.voice?.profile.sampleResourceId);
+        const audios = mode === "video" && sampleResourceId
+            ? referenceAudios.flatMap((audio, audioIndex) => resourceIdFromStorageKey(audio.storageKey) === sampleResourceId ? [`@音频${audioIndex + 1}`] : [])
+            : [];
+        return [
+            `@角色${index + 1} 与「${detail.asset.title}」指同一角色。`,
+            images.length && `该角色外观参考 ${images.join("、")}，这些图片均属于同一角色。`,
+            audios.length && `该角色音色参考 ${audios.join("、")}。`,
+        ].filter(Boolean).join("");
+    });
     return {
         ...context,
-        prompt: includeCharacterPrompt ? [context.prompt.trim(), ...characterBlocks, ...voiceBlocks].filter(Boolean).join("\n\n") : context.prompt,
+        // promptOnly 不追加角色设定，但已发送媒体的身份绑定不能被一起丢弃。
+        prompt: [context.prompt.trim(), ...(includeCharacterPrompt ? [...characterBlocks, ...voiceBlocks] : [])].filter(Boolean).join("\n\n"),
+        characterReferenceBindings: mode === "video" ? `【角色与参考素材】\n${characterBindings.join("\n")}` : undefined,
         referenceImages,
         referenceAudios,
         resolvedCharacterVersions,
@@ -604,6 +623,14 @@ export async function hydrateNodeGenerationContext(context: NodeGenerationContex
         imageCount: referenceImages.length,
         audioCount: referenceAudios.length,
     };
+}
+
+/** Apply only after the final model is chosen, on the verified Seedance reference-array path. */
+export function bindSeedanceCharacterReferences(context: NodeGenerationContext, config: AiConfig, operation?: string): NodeGenerationContext {
+    if (!context.characterReferenceBindings || operation !== "reference_to_video" || (config.taskWorkflowProvider && config.taskWorkflowProvider !== "model")) return context;
+    const request = resolveModelRequestConfig(config, config.model);
+    if (!["newapi", "openai", "openai-videos", "volcengine-ark-video", "volcengine-ark-agent-plan-video"].includes(request.interfaceType || "") || !/seedance/i.test(request.model)) return context;
+    return { ...context, prompt: `${context.characterReferenceBindings}\n\n${context.prompt}` };
 }
 
 function readNodeTextInput(node: CanvasNodeData) {

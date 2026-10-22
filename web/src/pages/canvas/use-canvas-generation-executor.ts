@@ -3,9 +3,9 @@ import { createClientId } from "@/lib/client-id";
 import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 import { App } from "antd";
 
-import { buildNodeGenerationContext, hydrateNodeGenerationContext } from "@/components/canvas/canvas-node-generation";
+import { bindSeedanceCharacterReferences, buildNodeGenerationContext, hydrateNodeGenerationContext } from "@/components/canvas/canvas-node-generation";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
-import { isGenerationCanceled } from "@/lib/canvas/canvas-project-generation";
+import { buildVideoGenerationMetadata, isGenerationCanceled } from "@/lib/canvas/canvas-project-generation";
 import { buildConfirmedGenerationConfig } from "./canvas-assistant-proposal-execution";
 import type { ConfirmedGenerationInputs } from "./canvas-assistant-proposal-snapshot";
 import { canReleaseCanvasGenerationSource, canvasGenerationPromptMetadata, canvasGenerationRequestFingerprint, runCanvasGenerationSubmissionOnce } from "@/lib/canvas/canvas-generation-submission";
@@ -279,6 +279,7 @@ export function useCanvasGenerationExecutor({
                             return;
                         }
                         let effectivePrompt = skillExecution.prompt.trim();
+                        if (mode === "video") effectivePrompt = bindSeedanceCharacterReferences({ ...rawGenerationContext, prompt: effectivePrompt }, generationConfig, buildVideoGenerationMetadata(sourceNode, rawGenerationContext, generationConfig).videoEditOperation).prompt;
                         stage = "parameters";
                         let styleMetadata = {};
                         if (mode === "image") {

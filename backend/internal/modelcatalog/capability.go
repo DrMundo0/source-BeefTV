@@ -160,8 +160,9 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 	// 文本模型是否支持视觉输入不能从协议或模型名可靠推断，默认关闭，由管理员按真实上游能力开启。
 	streaming := true
 	text := &TextCapabilityConfig{Streaming: &streaming, References: TextReferenceConfig{PromptMaxChars: 32000}}
+	promptMaxChars, promptMaxUTF16Units := videoPromptLimits(protocol, modelName)
 	video := &VideoCapabilityConfig{
-		References:        VideoReferenceConfig{PromptMaxChars: DefaultVideoPromptMaxChars, MinImages: 0, MaxImages: 9, MaxImageBytes: 30 * 1024 * 1024, MaxVideos: 0, MaxVideoBytes: 0, MaxVideoDuration: 0, MaxAudios: 0, MaxAudioBytes: 0, MaxAudioDuration: 0},
+		References:        VideoReferenceConfig{PromptMaxChars: promptMaxChars, PromptMaxUTF16Units: promptMaxUTF16Units, MinImages: 0, MaxImages: 9, MaxImageBytes: 30 * 1024 * 1024, MaxVideos: 0, MaxVideoBytes: 0, MaxVideoDuration: 0, MaxAudios: 0, MaxAudioBytes: 0, MaxAudioDuration: 0},
 		Duration:          VideoDurationConfig{Selection: "range", Min: 1, Max: 15, Step: 1, Default: 6},
 		Ratios:            []string{"16:9", "9:16", "1:1", "4:3", "3:4", "21:9"},
 		DefaultRatio:      "16:9",
@@ -236,7 +237,6 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 		video.Operations = appendUniqueString(video.Operations, "reference_to_video")
 	}
 	if isSeedance2Family(protocol, modelName) {
-		video.References.PromptMaxChars = SeedanceVideoPromptMaxChars
 		if model.ChannelInterfaceType(protocol) == model.ChannelInterfaceNewAPIVideo {
 			video.GenerateAudio = VideoBooleanConfig{Supported: true, Default: true}
 		}
@@ -650,8 +650,11 @@ func validateImageCapabilityConfig(value *ImageCapabilityConfig) error {
 }
 
 func validateVideoCapabilityConfig(value *VideoCapabilityConfig) error {
-	if value.References.PromptMaxChars < 1 || value.References.PromptMaxChars > 1000000 {
-		return kernel.BadAuthRequest("提示词最大字符数必须在 1-1000000 之间")
+	if value.References.PromptMaxChars < 0 || value.References.PromptMaxChars > 1000000 {
+		return kernel.BadAuthRequest("提示词最大字符数必须在 0-1000000 之间，0 表示交由服务商校验")
+	}
+	if value.References.PromptMaxUTF16Units < 0 || value.References.PromptMaxUTF16Units > 1000000 {
+		return kernel.BadAuthRequest("提示词最大 UTF-16 单位数必须在 0-1000000 之间，0 表示交由服务商校验")
 	}
 	for name, number := range map[string]int{"最少图片引用数": value.References.MinImages, "最大图片引用数": value.References.MaxImages, "最大视频引用数": value.References.MaxVideos, "最大音频引用数": value.References.MaxAudios} {
 		if number < 0 || number > 100 {
@@ -781,7 +784,7 @@ func validateVideoTask(profile *VideoCapabilityConfig, input TaskInput) error {
 	if profile == nil {
 		return kernel.BadAuthRequest("当前视频模型能力参数无效")
 	}
-	if err := validateModelPromptLength("视频", input.Prompt, profile.References.PromptMaxChars); err != nil {
+	if err := validateVideoPromptLength(input.Prompt, profile.References); err != nil {
 		return err
 	}
 	if err := validateVideoReferenceMedia(profile, input); err != nil {
@@ -794,7 +797,7 @@ func validateVideoTaskParameters(profile *VideoCapabilityConfig, input TaskInput
 	if profile == nil {
 		return kernel.BadAuthRequest("当前视频模型能力参数无效")
 	}
-	if err := validateModelPromptLength("视频", input.Prompt, profile.References.PromptMaxChars); err != nil {
+	if err := validateVideoPromptLength(input.Prompt, profile.References); err != nil {
 		return err
 	}
 	seconds, err := strconv.ParseFloat(strings.TrimSpace(input.Config.VideoSeconds), 64)
@@ -939,7 +942,7 @@ func validateWorkflowProviderPromptLength(input TaskInput) error {
 	if input.Mode != "video" || profile == nil || profile.Video == nil {
 		return nil
 	}
-	return validateModelPromptLength("视频", input.Prompt, profile.Video.References.PromptMaxChars)
+	return validateVideoPromptLength(input.Prompt, profile.Video.References)
 }
 
 func validateModelPromptLength(label string, prompt string, maxChars int) error {
