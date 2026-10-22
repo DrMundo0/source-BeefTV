@@ -277,6 +277,7 @@ export type CanvasNodeMetadata = {
     size?: string;
     quality?: string;
     transparentBackground?: string;
+    imageLayer?: Record<string, unknown>;
     seedreamMode?: string;
     seedreamMaxImages?: string;
     seedreamOutputFormat?: string;
