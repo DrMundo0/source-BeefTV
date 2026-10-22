@@ -50,3 +50,15 @@ func TestSeedreamGroupAndLayerOptionsStayInOneRequest(t *testing.T) {
 		t.Fatal("Flash must not receive group generation")
 	}
 }
+
+func TestSeedreamCustomGatewayKeepsConfiguredVersion(t *testing.T) {
+	port := &captureImagePort{}
+	input := Input{Mode: "image", Prompt: "a cup", Config: Config{Model: "seedream-4-0-250828", BaseURL: "http://127.0.0.1:33022/v1", APIKey: "synthetic", InterfaceType: "openai-image", Size: "1600x600"}}
+	_, err := RunImageTask(WithRuntime(context.Background(), Runtime{Images: port}), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if port.path != "/v1/images/generations" || port.body["size"] != "1600x600" {
+		t.Fatalf("wire=%#v", port)
+	}
+}

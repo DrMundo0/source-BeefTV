@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -50,7 +51,7 @@ func seedreamImageBody(input Input) (map[string]any, error) {
 	if size == "" || size == "1:1" {
 		size = "2K"
 	}
-	size = strings.ToUpper(size)
+	size = strings.ReplaceAll(strings.ToUpper(size), "X", "x")
 	if size == "AUTO" {
 		size = "auto"
 	}
@@ -106,7 +107,8 @@ func runSeedreamImageTask(ctx context.Context, input Input) (map[string]interfac
 	}
 	// The managed connection uses BeefAPI's public Images endpoint. Direct Ark
 	// services share the same JSON body and their configured /api/v3 base.
-	if !providerpreset.IsBeefAPIEndpoint(input.Config.BaseURL) && !strings.Contains(input.Config.BaseURL, "/api/") {
+	base, _ := url.Parse(input.Config.BaseURL)
+	if base != nil && (strings.EqualFold(base.Hostname(), "ark.ap-southeast.bytepluses.com") || strings.EqualFold(base.Hostname(), "ark.cn-beijing.volces.com")) && baseAPIPathPrefix(input.Config.BaseURL) == "" {
 		input.Config.BaseURL = strings.TrimRight(input.Config.BaseURL, "/") + "/api/v3"
 	}
 	var payload ImageResponse
