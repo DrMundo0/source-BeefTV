@@ -277,6 +277,11 @@ export type CanvasNodeMetadata = {
     size?: string;
     quality?: string;
     transparentBackground?: string;
+    seedreamMode?: string;
+    seedreamMaxImages?: string;
+    seedreamOutputFormat?: string;
+    seedreamOptimize?: string;
+    seedreamWatermark?: string;
     count?: number;
     textCount?: number;
     seconds?: string;
