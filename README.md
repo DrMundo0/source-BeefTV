@@ -1,3 +1,5 @@
+* upstream: https://github.com/glanderness/BeefTV
+
 <p align="center">
   <img src="assets/readme/beeftv-wordmark.svg" width="640" alt="BeefTV — High-performance, lightweight, AI-native video workspace">
 </p>
