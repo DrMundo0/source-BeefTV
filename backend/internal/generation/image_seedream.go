@@ -180,6 +180,9 @@ func readSeedreamImageEvents(data []byte) (ImageResponse, error) {
 		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
+		if strings.TrimSpace(strings.TrimPrefix(line, "data:")) == "[DONE]" {
+			break
+		}
 		var event struct {
 			Type       string `json:"type"`
 			ImageIndex int    `json:"image_index"`
