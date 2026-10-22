@@ -1,12 +1,16 @@
 package generation
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -73,6 +77,8 @@ func seedreamImageBody(input Input) (map[string]any, error) {
 			return nil, errors.New("参考图片与组图数量合计不能超过 15 张")
 		}
 		if n > 1 {
+			body["stream"] = true
+			body["response_format"] = "url"
 			body["sequential_image_generation"] = "auto"
 			body["sequential_image_generation_options"] = map[string]any{"max_images": n}
 		}
@@ -112,7 +118,16 @@ func runSeedreamImageTask(ctx context.Context, input Input) (map[string]interfac
 		input.Config.BaseURL = strings.TrimRight(input.Config.BaseURL, "/") + "/api/v3"
 	}
 	var payload ImageResponse
-	if err = PostJSON(ctx, input.Config, "/images/generations", body, &payload); err != nil {
+	if body["stream"] == true {
+		data, _, e := PostBinary(ctx, input.Config, "/images/generations", body)
+		if e != nil {
+			return nil, e
+		}
+		payload, err = readSeedreamImageEvents(data)
+	} else {
+		err = PostJSON(ctx, input.Config, "/images/generations", body, &payload)
+	}
+	if err != nil {
 		return nil, err
 	}
 	for _, item := range payload.Data {
@@ -150,4 +165,54 @@ func runSeedreamImageTask(ctx context.Context, input Input) (map[string]interfac
 		result["imageLayers"] = layers
 	}
 	return result, nil
+}
+
+// Keep successfully returned images even if a later stream event fails. The
+// gateway settles delivered images; retrying the whole group would charge twice.
+func readSeedreamImageEvents(data []byte) (ImageResponse, error) {
+	payload := ImageResponse{}
+	seen := map[int]bool{}
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 4096), 64<<20)
+	var terminalErr error
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		var event struct {
+			Type       string `json:"type"`
+			ImageIndex int    `json:"image_index"`
+			URL        string `json:"url"`
+			B64        string `json:"b64_json"`
+			Size       string `json:"size"`
+			Error      *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if e := json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(line, "data:"))), &event); e != nil {
+			terminalErr = e
+			break
+		}
+		if event.Type == "image_generation.partial_succeeded" && event.ImageIndex >= 0 && !seen[event.ImageIndex] && (event.URL != "" || event.B64 != "") {
+			seen[event.ImageIndex] = true
+			payload.Data = append(payload.Data, map[string]any{"url": event.URL, "b64_json": event.B64, "size": event.Size, "image_index": event.ImageIndex})
+		}
+		if event.Error != nil {
+			terminalErr = errors.New(event.Error.Message)
+		}
+	}
+	if len(payload.Data) > 0 {
+		sort.Slice(payload.Data, func(i, j int) bool {
+			return payload.Data[i]["image_index"].(int) < payload.Data[j]["image_index"].(int)
+		})
+		return payload, nil
+	}
+	if terminalErr != nil {
+		return payload, terminalErr
+	}
+	if scanner.Err() != nil {
+		return payload, scanner.Err()
+	}
+	return payload, errors.New("图片流没有返回可保存的图片")
 }

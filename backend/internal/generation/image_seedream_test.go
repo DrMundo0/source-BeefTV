@@ -62,3 +62,14 @@ func TestSeedreamCustomGatewayKeepsConfiguredVersion(t *testing.T) {
 		t.Fatalf("wire=%#v", port)
 	}
 }
+
+func TestSeedreamStreamKeepsDeliveredImagesAfterPartialFailure(t *testing.T) {
+	data := []byte("data: {\"type\":\"image_generation.partial_succeeded\",\"image_index\":0,\"url\":\"https://example.test/0.png\",\"size\":\"2048x2048\"}\n\ndata: {\"type\":\"image_generation.partial_failed\",\"image_index\":1,\"error\":{\"message\":\"filtered\"}}\n\n")
+	payload, err := readSeedreamImageEvents(data)
+	if err != nil || len(payload.Data) != 1 {
+		t.Fatalf("payload=%#v err=%v", payload, err)
+	}
+	if _, err = readSeedreamImageEvents([]byte("data: {\"type\":\"error\",\"error\":{\"message\":\"failed\"}}\n")); err == nil {
+		t.Fatal("empty stream must fail")
+	}
+}
