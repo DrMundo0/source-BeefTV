@@ -88,13 +88,15 @@ func (e probeEngine) probe(parent context.Context, p probeRequest, checkpoint fu
 	}
 	start := time.Now()
 	var mu sync.Mutex
+	active := true
 	var dns, tcp, handshake time.Time
 	update := func(fn func()) {
 		mu.Lock()
+		defer mu.Unlock()
+		if !active {return}
 		fn()
 		snapshot := r
 		snapshot.DNSAddresses = append([]string(nil), r.DNSAddresses...)
-		mu.Unlock()
 		if checkpoint != nil {
 			checkpoint(snapshot)
 		}
@@ -227,6 +229,7 @@ func (e probeEngine) probe(parent context.Context, p probeRequest, checkpoint fu
 	}
 	mu.Lock()
 	defer mu.Unlock()
+	active = false
 	r.BodyOffered = reader.n.Load()
 	r.BodyRead = int64(len(data))
 	r.BodyTruncated = int64(len(data)) > p.readLimit
