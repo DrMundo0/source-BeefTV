@@ -16,6 +16,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cos-host", required=True)
     args = parser.parse_args()
+    args.output = args.output.resolve()
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]*-[0-9]+\.cos\.ap-[a-z-]+\.myqcloud\.com", args.cos_host):
         parser.error("cos-host must be an official COS bucket hostname")
     kit = args.output / "BeefTV-network-check-windows-x64"

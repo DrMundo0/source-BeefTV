@@ -132,6 +132,7 @@ func operatorRequest(ctx context.Context, c Credentials, region, method, raw str
 	if err != nil {
 		return 0, nil, errors.New("invalid request")
 	}
+	req.Header.Set("X-Amz-Content-Sha256", digest(nil))
 	if err := v4.NewSigner().SignHTTP(ctx, c.aws(), req, digest(nil), "s3", region, time.Now(), func(o *v4.SignerOptions) { o.DisableURIPathEscaping = true }); err != nil {
 		return 0, nil, errors.New("sign failed")
 	}
