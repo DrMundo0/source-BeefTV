@@ -3,7 +3,7 @@ import test from "node:test";
 
 // Bun 直接执行 TypeScript 测试时需要保留扩展名；生产 tsconfig 不包含 test/。
 import { DEFAULT_VIDEO_PROMPT_MAX_CHARS, defaultModelCapabilityConfig, modelCapabilityConfigFor, normalizeVideoValue, videoDurationAllowed } from "../src/lib/model-capabilities.ts";
-import { modelCompatibilityError } from "../src/lib/model-selection.ts";
+import { modelCompatibilityError, modelPromptLengthError } from "../src/lib/model-selection.ts";
 import type { AiConfig } from "../src/stores/use-config-store.ts";
 import { seedanceTaskOptions, seedanceOmniTaskType } from "../src/lib/seedance-task-constraints.ts";
 
@@ -87,6 +87,24 @@ test("raising the video default leaves text and image limits untouched", () => {
     const profile = defaultModelCapabilityConfig("seedance-videos-compatible", "sd-2.5");
     assert.equal(profile.text!.references.promptMaxChars, 32000);
     assert.equal(profile.image!.references.promptMaxChars, 32000);
+});
+
+test("Seedance defaults accept long scripts without widening other video models", () => {
+    for (const model of ["seedance-2.0", "seedance-2.0-fast", "doubao-seedance-2-0-260128"]) {
+        assert.equal(defaultModelCapabilityConfig("newapi", model).video!.references.promptMaxChars, 32000);
+    }
+    assert.equal(defaultModelCapabilityConfig("newapi", "other-video").video!.references.promptMaxChars, 8000);
+});
+
+test("a refreshed Seedance catalog allows 8101 characters and still enforces its declared ceiling", () => {
+    const model = "seedance-2.0";
+    const capabilityConfig = defaultModelCapabilityConfig("newapi", model);
+    const config = { channels: [{ id: "official", name: "official", baseUrl: "https://enterprise.beefapi.com", apiKey: "test", apiFormat: "openai", models: [model], modelProfiles: [{ model, protocol: "newapi", capability: "video", capabilityConfig }] }] } as AiConfig;
+    assert.equal(modelPromptLengthError(config, `official::${model}`, "video", "镜".repeat(8101)), "");
+    assert.equal(modelPromptLengthError(config, `official::${model}`, "video", "镜".repeat(32000)), "");
+    assert.match(modelPromptLengthError(config, `official::${model}`, "video", "镜".repeat(32001)), /32001/);
+    capabilityConfig.video!.references.promptMaxChars = 4096;
+    assert.match(modelPromptLengthError(config, `official::${model}`, "video", "镜".repeat(4097)), /4096/);
 });
 
 test("APIMart NewAPI channel exposes Seedance multimodal reference operations", () => {

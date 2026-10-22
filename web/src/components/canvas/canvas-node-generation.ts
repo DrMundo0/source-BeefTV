@@ -18,6 +18,7 @@ import { audioFileExtension } from "@/lib/character-voice-formats";
 import type { ModelReferenceLimits } from "@/lib/model-selection";
 import type { Asset } from "@/stores/use-asset-store";
 import { resourceIdFromStorageKey } from "@/services/api/resources";
+import { assertCanvasImageReferenceTable } from "@/lib/canvas/canvas-reference-table";
 
 export type CharacterGenerationReference = {
     nodeId: string;
@@ -91,7 +92,7 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
     const hasConnectedMedia = connectedInputs.some((input) => input.type === "image" || input.type === "video" || input.type === "audio" || input.type === "character");
     if ((promptOnly && hasConnectedMedia) || (Boolean(sourceNode?.metadata?.composerContent?.trim()) && (sourceNode?.type === CanvasNodeType.Config || isWorkflowSource)) || hasExplicitResourceMention) {
         const autoIncludeWorkflowMedia = isWorkflowSource;
-        return buildComposerGenerationContext(
+        const context = buildComposerGenerationContext(
             mentionInputs,
             prompt,
             // 工作流节点由字段映射接收全部连线媒体；视频节点的历史首尾帧字段不能再额外追加参考图。
@@ -100,6 +101,8 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
             autoIncludeWorkflowMedia || (promptOnly && hasConnectedMedia),
             connectedInputs,
         );
+        if (sourceNode?.type === CanvasNodeType.Image || sourceNode?.type === CanvasNodeType.Video) assertCanvasImageReferenceTable(context.prompt, context.referenceImages.map((image) => mentionInputs.find((input) => input.image?.id === image.id)?.title || image.name));
+        return context;
     }
 
     const isStoryboardMedia = sourceNode?.type === CanvasNodeType.Image || sourceNode?.type === CanvasNodeType.Video;
@@ -114,8 +117,10 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
     const referenceVideos = connectedInputs.map((input) => input.video).filter((video): video is ReferenceVideo => Boolean(video));
     const referenceAudios = connectedInputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
+    const composedPrompt = promptOnly ? prompt : upstreamText ? `${basePrompt}\n\n${upstreamText}` : basePrompt;
+    if (sourceNode?.type === CanvasNodeType.Image || sourceNode?.type === CanvasNodeType.Video) assertCanvasImageReferenceTable(composedPrompt, referenceImages.map((image) => connectedInputs.find((input) => input.image?.id === image.id)?.title || image.name));
     return {
-        prompt: promptOnly ? prompt : upstreamText ? `${basePrompt}\n\n${upstreamText}` : basePrompt,
+        prompt: composedPrompt,
         referenceImages,
         referenceVideos,
         referenceAudios,
@@ -366,7 +371,7 @@ function resolveGenerationMention(
 
 function hasMentionBoundary(value: string, index: number) {
     const char = value[index];
-    return !char || /\s|[,.!?;:，。！？；：、)\]}】）]/.test(char);
+    return !char || /\s|[,.!?;:，。！？；：、)\]}】）`"'|]/.test(char);
 }
 
 export function buildNodeGenerationInputs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): NodeGenerationInput[] {

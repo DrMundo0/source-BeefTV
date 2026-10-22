@@ -148,6 +148,26 @@ func TestDisabledAndUnavailableModelsAreNotPublic(t *testing.T) {
 	}
 }
 
+func TestSeedanceLongPromptDefaultAndBoundary(t *testing.T) {
+	for _, protocol := range []string{"newapi", "volcengine-ark-video"} {
+		profile := DefaultModelCapabilityConfigForModel(protocol, "seedance-2.0").Video
+		if profile.References.PromptMaxChars != 32000 {
+			t.Fatalf("%s prompt ceiling = %d", protocol, profile.References.PromptMaxChars)
+		}
+		for _, length := range []int{8101, 32000} {
+			if err := validateModelPromptLength("视频", strings.Repeat("镜", length), profile.References.PromptMaxChars); err != nil {
+				t.Fatalf("%s rejected %d characters: %v", protocol, length, err)
+			}
+		}
+		if err := validateModelPromptLength("视频", strings.Repeat("镜", 32001), profile.References.PromptMaxChars); err == nil {
+			t.Fatal("must reject prompts beyond the advertised ceiling")
+		}
+	}
+	if got := DefaultModelCapabilityConfigForModel("newapi", "other-video").Video.References.PromptMaxChars; got != 8000 {
+		t.Fatalf("unrelated video default changed to %d", got)
+	}
+}
+
 func TestSanitizeChannelModelOmitsSecrets(t *testing.T) {
 	cfg := DefaultModelCapabilityConfigForModel("newapi-channel-2", "seedance-2.0")
 	encoded, err := json.Marshal(cfg)

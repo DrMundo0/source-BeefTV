@@ -33,6 +33,7 @@ export type ImageSizeParameter = "none" | "size" | "aspect_ratio";
  * `DefaultVideoPromptMaxChars` 保持一致，否则前端放行后端拒绝（或反之）。
  */
 export const DEFAULT_VIDEO_PROMPT_MAX_CHARS = 8000;
+export const SEEDANCE_VIDEO_PROMPT_MAX_CHARS = 32000;
 
 export type ImageCapabilityConfig = {
     references: {
@@ -638,6 +639,7 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.operations.push("reference_to_video", "audio_to_video");
     }
     if (isSeedance2Family(protocol, model)) {
+        video.references.promptMaxChars = SEEDANCE_VIDEO_PROMPT_MAX_CHARS;
         if (protocol === "newapi") video.generateAudio = { supported: true, default: true };
         video.references = overlayOfficialSeedance2References(video.references, isSeedance25Model(model));
         if (protocol === "volcengine-ark-video" || protocol === "volcengine-ark-agent-plan-video") video.references.minAudioDurationSeconds = 2;

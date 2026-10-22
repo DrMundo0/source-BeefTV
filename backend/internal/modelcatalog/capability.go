@@ -236,6 +236,7 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 		video.Operations = appendUniqueString(video.Operations, "reference_to_video")
 	}
 	if isSeedance2Family(protocol, modelName) {
+		video.References.PromptMaxChars = SeedanceVideoPromptMaxChars
 		if model.ChannelInterfaceType(protocol) == model.ChannelInterfaceNewAPIVideo {
 			video.GenerateAudio = VideoBooleanConfig{Supported: true, Default: true}
 		}

@@ -78,7 +78,7 @@ export function autoMentionCanvasResourceReferences(prompt: string, references: 
     references
         .filter((reference) => reference.active && !reference.assetId && reference.kind !== "skill")
         .forEach((reference, index) => {
-            canvasResourceMentionNames(reference, index, true).forEach((name) => {
+            canvasResourceMentionNames(reference, index, false).forEach((name) => {
                 if (!referenceByName.has(name)) {
                     referenceByName.set(name, reference);
                     return;
@@ -99,7 +99,6 @@ export function autoMentionCanvasResourceReferences(prompt: string, references: 
             if (part.startsWith("@")) return part;
             return part.replace(matcher, (match, prefix: string, name: string, offset: number, source: string) => {
                 const nextCharacter = source[offset + match.length];
-                if (/^\d+$/u.test(name) && ((prefix && !/[\s,.!?;:，。！？；：、)\]}】）]/u.test(prefix)) || (nextCharacter && !/[\s,.!?;:，。！？；：、)\]}】）]/u.test(nextCharacter)))) return match;
                 const separator = needsAutoMentionSeparator(nextCharacter) ? " " : "";
                 return `${prefix}${canvasResourceMentionToken(referenceByName.get(name)!)}${separator}`;
             });
@@ -147,13 +146,10 @@ export function findCanvasResourceAutoLinkMatch(prompt: string, cursor: number, 
 }
 
 function canvasResourceMentionNames(reference: CanvasResourceReference, index: number, includeBareNumber: boolean) {
-    const names = new Set([reference.label.trim(), reference.title.trim()].filter(Boolean));
+    const names = new Set([reference.label.trim(), reference.title.trim()].filter((name) => name && (includeBareNumber || !/^\d+$/u.test(name))));
     const order = index + 1;
-    names.add(`图片${order}`);
-    names.add(`图${order}`);
-    names.add(`image${order}`);
-    names.add(`image ${order}`);
-    const imageLabelMatch = /^图片(\d+)$/u.exec(reference.label.trim());
+    // Media labels are numbered per kind; the mixed shelf position is not an image slot.
+    const imageLabelMatch = reference.kind === "image" && /^图片(\d+)$/u.exec(reference.label.trim());
     if (imageLabelMatch) {
         names.add(`图${imageLabelMatch[1]}`);
         names.add(`image${imageLabelMatch[1]}`);
