@@ -20,7 +20,8 @@ import { CanvasAssistantAttachments } from "./canvas-assistant-attachments";
 import { ASSISTANT_CONTINUE_PROMPT, ASSISTANT_CHECK_RESULTS_PROMPT, ASSISTANT_STARTER_PROMPTS, appendAssistantDraft, assistantSkillLabel, assistantStatusNotice, assistantVisibleReply } from "./canvas-assistant-copy";
 import { CanvasAssistantComposer } from "./canvas-assistant-composer";
 import { CanvasAssistantReply, CanvasAssistantTurnView, CanvasAssistantUserMessage } from "./canvas-assistant-turn";
-import { ASSISTANT_MAX_WIDTH, ASSISTANT_MIN_WIDTH, type CanvasAssistantController } from "./use-canvas-assistant";
+import { AssistantReasoning } from "@/components/ai/message-reasoning";
+import { ASSISTANT_LIVE_TURN_KEY, ASSISTANT_MAX_WIDTH, ASSISTANT_MIN_WIDTH, type CanvasAssistantController } from "./use-canvas-assistant";
 import "./canvas-assistant-sidebar.css";
 
 type Props = {
@@ -146,7 +147,7 @@ export function CanvasAssistantSidebar(props: Props) {
     useLayoutEffect(() => {
         const node = logRef.current;
         if (node && followLatestRef.current) node.scrollTop = node.scrollHeight;
-    }, [turnCount, assistant.streamed, assistant.pendingUserText, assistant.lifecycleNotice, props.proposalFeedback]);
+    }, [turnCount, assistant.streamed, assistant.reasoning, assistant.pendingUserText, assistant.lifecycleNotice, props.proposalFeedback]);
 
     const notice = assistant.status && !assistant.status.available && assistant.status.reason !== "host_starting" ? assistantStatusNotice(assistant.status.reason) : null;
     const inputReady = draftLoaded && loadedDraftIdentity === draftIdentity;
@@ -197,7 +198,15 @@ export function CanvasAssistantSidebar(props: Props) {
     const content = (
         <div className="canvas-assistant-panel" data-canvas-no-zoom>
             <header className="canvas-assistant-header">
-                <div className="canvas-assistant-heading"><h2>BeefTV Agent</h2></div>
+                <div className="canvas-assistant-heading">
+                    <h2>BeefTV Agent</h2>
+                    {assistant.streaming ? (
+                        <span className="canvas-assistant-live-badge" aria-hidden="true">
+                            <span className="canvas-assistant-live-dot" />
+                            工作中
+                        </span>
+                    ) : null}
+                </div>
                 <Link to="/skills" className="canvas-assistant-meta" aria-label="打开技能市场和我的投稿">技能</Link>
                 <Tooltip title="新对话">
                     <Button type="text" size="small" aria-label="新对话" disabled={assistant.streaming || assistant.sessionBusy} icon={<MessageSquarePlus className="size-4" />} onClick={() => void assistant.startNewSession()} />
@@ -252,6 +261,8 @@ export function CanvasAssistantSidebar(props: Props) {
                         nodes={props.nodes}
                         onCheckResults={!readOnly && inputReady && !assistant.streaming && !assistant.sessionBusy ? prepareResultCheck : undefined}
                         onContinue={!readOnly && inputReady && !assistant.streaming && !assistant.sessionBusy && turn.turnId === assistant.turns.at(-1)?.turnId ? () => setDraft(current => appendAssistantDraft(current, ASSISTANT_CONTINUE_PROMPT)) : undefined}
+                        reasoningOpen={assistant.reasoningOpen[turn.turnId]}
+                        onReasoningOpenChange={(open) => assistant.setReasoningOpen(turn.turnId, open)}
                     />
                 ))}
 
@@ -271,19 +282,28 @@ export function CanvasAssistantSidebar(props: Props) {
                         <CanvasAssistantAttachments attachments={assistant.pendingAttachments} />
                         {assistant.awaitingReceipt ? <p className="canvas-assistant-meta" role="status">正在读取这次处理的最终结果，已有内容仍然保留。</p> : null}
                         {assistant.pendingSkills.map(skill => <span className="canvas-assistant-chip" key={skill.skillId}>{assistantSkillLabel(skill)}</span>)}
-                        {assistant.supplements.map((item, index) => <div key={index}>
+                        {/* 正在生成的思考与下面的正文分开显示，默认折叠。 */}
+                        <AssistantReasoning segments={assistant.reasoning} open={assistant.reasoningOpen[ASSISTANT_LIVE_TURN_KEY] === true} onOpenChange={(open) => assistant.setReasoningOpen(ASSISTANT_LIVE_TURN_KEY, open)} />
+                        {assistantVisibleReply(assistant.streamed || "") ? <CanvasAssistantReply text={assistant.streamed} /> : null}
+                        {assistant.supplements.map((item, index) => <div key={index} className="canvas-assistant-supplement">
                             <CanvasAssistantUserMessage text={item.text} selectedCount={0} />
                             <CanvasAssistantAttachments attachments={item.attachments || []} />
                             <p className="canvas-assistant-meta" role="status">{item.status === "accepted" ? "助手已收到补充要求。" : item.status === "sending" ? "正在发送补充要求…" : "未能确认收到补充要求。请查看最新回复后再决定是否发送。"}</p>
                         </div>)}
-                        {assistantVisibleReply(assistant.streamed || "") ? <CanvasAssistantReply text={assistant.streamed} /> : null}
-                        {assistant.streaming && (assistant.lifecycleNotice || !assistantVisibleReply(assistant.streamed || "")) ? (
-                            <p className="canvas-assistant-meta">{assistant.lifecycleNotice || "助手正在处理…"}</p>
+                        {assistant.streaming ? (
+                            <div className="canvas-assistant-working" role="status" aria-live="polite">
+                                <span className="canvas-assistant-working-dots" aria-hidden="true">
+                                    <span />
+                                    <span />
+                                    <span />
+                                </span>
+                                <span className="canvas-assistant-working-text">{assistant.lifecycleNotice || "助手正在处理…"}</span>
+                            </div>
                         ) : null}
                     </div>
                 ) : null}
 
-                {!assistant.pendingUserText && !assistant.pendingAttachments.length ? assistant.supplements.filter(item => item.status !== "accepted").map((item, index) => <div key={`unconfirmed:${index}`}>
+                {!assistant.pendingUserText && !assistant.pendingAttachments.length ? assistant.supplements.filter(item => item.status !== "accepted").map((item, index) => <div key={`unconfirmed:${index}`} className="canvas-assistant-supplement">
                     <CanvasAssistantUserMessage text={item.text} selectedCount={0} />
                     <p className="canvas-assistant-meta" role="status">{item.status === "sending" ? "正在确认补充要求是否收到…" : "未能确认收到补充要求。请查看最新回复后再决定是否发送。"}</p>
                 </div>) : null}

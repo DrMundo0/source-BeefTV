@@ -20,7 +20,21 @@ import (
 	"infinite-canvas/backend/internal/providerpreset"
 )
 
+// usesSeedreamRequestBody 判断这次出图是否走 Seedream 专用请求体。Seedream 型号自带
+// 请求体，能保留图层拆分、图片格式、水印和提示词优化设置，改走通用插件会静默丢掉它们。
+// 例外是 Agent Plan 图片协议：它走 /api/plan/v3/images/generations，只有声明式插件知道
+// 那个端点，按型号名套用官方 Ark 路径会把请求发错地址。
+func usesSeedreamRequestBody(input Input) bool {
+	if seedreamFamily(input.Config.Model) == "" {
+		return false
+	}
+	return model.ChannelInterfaceType(input.Config.InterfaceType) != model.ChannelInterfaceVolcengineArkAgentPlanImage
+}
+
 func RunImageTask(ctx context.Context, input Input) (map[string]interface{}, error) {
+	if usesSeedreamRequestBody(input) {
+		return runSeedreamImageTask(ctx, input)
+	}
 	outputCount := 1
 	if input.ImageCapability != nil && input.ImageCapability.FixedOutputs > 0 {
 		outputCount = input.ImageCapability.FixedOutputs
@@ -81,7 +95,7 @@ func RunImageTask(ctx context.Context, input Input) (map[string]interface{}, err
 		writeField(writer, "prompt", WithSystemPrompt(input.Config, input.Prompt))
 		writeField(writer, "n", strconv.Itoa(outputCount))
 		if ImageParameterSupported(input.ImageCapability, "response_format") {
-			writeField(writer, "response_format", "b64_json")
+			writeField(writer, "response_format", ImageResponseFormatValue(input.ImageCapability))
 		}
 		if ImageParameterSupported(input.ImageCapability, "output_format") {
 			writeField(writer, "output_format", "png")
@@ -118,7 +132,7 @@ func RunImageTask(ctx context.Context, input Input) (map[string]interface{}, err
 			"n":      outputCount,
 		}
 		if ImageParameterSupported(input.ImageCapability, "response_format") {
-			body["response_format"] = "b64_json"
+			body["response_format"] = ImageResponseFormatValue(input.ImageCapability)
 		}
 		if ImageParameterSupported(input.ImageCapability, "output_format") {
 			body["output_format"] = "png"

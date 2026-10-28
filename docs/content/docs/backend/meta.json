@@ -4,6 +4,7 @@
   "defaultOpen": true,
   "pages": [
     "local-development",
+    "beeftv-cli",
     "http-api",
     "storyboard-operations",
     "code-map",
@@ -12,6 +13,7 @@
     "generation-errors",
     "seedance-task-constraints",
     "video-model-contracts",
+    "video-prompt-limits",
     "desktop-updater",
     "desktop-account",
     "depth-video-runtime"

@@ -14,13 +14,14 @@ import { assertUserScope, captureUserScope, userScopeMatches, type CapturedUserS
 import { continueCreationConversationOnCanvas } from "@/services/creation-canvas-conversation";
 import { isLocalWorkspaceMode } from "@/services/workspace-mode";
 import { useExternalAssetSources } from "@/hooks/use-external-asset-sources";
-import { modelCapabilityConfigFor, normalizeImageValue, normalizeVideoValue, videoDurationAllowed, videoDurationOptions } from "@/lib/model-capabilities";
+import { modelCapabilityConfigFor, normalizeImageValue, normalizeVideoValue, videoDurationOptions } from "@/lib/model-capabilities";
 import { inferVideoOperation, resolveCompatibleModel, mergedImageCapabilityConfig, type ModelRequirements } from "@/lib/model-selection";
+import { videoSubmitNotice } from "./creation-submit-guard";
 import type { BackendGenerationResult } from "@/services/api/generation-task";
 import type { Skill } from "@/services/api/skills";
 import type { GenerationTask } from "@/services/api/task-center";
 import { acceptSavedCreationConversation, conversationHasConflict, deleteCreationConversation, hasParkedCreationConversationDraft, loadCreationConversations, loadLocalCreationConversationDrafts, pendingCreationTaskIds, removeCreationConversationSnapshot, restoreParkedCreationConversation, saveCreationConversations, updateCreationConversationSnapshot } from "@/services/creation-conversation-store";
-import { resolveModelChannel, selectableModelsByCapability, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { modelOptionName, resolveModelChannel, selectableModelsByCapability, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useCreationPreferencesStore } from "@/stores/use-creation-preferences-store";
 import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
@@ -30,7 +31,7 @@ import type { PromptOptimizerProvider } from "@/lib/plugins/plugin-types";
 import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
 import { createPluginHostContext } from "@/services/plugin-host";
 import { usePluginStore } from "@/stores/use-plugin-store";
-import { buildCreationMentionReferences, expandCreationPrompt, reconcileCreationAttachmentLimit, removeCreationReferenceTokens, replaceCreationAttachmentReference, selectedCreationReferences, type CreationReference } from "./creation-references";
+import { buildCreationMentionReferences, creationReferenceKindMessage, creationReferenceLimitsFor, creationReferenceOverflowMessage, expandCreationPrompt, fitCreationAttachmentsToLimits, reconcileCreationAttachmentLimit, removeCreationReferenceTokens, replaceCreationAttachmentReference, selectedCreationReferences, type CreationReference } from "./creation-references";
 import { creationAttachmentFromAsset, creationAttachmentFromAudio, creationAttachmentFromAudioAsset, creationAttachmentFromDocument, creationAttachmentFromExternalAsset, creationAttachmentFromImage, creationAttachmentFromVideo, creationAttachmentFromVideoAsset, creationAttachmentKind, creationAudioAsset, creationFileAccepted, creationImageAsset, creationMediaAspectRatio, creationUploadAccept, creationVideoAsset, removeCreationAttachment, splitCreationAttachments, type CreationAttachment } from "./creation-assets";
 import { defaultCreationMode, modeLabels, type CreationConversation, type CreationMessage, type CreationMode, type CreationRetryContext, type CreationSettings, type CreationShotRailEntry, type CreationStatus } from "./creation-types";
 import { attachCreationTaskContexts, completedCreationGenerationTask, conversationTimestamp, creationShotRail, creationVideoShotOrdinal, isImageAttachment, isVideoAttachment, materializeCreationTaskResults, newConversation, newMessage, reconcileCreationTaskMessages } from "./creation-conversations";
@@ -117,10 +118,14 @@ export default function CreatePage() {
     const [count, setCount] = useState(String(Math.max(1, Math.min(4, Number(config.count) || 1))));
     const [textStreaming, setTextStreaming] = useState(() => readComposerPref(TEXT_STREAMING_PREF_KEY, true));
     const [textThinking, setTextThinking] = useState(() => readComposerPref(TEXT_THINKING_PREF_KEY, false));
+    const [composerNotice, setComposerNotice] = useState("");
     const [busy, setBusy] = useState(false);
     const [referenceReplacementBusy, setReferenceReplacementBusy] = useState(false);
     const [historyOpen, setHistoryOpen] = useState(false);
     const [libraryOpen, setLibraryOpen] = useState(false);
+    // 全站关闭了右上角 Toast（globals.css 里 .ant-message 被隐藏），
+    // 参考素材超限这类必须让用户看见的说明改在参考内容面板里就地显示。
+    const [referenceNotice, setReferenceNotice] = useState("");
     const externalAssetSources = useExternalAssetSources(libraryOpen);
     const abortRef = useRef<AbortController | null>(null);
     const composerFocusRef = useRef<HTMLTextAreaElement>(null);
@@ -165,7 +170,14 @@ export default function CreatePage() {
     const selectedModel = resolveCompatibleModel(config, preferredModel, modelRequirements) || preferredModel;
     const imageProfile = useMemo(() => modelCapabilityConfigFor(config, selectedModel).image!, [config, selectedModel]);
     const videoProfile = useMemo(() => modelCapabilityConfigFor(config, selectedModel).video!, [config, selectedModel]);
-    const maxReferences = mode === "video" ? videoProfile.operations.includes("image_to_video") ? videoProfile.references.maxImages : 0 : mode === "image" ? imageProfile.references.maxImages : 6;
+    // 参考素材上限按官方文档分类型取（视频：图 / 视频 / 音频各自限量，见 Seedance 2.0 的 9/3/3），
+    // 不再自己合成一个总数上限。
+    const referenceLimits = useMemo(() => {
+        // 只有显式配置过能力的文字模型才按它声明的图片/视频引用上限来限制；
+        // 没配 capabilityConfig 的自定义渠道拿到的是默认补出的 0，不能当成“不支持参考素材”。
+        const textReferencesDeclared = Boolean(resolveModelChannel(config, selectedModel).modelProfiles?.find((item) => item.model === modelOptionName(selectedModel))?.capabilityConfig?.text);
+        return creationReferenceLimitsFor(mode, modelCapabilityConfigFor(config, selectedModel), { textReferencesDeclared });
+    }, [config, mode, selectedModel]);
     const referenceImageSize = useMemo(() => {
         const imageAttachments = attachments.filter(isImageAttachment);
         if (imageAttachments.length !== 1) return undefined;
@@ -244,16 +256,14 @@ export default function CreatePage() {
         setSeconds(normalized.seconds);
         setRatio(normalized.ratio);
         setVideoQuality(normalized.resolution.replace(/p$/i, ""));
-        const maxReferences = videoProfile.operations.includes("image_to_video") ? videoProfile.references.maxImages : 0;
-        if (attachments.length > maxReferences) setAttachments((current) => current.slice(0, maxReferences));
     }, [composerPreferencesHydrated, composerPreferencesInitialized, mode, selectedModel, videoProfile]);
 
     useEffect(() => {
-        const reconciled = reconcileCreationAttachmentLimit(attachments, mentionReferences, maxReferences);
+        const reconciled = reconcileCreationAttachmentLimit(attachments, mentionReferences, referenceLimits);
         if (reconciled.attachments === attachments) return;
         setAttachments(reconciled.attachments);
         if (reconciled.removedReferences.length) setPrompt((current) => removeCreationReferenceTokens(current, reconciled.removedReferences));
-    }, [attachments, maxReferences, mentionReferences]);
+    }, [attachments, mentionReferences, referenceLimits]);
 
     useEffect(() => {
         let cancelled = false;
@@ -442,7 +452,9 @@ export default function CreatePage() {
     }, []);
 
     const selectMode = (next: CreationMode) => {
+        setReferenceNotice("");
         setMode(next);
+        setComposerNotice("");
         rememberMode(next);
         const nextModels = selectableModelsByCapability(config, next);
         const current = next === "text" ? config.textModel : next === "image" ? config.imageModel : config.videoModel;
@@ -458,6 +470,8 @@ export default function CreatePage() {
     };
     const setComposerSeconds = (value: string) => {
         setSeconds(value);
+        // 用户改了时长就清掉上一轮的拦截说明，避免旧提示留在输入框里。
+        setComposerNotice("");
         if (mode === "video") rememberVideoSettings({ seconds: value });
     };
     const setComposerQuality = (value: string) => {
@@ -553,17 +567,24 @@ export default function CreatePage() {
             return external ? [creationAttachmentFromExternalAsset(external)] : [];
         });
         if (!next.length) return;
-        setAttachments((current) => [...current.filter((item) => !next.some((candidate) => candidate.id === item.id)), ...next].slice(0, maxReferences));
+        const merged = [...attachments.filter((item) => !next.some((candidate) => candidate.id === item.id)), ...next];
+        const fitted = fitCreationAttachmentsToLimits(merged, referenceLimits);
+        setReferenceNotice(fitted.dropped.length ? `${creationReferenceKindMessage(referenceLimits, fitted.dropped[0])}，超出的 ${fitted.dropped.length} 个素材没有加入` : "");
+        setAttachments(fitted.attachments);
         setLibraryOpen(false);
     };
 
     const removeAttachment = (id: string) => {
+        setReferenceNotice("");
+        setComposerNotice("");
         const reference = mentionReferences.find((item) => item.attachmentId === id);
         setAttachments((current) => removeCreationAttachment(current, id));
         if (reference) setPrompt((current) => removeCreationReferenceTokens(current, [reference]));
     };
 
     const clearAttachments = () => {
+        setReferenceNotice("");
+        setComposerNotice("");
         const attachmentIds = new Set(attachments.map((item) => item.id));
         const references = mentionReferences.filter((item) => item.attachmentId && attachmentIds.has(item.attachmentId));
         setAttachments([]);
@@ -571,6 +592,8 @@ export default function CreatePage() {
     };
 
     const clearComposer = () => {
+        setReferenceNotice("");
+        setComposerNotice("");
         promptRef.current = "";
         attachmentsRef.current = [];
         setPrompt("");
@@ -644,20 +667,25 @@ export default function CreatePage() {
             releaseRetryLock();
             return;
         }
-        if (mode === "video" && !videoDurationAllowed(videoProfile, Number(seconds))) {
-            toast.error("当前模型不支持所选视频时长，请重新选择");
-            releaseRetryLock();
-            return;
+        // 后端对图片和视频使用不同的参考字段；先拆分，提交前核对也用它。
+        const { referenceImages, referenceVideos, referenceAudios } = splitCreationAttachments(attachments);
+        if (mode === "video") {
+            const notice = videoSubmitNotice(mode, videoProfile, seconds, { referenceImages, referenceVideos, referenceAudios });
+            if (notice) {
+                // 右上角 Toast 被全局 CSS 隐藏，提示改成输入框内始终可见的说明。
+                setComposerNotice(notice);
+                releaseRetryLock();
+                return;
+            }
         }
-        if (attachments.length > maxReferences) {
-            toast.warning("参考内容正在按当前模型能力调整，请稍后重试");
+        const overflowMessage = creationReferenceOverflowMessage(referenceLimits, attachments);
+        if (overflowMessage) {
+            setReferenceNotice(overflowMessage);
             releaseRetryLock();
             return;
         }
         const settings = { ratio, seconds, quality, videoQuality, count };
         const references = selectedCreationReferences(text, mentionReferences);
-        // 后端对图片和视频使用不同的参考字段；这里先拆分，避免媒体类型在写入任务时被误判。
-        const { referenceImages, referenceVideos, referenceAudios } = splitCreationAttachments(attachments);
         const videoOperation = inferVideoOperation({
             textCount: text ? 1 : 0,
             imageCount: referenceImages.length,
@@ -683,6 +711,7 @@ export default function CreatePage() {
         const expandedPrompt = skillExecution.prompt;
         const referenceMetadata = skillExecution.metadata;
         followLatestMessageRef.current = true;
+        setComposerNotice("");
         const userMessage = newMessage("user", text, { mode, model: selectedModel, attachments, references, settings });
         const assistantMessage = newMessage("assistant", "", { mode, model: selectedModel, status: mode === "text" && textStreaming ? "streaming" : "pending", settings, ...retryContext });
         const originConversationId = activeConversation.id;
@@ -710,6 +739,7 @@ export default function CreatePage() {
         setPrompt("");
         setAttachments([]);
         setDraftReferences([]);
+        setReferenceNotice("");
         setBusy(true);
         const controller = new AbortController();
         const requestLifecycle = runtime.beginGenerationConsumer(controller.signal);
@@ -878,6 +908,7 @@ export default function CreatePage() {
         setPrompt("");
         setAttachments([]);
         setDraftReferences([]);
+        setReferenceNotice("");
         setHistoryOpen(false);
     };
 
@@ -924,6 +955,7 @@ export default function CreatePage() {
         setPrompt("");
         setAttachments([]);
         setDraftReferences([]);
+        setReferenceNotice("");
         setHistoryOpen(false);
         setConflictOpen(false);
         const epoch = captureUserScopeEpoch();
@@ -1015,6 +1047,7 @@ export default function CreatePage() {
                         setPrompt("");
                         setAttachments([]);
                         setDraftReferences([]);
+                        setReferenceNotice("");
                     }
                     toastRef.current.success("历史对话已删除，素材仍保留");
                 } catch (error) {
@@ -1126,7 +1159,8 @@ export default function CreatePage() {
         referenceReplacementBusy,
         attachments,
         referenceImageSize,
-        maxReferences,
+        referenceLimits,
+        referenceNotice,
         references: mentionReferences,
         onRemoveAttachment: removeAttachment,
         onClearAttachments: clearAttachments,
@@ -1141,7 +1175,11 @@ export default function CreatePage() {
         imageProfile,
         videoProfile,
         config,
-        onModelChange: (value: string) => updateConfig(mode === "text" ? "textModel" : mode === "image" ? "imageModel" : "videoModel", value),
+        onModelChange: (value: string) => {
+            // 换模型后各类上限会变，上一轮的超限说明不再成立。
+            setReferenceNotice("");
+            updateConfig(mode === "text" ? "textModel" : mode === "image" ? "imageModel" : "videoModel", value);
+        },
         ratio,
         setRatio: setComposerRatio,
         seconds,
@@ -1158,6 +1196,7 @@ export default function CreatePage() {
         setTextThinking,
         promptOptimizerProvider,
         composerFocusRef,
+        notice: composerNotice,
         onPromptFocus: loadAddedSkills,
         onSubmit: () => void submit(),
     };

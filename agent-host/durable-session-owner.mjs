@@ -15,8 +15,10 @@ import { SYSTEM_PROMPT } from './system-prompt.mjs';
 import { SKILL_LOAD_PARAMETERS, createSkillCatalogSection, expandSkillContent, loadPinnedSkills, loadedSkillRecord,
   normalizeSkillCatalog, sameSkillPin, skillsToLoad, activeSkillProjection, createActiveSkillSection, guardSkillModelRequests } from './skill-resource.mjs';
 import { PLAN_UPDATE_PARAMETERS, applyPlanUpdate, emptyPlan, planContinuation, publicPlan, renderPlanSection } from './plan.mjs';
-import { buildStudioDigest, describeChangesSince } from './studio-digest.mjs';
+import { buildStudioDigest, describeChangesSince, withCurrentStudio } from './studio-digest.mjs';
 import { normalizeModelTransportError } from './model-transport-error.mjs';
+import { businessLifecycle } from './business-progress.mjs';
+import { durableReasoningSegments } from './durable-turn-projection.mjs';
 
 // On-disk format tag written into manifests and host state since 1.0.4; not the
 // package version. Changing it rejects every existing session as mismatched.
@@ -51,9 +53,12 @@ export function durableToolReplay(tool) {
 export function publicDurableTurn(active, running = false) {
   if (!active) return null;
   // Go canonicalizes continuationId from a claimed receipt before forwarding.
+  // `reasoning` is the curated thinking projection (id/text/status only), not a raw
+  // provider block; history and turn_end must both carry it or the panel would show
+  // thinking while streaming and lose it on reload.
   const keys = ['permissionMode','turnId', 'requestId', 'submissionId', 'continuationId', 'userText', 'selectedNodeIds', 'attachments', 'skills',
     'references', 'supplements', 'supplementInputs', 'createdAt', 'reply', 'toolCalls', 'change', 'proposals', 'plan',
-    'cancelled', 'error', 'errorReason', 'sessionId', 'status'];
+    'reasoning', 'cancelled', 'error', 'errorReason', 'sessionId', 'status'];
   const result = Object.fromEntries(keys.filter((key) => active[key] !== undefined).map((key) => [key, active[key]]));
   // Keep provider detail in the internal record; streams and old history share
   // the same public projection so an upstream body cannot become UI copy.
@@ -92,6 +97,11 @@ function snapshotLifecycle(event) {
   const compaction = (event.compactions || []).find((item) => item.blocking);
   if (compaction) return { type: 'lifecycle', phase: 'compaction', taskId: compaction.taskId };
   if (event.generation?.retry) return retryLifecycle(event.generation.attempt, event.generation.retry.error);
+  for (const slot of [...(event.nestedTools || []), ...(event.tools || [])]) {
+    if (slot.status !== 'running') continue;
+    const progress = businessLifecycle(slot.name, slot.details);
+    if (progress) return progress;
+  }
   const tool = (event.tools || []).find((slot) => slot.status === 'running');
   return tool ? { type: 'lifecycle', phase: 'tool', toolName: tool.name } : null;
 }
@@ -100,6 +110,10 @@ export function durableStreamEvents(event, current = null) {
   switch (event?.type) {
     case 'plan': return [{ type: 'plan', plan: event.plan }];
     case 'tool_execution_start': return [{ type: 'lifecycle', phase: 'tool', toolName: event.toolName }];
+    case 'tool_execution_update': {
+      const progress = businessLifecycle(event.toolName, event.details);
+      return progress ? [progress] : [];
+    }
     case 'tool_execution_end': {
       const result = event.entry?.model?.find((message) => message.role === 'toolResult' && message.toolCallId === event.toolCallId && message.toolName === event.toolName);
       return [{ type: 'lifecycle', phase: 'tool_end', toolName: event.toolName,
@@ -119,10 +133,11 @@ export function durableLifecycleState(current, event) {
   switch (event?.type) {
     case 'snapshot': return snapshotLifecycle(event);
     case 'auto_retry_start': case 'tool_execution_start': return durableStreamEvents(event)[0];
+    case 'tool_execution_update': return durableStreamEvents(event)[0] || current;
     case 'compaction_start': return durableStreamEvents(event, current)[0] || current;
     case 'compaction_end': return durableStreamEvents(event, current).length ? null : current;
     case 'auto_retry_end': return current?.phase === 'retry' ? null : current;
-    case 'tool_execution_end': return current?.phase === 'tool' && current.toolName === event.toolName ? durableStreamEvents(event)[0] : current;
+    case 'tool_execution_end': return ['tool', 'business'].includes(current?.phase) && current.toolName === event.toolName ? durableStreamEvents(event)[0] : current;
     default: return current;
   }
 }
@@ -218,6 +233,7 @@ export function createDurableSessionStore({ sessionRoot, workspaceRoot, getModel
       const canvas = await readCanvas(entry, signal, turnId);
       if (!canvas || typeof canvas !== 'object') throw new Error('canvas_snapshot_unavailable');
       const digest = buildStudioDigest(canvas, { selectedNodeIds });
+      entry.turn.studioReadAvailable = true;
       let diffText = '';
       await update(entry, (doc) => {
         // Older hosts could persist the operation wrapper as an empty snapshot.
@@ -234,6 +250,7 @@ export function createDurableSessionStore({ sessionRoot, workspaceRoot, getModel
       // Do not present the previous turn's digest as current after a failed read.
       // Preserve the last successful snapshot so recovery compares real states.
       await update(entry, (doc) => { doc.studioDigestText = ''; });
+      entry.turn.studioReadAvailable = false;
       return '';
     }
   }
@@ -464,7 +481,8 @@ export function createDurableSessionStore({ sessionRoot, workspaceRoot, getModel
           const proposalCount = entry.turn.proposals.length;
           // Bridge tools return {content}; Durable's ToolExecutionResult names it output.
           const { content, ...result } = await runWithBudget(entry, () => tool.execute(String(api.taskId), args, context.abortSignal,
-            { executeTool: (name, params, options) => api.executeTool(name, params, context, options) }));
+            { executeTool: (name, params, options) => api.executeTool(name, params, context, options),
+              reportProgress: (progress) => api.details({ beeftvProgress: progress }, context) }));
           entry.generation.toolCalledSinceYield = true;
           if (!tool.readOnly && typeof readCanvas === 'function') {
             await refreshStudioDigest(entry, entry.turn.turnId, { selectedNodeIds: entry.input?.selectedNodeIds || [], computeDiff: false, signal: context.abortSignal });
@@ -483,19 +501,28 @@ export function createDurableSessionStore({ sessionRoot, workspaceRoot, getModel
     ];
     const operationExtension=defineExtension({ name: 'beeftv.operations.v1', tools, sections: operationSections, hooks: [hook(GenerationTask, {
       afterResponse: normalizeModelTransportError,
-      beforeRequest: async (request) => {
+      beforeRequest: async (request, runtime, context) => {
         for (;;) {
           if (entry.generation.pendingInputError) throw fail(entry.generation.pendingInputError.reason);
           if (entry.generation.pendingInput?.state === 'pending') await entry.generation.pendingInput.promise;
           if (entry.generation.aborted) throw fail('aborted');
           await authorization(entry, entry.turn.turnId);
+          let studioDiff = '';
+          if (typeof readCanvas === 'function') {
+            studioDiff = await refreshStudioDigest(entry, entry.turn.turnId, { selectedNodeIds: entry.input?.selectedNodeIds || [], computeDiff: true, signal: context.abortSignal });
+          }
+          if (entry.generation.aborted) throw fail('aborted');
           const nativeDoc = await state(entry);
           const active = nativeDoc.active;
           entry.nativeHistory = await officialNativeHistory(entry,nativeDoc,CTX);
           if(entry.budget) {entry.budget.nativeHistory=entry.nativeHistory;entry.budget.sessionId=entry.sessionId;}
           if (entry.generation.pendingInput?.state === 'pending') continue;
           if (entry.generation.pendingInputError) throw fail(entry.generation.pendingInputError.reason);
-          let messages = request.messages;
+          let messages = typeof readCanvas === 'function'
+            ? withCurrentStudio(request.messages, [nativeDoc.studioDigestText, studioDiff].filter(Boolean).join('\n')) : request.messages;
+          // Only a new decision with current evidence can release a conflict
+          // fence. Tool reads and unrelated successful writes cannot release it.
+          if (entry.turn.studioReadAvailable === true) entry.turn.canvasContextChanged = false;
           // A recovered generation may already have checkpointed its prepared
           // request before steering was queued. Overlay only missing durable user
           // inputs through the official request hook; the queue still owns their
@@ -864,9 +891,11 @@ export function createDurableSessionStore({ sessionRoot, workspaceRoot, getModel
       : await lock(canvasId, async () => {
         const current = sessions.get(canvasId);
         if (current?.sessionId === target) return recordStopIntent(current, requestId);
-        // A legacy conversation not handed off yet has no durable state: memory only.
-        if (!hasSession(canvasId, target)) return false;
-        const entry = await open(canvasId, target);
+        // Persist an early legacy stop in its deterministic successor, without
+        // publishing it or scheduling a model turn. Handoff later keeps this doc.
+        const exists = hasSession(canvasId, target);
+        if (!exists && isDurableSessionId(sessionId)) return false;
+        const entry = exists ? await open(canvasId, target) : await prepareSession(canvasId, sessionId);
         try { return await recordStopIntent(entry, requestId); }
         finally { await entry.harness.close(CTX); }
       });
@@ -1067,23 +1096,26 @@ export function createDurableSessionStore({ sessionRoot, workspaceRoot, getModel
     // last assistant in transcript: it may belong to a previous successful turn.
     const answer = settled.answer ? await entry.harness.commit((tx) => tx.entry(settled.answer), CTX) : null;
     let assistant = answer?.model?.find((message) => message.role === 'assistant');
+    // 本轮范围由原提交、补充输入与确切结束条目限定：工具调用前后的助手条目都算这一轮，
+    // 终态与实时流、重开历史用同一份投影，所以片段身份与顺序一致。
+    const original = active.submissionId ? await entry.harness.submission(active.submissionId, CTX) : null;
+    const originalStatus = original ? await original.status(CTX) : null;
+    const lowerBound = originalStatus?.entry ?? settled.entry;
+    const view = lowerBound === undefined ? null : await entry.root.context(CTX);
+    const turnEntries = view ? view.entries.filter((item) => item.id > lowerBound
+      && (settled.answer === undefined || item.id <= settled.answer)) : [];
     if (active.stopped || settled.reason === 'aborted') {
       // Official abort converts its committed partial into an assistant entry.
-      // Scope strictly after this submission's own user entry, never prior turns.
-      const original = active.submissionId ? await entry.harness.submission(active.submissionId, CTX) : null;
-      const originalStatus = original ? await original.status(CTX) : null;
-      const lowerBound = originalStatus?.entry ?? settled.entry;
-      if (lowerBound !== undefined) {
-        const view = await entry.root.context(CTX);
-        const partial = view.entries.filter((item) => item.id > lowerBound).flatMap((item) => item.model || [])
-          .filter((message) => message.role === 'assistant' && message.stopReason === 'aborted').at(-1);
-        if (partial) assistant = partial;
-      }
+      const partial = turnEntries.flatMap((item) => item.model || [])
+        .filter((message) => message.role === 'assistant' && message.stopReason === 'aborted').at(-1);
+      if (partial) assistant = partial;
     }
     const preparationError = entry.generation.pendingInputError || entry.generation.skillContextFailure;
     const completion = preparationError ? { reply: assistant?.content?.filter(block => block.type === 'text').map(block => block.text).join('') || '', cancelled: false, error: preparationError.message, errorReason: preparationError.reason } : durableCompletion(settled, assistant, entry.budget?.failure, active.stopped);
     const planView = entry.turn.plan || active.plan || null;
-    return { ...publicDurableTurn(active), ...completion,
+    // 思考是权威值：即使为空也要写进终态和历史，界面才能区分「没有思考」与「字段缺失」并清掉旧内容。
+    const reasoning = durableReasoningSegments(turnEntries);
+    return { ...publicDurableTurn(active), ...completion, reasoning,
       toolCalls: [...entry.log], change: turnChange(entry.turn), proposals: [...entry.turn.proposals],
       ...(planView ? { plan: planView } : {}),
       status: settled.status, sessionId: entry.sessionId };
